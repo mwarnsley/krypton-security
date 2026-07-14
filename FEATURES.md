@@ -8,6 +8,7 @@ Add future work as a new phase so scope, status, and verification remain clear.
 | Phase | Status | Feature |
 | --- | --- | --- |
 | Phase 1 | Active | **Local Directory Watchdog & Process Isolation** — Intercepts unauthorized out-of-bounds path traversal and terminates rogue agent child processes via OS-level `SIGKILL` execution. |
+| Phase 2 | **Active** | **Live Filesystem Hardening & Event Monitoring** — Adds native asynchronous monitoring for filesystem activity inside the quarantined workspace. |
 
 ### Phase 1 verification
 
@@ -18,6 +19,16 @@ Add future work as a new phase so scope, status, and verification remain clear.
 - Terminates a quarantined child process with `SIGKILL`.
 - Appends a structured event to the local `alerts.json` ledger without blocking
   the main event loop.
+
+### Phase 2: Live Filesystem Hardening & Event Monitoring
+
+- **Status:** **Active**
+- **Objectives:**
+  - Implement native `fs.watch` event loops tracking the
+    `/sandbox_workspace` directory.
+  - Intercept real-time asynchronous file creation and modification events.
+  - Stream file-system alerts directly into the $O(1)$ telemetry engine and
+    verify zero event-loop blockage.
 
 ## Planned milestones
 

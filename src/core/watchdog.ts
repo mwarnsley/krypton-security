@@ -10,6 +10,9 @@ const HIGH_RISK_ENDPOINTS: ReadonlySet<string> = new Set([
   ".aws",
   ".env",
 ]);
+const WATCH_EVENT_TYPES: ReadonlySet<string> = new Set(["change", "rename"]);
+const monitoredProcessIds = new Set<number>();
+const activeWorkspaceWatchers = new Map<string, fs.FSWatcher>();
 
 interface QuarantineEvent {
   readonly timestamp: string;
@@ -29,6 +32,22 @@ alertStream.on("error", (error: NodeJS.ErrnoException) => {
   // violate the watchdog's fail-closed policy.
   throw error;
 });
+
+/**
+ * Validates that a process identifier can be safely tracked or signaled.
+ *
+ * @param {number} pid - The process identifier to validate.
+ * @returns {void} No value; invalid identifiers throw a `RangeError`.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * assertValidProcessId(4242);
+ * // => undefined
+ */
+function assertValidProcessId(pid: number): void {
+  if (!Number.isSafeInteger(pid) || pid <= 0) {
+    throw new RangeError("A positive, safe process ID is required.");
+  }
+}
 
 /**
  * Resolves a requested path against the absolute Krypton project root.
@@ -91,6 +110,65 @@ function containsHighRiskEndpoint(resolvedPath: string): boolean {
 }
 
 /**
+ * Quarantines every registered workspace process for a denied filesystem event.
+ *
+ * @param {string} illegalPath - The absolute denied path associated with the event.
+ * @returns {void} No value; all currently registered process IDs are consumed.
+ * @complexity O(P) time for P registered processes and O(1) auxiliary space.
+ * @example
+ * quarantineRegisteredProcesses("/project/.ssh/id_rsa");
+ * // => undefined; each registered child is signaled at most once
+ */
+function quarantineRegisteredProcesses(illegalPath: string): void {
+  for (const pid of monitoredProcessIds) {
+    try {
+      quarantineProcess(pid, illegalPath);
+    } catch {
+      // Continue isolating the remaining owned children if one PID has already
+      // exited or cannot be signaled. quarantineProcess still queues its event.
+    }
+  }
+}
+
+/**
+ * Processes one asynchronous workspace event through the path security policy.
+ *
+ * @param {string} workspacePath - The absolute sandbox directory being watched.
+ * @param {string} eventType - The native filesystem event type.
+ * @param {string | null} filename - The relative filename reported by `fs.watch`.
+ * @returns {void} No value; denied or indeterminate events quarantine tracked children.
+ * @complexity O(1) event dispatch and average policy lookup; O(L) path validation and O(P) threat quarantine.
+ * @example
+ * handleWorkspaceEvent(SANDBOX_ROOT, "change", "input.txt");
+ * // => undefined
+ */
+function handleWorkspaceEvent(
+  workspacePath: string,
+  eventType: string,
+  filename: string | null,
+): void {
+  if (!WATCH_EVENT_TYPES.has(eventType)) {
+    return;
+  }
+
+  let targetPath = workspacePath;
+
+  try {
+    if (filename === null) {
+      throw new Error("The filesystem event did not include a filename.");
+    }
+
+    targetPath = path.resolve(workspacePath, filename);
+
+    if (!verifyPathAccess(targetPath)) {
+      quarantineRegisteredProcesses(targetPath);
+    }
+  } catch {
+    quarantineRegisteredProcesses(targetPath);
+  }
+}
+
+/**
  * Verifies that a requested path is contained by the sandbox and is not sensitive.
  *
  * @param {string} targetPath - The raw absolute or project-relative path requested by an agent.
@@ -114,6 +192,36 @@ export function verifyPathAccess(targetPath: string): boolean {
 }
 
 /**
+ * Registers an owned child process for workspace-event quarantine decisions.
+ *
+ * @param {number} pid - The positive process identifier of an owned agent child.
+ * @returns {void} No value; duplicate registrations remain idempotent.
+ * @complexity O(1) average time and O(1) incremental space per unique PID.
+ * @example
+ * registerWorkspaceProcess(mockAgent.pid);
+ * // => undefined
+ */
+export function registerWorkspaceProcess(pid: number): void {
+  assertValidProcessId(pid);
+  monitoredProcessIds.add(pid);
+}
+
+/**
+ * Removes a child process from workspace-event quarantine tracking.
+ *
+ * @param {number} pid - The positive process identifier to stop tracking.
+ * @returns {void} No value; removing an absent PID is idempotent.
+ * @complexity O(1) average time and O(1) space.
+ * @example
+ * unregisterWorkspaceProcess(mockAgent.pid);
+ * // => undefined
+ */
+export function unregisterWorkspaceProcess(pid: number): void {
+  assertValidProcessId(pid);
+  monitoredProcessIds.delete(pid);
+}
+
+/**
  * Terminates a quarantined process and asynchronously appends its threat event.
  *
  * @param {number} pid - The positive process identifier of the owned agent child.
@@ -125,8 +233,10 @@ export function verifyPathAccess(targetPath: string): boolean {
  * // => undefined; the owned child receives SIGKILL and an alert is queued
  */
 export function quarantineProcess(pid: number, illegalPath: string): void {
-  if (!Number.isSafeInteger(pid) || pid <= 0) {
-    throw new RangeError("A positive, safe process ID is required.");
+  assertValidProcessId(pid);
+
+  if (!monitoredProcessIds.delete(pid)) {
+    throw new Error("The process ID is not registered to this workspace.");
   }
 
   const event: QuarantineEvent = {
@@ -144,4 +254,53 @@ export function quarantineProcess(pid: number, illegalPath: string): void {
     // event loop to read and rewrite the existing ledger.
     alertStream.write(`${JSON.stringify(event)}\n`);
   }
+}
+
+/**
+ * Starts one persistent native watcher for the quarantined workspace directory.
+ *
+ * @param {string} workspacePath - The absolute or project-relative sandbox path to monitor.
+ * @returns {void} No value; the retained watcher dispatches events asynchronously.
+ * @complexity O(1) watcher registration and event dispatch; O(L) path validation per event and O(P) only on quarantine.
+ * @example
+ * startWorkspaceWatcher("./sandbox_workspace");
+ * // => undefined
+ */
+export function startWorkspaceWatcher(workspacePath: string): void {
+  const resolvedWorkspacePath = resolveRequestedPath(workspacePath);
+
+  if (resolvedWorkspacePath !== SANDBOX_ROOT) {
+    throw new RangeError("Only the Krypton sandbox workspace may be watched.");
+  }
+
+  if (activeWorkspaceWatchers.has(resolvedWorkspacePath)) {
+    return;
+  }
+
+  let watcher: fs.FSWatcher;
+
+  try {
+    watcher = fs.watch(
+      resolvedWorkspacePath,
+      {
+        encoding: "utf8",
+        persistent: true,
+        recursive: true,
+      },
+      (eventType, filename) => {
+        handleWorkspaceEvent(resolvedWorkspacePath, eventType, filename);
+      },
+    );
+  } catch (error: unknown) {
+    quarantineRegisteredProcesses(resolvedWorkspacePath);
+    throw error;
+  }
+
+  activeWorkspaceWatchers.set(resolvedWorkspacePath, watcher);
+
+  watcher.on("error", () => {
+    activeWorkspaceWatchers.delete(resolvedWorkspacePath);
+    watcher.close();
+    quarantineRegisteredProcesses(resolvedWorkspacePath);
+  });
 }

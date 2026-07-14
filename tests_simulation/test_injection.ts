@@ -219,6 +219,8 @@ async function runInjectionSimulation(): Promise<void> {
       throw new Error("The mock agent started without a process ID.");
     }
 
+    watchdog.registerWorkspaceProcess(pid);
+
     console.log(
       `[ATTEMPT] Agent requested: ${attempt.command} ${attempt.targetPath}`,
     );
@@ -247,6 +249,10 @@ async function runInjectionSimulation(): Promise<void> {
       `[VERIFIED] Ledger recorded ${alert.action} for PID ${String(alert.pid)} at ${alert.timestamp}.`,
     );
   } finally {
+    if (mockAgent?.pid !== undefined) {
+      watchdog.unregisterWorkspaceProcess(mockAgent.pid);
+    }
+
     if (
       mockAgent !== undefined &&
       mockAgent.exitCode === null &&
