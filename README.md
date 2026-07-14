@@ -11,6 +11,27 @@ workspace. A process associated with a denied operation can be quarantined with
 an OS-level `SIGKILL`, while the event is appended asynchronously to a local
 security ledger.
 
+## 🏗️ Core Architecture & Nomenclature
+
+To understand the architecture of this security sandbox environment, it is
+helpful to distinguish between the background engine and its visual interface:
+
+- **🔒 Krypton (The Engine):** This is the core security runtime engine and
+  daemon. It runs silently in the background of the workspace, dynamically
+  initializing the `fs.watch` file-system loops, tracking process structures
+  within its internal `Set<number>` registry, and executing automated `SIGKILL`
+  isolation plumbing whenever a path breakout attempt occurs.
+- **🛡️ AegisAgent (The Command Center):** This is the administrative web
+  dashboard interface built natively via Next.js and the React App Router. It
+  functions as the visual command center, pulling real-time, non-blocking
+  asynchronous data streams from the local telemetry ledger (`alerts.json`) to
+  provide a fluid data grid of enforcement actions, live process counts, and
+  immediate system state visibility.
+
+Together, the **Krypton engine** acts as the indestructible containment cage,
+while the **AegisAgent dashboard** provides the crystal-clear window and control
+switchboard into that cage.
+
 ## Getting started
 
 ### Requirements

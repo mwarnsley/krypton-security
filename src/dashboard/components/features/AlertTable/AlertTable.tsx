@@ -15,6 +15,7 @@ export interface SecurityAlert {
 }
 
 export interface AlertTableProps {
+  /** The immutable, newest-first security alerts displayed in the data grid. */
   readonly alerts: readonly SecurityAlert[];
 }
 
@@ -23,7 +24,6 @@ export interface AlertTableProps {
  *
  * @param {AlertTableProps} props - The immutable security alerts to display in newest-first order.
  * @returns {React.JSX.Element} A token-ready telemetry table or an empty-state row.
- * @complexity O(N) time and O(N) space when the alerts reference changes; O(1) memo retrieval otherwise.
  * @example
  * <AlertTable alerts={[alert]} />
  * // => renders one telemetry row using alert.id as its stable key

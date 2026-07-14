@@ -142,6 +142,28 @@ documentation to maximize IDE IntelliSense clarity.
   - React components use PascalCase (for example, `AlertRow.tsx`).
   - Hooks and utilities use camelCase (for example, `useTelemetry.ts`).
 
+### 📝 React Component Documentation
+
+- Do not include `@complexity` JSDoc annotations on visual React components.
+- Every TypeScript property inside a component's Props interface must be
+  individually documented using an inline JSDoc comment directly above the
+  field declaration. Include an `@default` tag only when the component defines
+  an explicit default value for that property.
+
+```typescript
+export interface BadgeProps {
+  /** The concise status text displayed inside the badge. */
+  readonly label: string;
+
+  /**
+   * The semantic visual treatment applied to the badge.
+   *
+   * @default "neutral"
+   */
+  readonly tone?: "neutral" | "positive" | "critical";
+}
+```
+
 ### ⚡ Performance-First Component Development
 
 - **State Colocation:** Keep state as local to individual components as possible

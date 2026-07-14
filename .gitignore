@@ -30,3 +30,13 @@ alerts.json
 
 # Local strategy documents
 VC.md
+
+# Next.js build output and local cache isolation
+src/dashboard/.next/
+src/dashboard/out/
+
+# Local environment configuration file overrides
+src/dashboard/.env*.local
+
+# Next.js system diagnostics runtime file exclusions
+src/dashboard/next-env.d.ts

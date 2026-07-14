@@ -1,7 +1,10 @@
 export type SystemStatus = "degraded" | "offline" | "operational";
 
 export interface StatusCardProps {
+  /** The number of agent child processes currently monitored by Krypton. */
   readonly activeProcessCount: number;
+
+  /** The current global health state of the Krypton watchdog runtime. */
   readonly systemStatus: SystemStatus;
 }
 
@@ -16,7 +19,6 @@ const SYSTEM_STATUS_LABELS: Readonly<Record<SystemStatus, string>> = {
  *
  * @param {StatusCardProps} props - The system status and active process count to present.
  * @returns {React.JSX.Element} A semantic status summary with token-ready class and data attributes.
- * @complexity O(1) time and O(1) space.
  * @example
  * <StatusCard systemStatus="operational" activeProcessCount={4} />
  * // => renders an operational system card with four active processes

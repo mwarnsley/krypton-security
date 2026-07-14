@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "dev": "next dev src/dashboard",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:sim": "ts-node tests_simulation/test_injection.ts",
@@ -31,6 +32,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "next": "^16.2.10",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   }
