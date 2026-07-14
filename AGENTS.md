@@ -60,8 +60,10 @@ imperceptible.
 ## 🧪 Testing and File Organization Rules
 
 1. **Never Clutter the Root Directory:** Do not create loose source files in the
-   root or directly under `/src/`. Place code in its designated `config`, `core`,
-   or `utils` subdomain. `/src/index.ts` is the sole entry-point exception.
+   root or directly under `/src/`. Place backend code in its designated
+   `config`, `core`, or `utils` subdomain. `/src/index.ts` is the backend
+   entry-point exception; dashboard code must follow the frontend directories
+   defined below.
 2. **Mirrored Unit Testing:** Every operational file created in `/src/core/` or
    `/src/utils/` must immediately receive a corresponding `.test.ts` file in the
    mirrored pathway under `/**tests**/`.
@@ -118,3 +120,40 @@ documentation to maximize IDE IntelliSense clarity.
    effects, including `process.kill`, file writing streams, and kernel events,
    inside unit tests. Unit tests must evaluate computational logic and access
    decisions, not execute actual destructive system calls.
+
+## 🌐 Next.js & React Performance Architecture Standards
+
+### 📂 File Structure & Colocation Rules
+
+- Scale the dashboard folder structure intentionally using strict
+  encapsulation:
+  - **Single-File Pattern:** For standalone units, keep the source, test, and
+    public API barrel together:
+
+    ```text
+    components/ui/Badge/Badge.tsx
+    components/ui/Badge/Badge.test.tsx
+    components/ui/Badge/index.ts
+    ```
+
+  - Every folder at every level must include an `index.ts` file acting as that
+    directory's public API barrel interface.
+- **Naming Conventions:**
+  - React components use PascalCase (for example, `AlertRow.tsx`).
+  - Hooks and utilities use camelCase (for example, `useTelemetry.ts`).
+
+### ⚡ Performance-First Component Development
+
+- **State Colocation:** Keep state as local to individual components as possible
+  to minimize the re-render blast radius.
+- **Computation Optimization:** Wrap heavy alert-log sorting, text formatting,
+  and grid-filtering computations inside `useMemo`.
+- **Reference Stability:** Stabilize event-handler function references passed
+  down to sub-components using `useCallback` when it prevents unnecessary child
+  updates.
+- **Composition vs Multi-Props:** Build components so layouts compose them via
+  structured props such as `variant`, `tone`, and `size`, rather than writing
+  messy, duplicate inline styles inside dashboard screen views.
+- **Asynchronous Data Safety:** All filesystem reads or dashboard API polling
+  routines must use asynchronous, non-blocking streams to keep the application
+  main thread free and responsive.
