@@ -17,9 +17,9 @@ describe("AlertTable", () => {
   test.each([
     "Timestamp",
     "Target Process ID",
-    "Attempted Action / Path Breakout",
+    "Attempted Action",
     "Enforcement Status",
-    "Trigger Signature",
+    "Actions",
   ])("renders the %s column", (columnLabel) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
 
@@ -32,7 +32,6 @@ describe("AlertTable", () => {
     ALERT.attemptedAction,
     ALERT.attemptedPath,
     ALERT.enforcementStatus,
-    ALERT.triggerSignature,
   ])("renders alert field %s", (fieldValue) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
@@ -43,6 +42,24 @@ describe("AlertTable", () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
 
     expect(markup).toContain("No security alerts detected.");
+  });
+
+  it("renders the per-process Force Isolate action", () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain("Force Isolate");
+  });
+
+  it("provides an accessible process-specific isolation label", () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain('aria-label="Force isolate process 4242"');
+  });
+
+  it("renders quarantined alerts with the crimson treatment", () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain("bg-rose-500/10");
   });
 
   it("does not emit inline styles", () => {

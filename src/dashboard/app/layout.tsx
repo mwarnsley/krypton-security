@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import "./globals.css";
+
 interface RootLayoutProps {
   /** The active dashboard route content rendered inside the document body. */
   readonly children: ReactNode;
@@ -23,7 +25,9 @@ export default function RootLayout(
 
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
+        {children}
+      </body>
     </html>
   );
 }

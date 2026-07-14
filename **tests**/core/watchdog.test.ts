@@ -1,6 +1,7 @@
 import fs = require("node:fs");
 import path = require("node:path");
 import {
+  afterAll,
   beforeAll,
   beforeEach,
   describe,
@@ -50,13 +51,17 @@ const workspaceWatcherStub = {
 } as unknown as fs.FSWatcher;
 
 let watchdog: typeof import("../../src/core/watchdog.js");
+let createWriteStreamSpy: ReturnType<typeof vi.spyOn>;
 
 beforeAll(async () => {
-  const createWriteStreamSpy = vi
+  createWriteStreamSpy = vi
     .spyOn(fs, "createWriteStream")
     .mockReturnValue(alertStreamStub);
 
   watchdog = await import("../../src/core/watchdog.js");
+});
+
+afterAll(() => {
   createWriteStreamSpy.mockRestore();
 });
 
@@ -113,9 +118,17 @@ describe("watchdog core engine", () => {
   });
 
   it("propagates alert stream failures", () => {
+    const processKillSpy = vi.spyOn(process, "kill").mockReturnValue(true);
     const streamError = new Error("simulated stream failure");
 
-    expect(() => alertErrorHandler?.(streamError)).toThrow(streamError);
+    try {
+      watchdog.registerWorkspaceProcess(42_423);
+      watchdog.quarantineProcess(42_423, ILLEGAL_PATH);
+
+      expect(() => alertErrorHandler?.(streamError)).toThrow(streamError);
+    } finally {
+      processKillSpy.mockRestore();
+    }
   });
 
   it("signals the precise owned process ID with SIGKILL", () => {

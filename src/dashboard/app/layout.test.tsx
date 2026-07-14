@@ -21,7 +21,7 @@ describe("RootLayout", () => {
       </RootLayout>,
     );
 
-    expect(markup).toContain("<body>");
+    expect(markup).toContain('<body class="min-h-screen');
   });
 
   it("renders the active route content", () => {

@@ -1,9 +1,21 @@
-import fs = require("node:fs");
-import path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+
+import {
+  quarantineProcess,
+  quarantineRegisteredProcesses,
+  registerWorkspaceProcess,
+  unregisterWorkspaceProcess,
+} from "./processIsolation.cjs";
+
+export {
+  quarantineProcess,
+  registerWorkspaceProcess,
+  unregisterWorkspaceProcess,
+} from "./processIsolation.cjs";
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 const SANDBOX_ROOT = path.resolve(PROJECT_ROOT, "sandbox_workspace");
-const ALERTS_LEDGER_PATH = path.resolve(PROJECT_ROOT, "alerts.json");
 
 const HIGH_RISK_ENDPOINTS: ReadonlySet<string> = new Set([
   ".ssh",
@@ -11,43 +23,7 @@ const HIGH_RISK_ENDPOINTS: ReadonlySet<string> = new Set([
   ".env",
 ]);
 const WATCH_EVENT_TYPES: ReadonlySet<string> = new Set(["change", "rename"]);
-const monitoredProcessIds = new Set<number>();
 const activeWorkspaceWatchers = new Map<string, fs.FSWatcher>();
-
-interface QuarantineEvent {
-  readonly timestamp: string;
-  readonly pid: number;
-  readonly illegalPath: string;
-  readonly action: "process_quarantined";
-  readonly signal: "SIGKILL";
-}
-
-const alertStream = fs.createWriteStream(ALERTS_LEDGER_PATH, {
-  encoding: "utf8",
-  flags: "a",
-});
-
-alertStream.on("error", (error: NodeJS.ErrnoException) => {
-  // Logging failures are fatal because silently losing security events would
-  // violate the watchdog's fail-closed policy.
-  throw error;
-});
-
-/**
- * Validates that a process identifier can be safely tracked or signaled.
- *
- * @param {number} pid - The process identifier to validate.
- * @returns {void} No value; invalid identifiers throw a `RangeError`.
- * @complexity O(1) time and O(1) space.
- * @example
- * assertValidProcessId(4242);
- * // => undefined
- */
-function assertValidProcessId(pid: number): void {
-  if (!Number.isSafeInteger(pid) || pid <= 0) {
-    throw new RangeError("A positive, safe process ID is required.");
-  }
-}
 
 /**
  * Resolves a requested path against the absolute Krypton project root.
@@ -110,27 +86,6 @@ function containsHighRiskEndpoint(resolvedPath: string): boolean {
 }
 
 /**
- * Quarantines every registered workspace process for a denied filesystem event.
- *
- * @param {string} illegalPath - The absolute denied path associated with the event.
- * @returns {void} No value; all currently registered process IDs are consumed.
- * @complexity O(P) time for P registered processes and O(1) auxiliary space.
- * @example
- * quarantineRegisteredProcesses("/project/.ssh/id_rsa");
- * // => undefined; each registered child is signaled at most once
- */
-function quarantineRegisteredProcesses(illegalPath: string): void {
-  for (const pid of monitoredProcessIds) {
-    try {
-      quarantineProcess(pid, illegalPath);
-    } catch {
-      // Continue isolating the remaining owned children if one PID has already
-      // exited or cannot be signaled. quarantineProcess still queues its event.
-    }
-  }
-}
-
-/**
  * Processes one asynchronous workspace event through the path security policy.
  *
  * @param {string} workspacePath - The absolute sandbox directory being watched.
@@ -188,71 +143,6 @@ export function verifyPathAccess(targetPath: string): boolean {
     );
   } catch {
     return false;
-  }
-}
-
-/**
- * Registers an owned child process for workspace-event quarantine decisions.
- *
- * @param {number} pid - The positive process identifier of an owned agent child.
- * @returns {void} No value; duplicate registrations remain idempotent.
- * @complexity O(1) average time and O(1) incremental space per unique PID.
- * @example
- * registerWorkspaceProcess(mockAgent.pid);
- * // => undefined
- */
-export function registerWorkspaceProcess(pid: number): void {
-  assertValidProcessId(pid);
-  monitoredProcessIds.add(pid);
-}
-
-/**
- * Removes a child process from workspace-event quarantine tracking.
- *
- * @param {number} pid - The positive process identifier to stop tracking.
- * @returns {void} No value; removing an absent PID is idempotent.
- * @complexity O(1) average time and O(1) space.
- * @example
- * unregisterWorkspaceProcess(mockAgent.pid);
- * // => undefined
- */
-export function unregisterWorkspaceProcess(pid: number): void {
-  assertValidProcessId(pid);
-  monitoredProcessIds.delete(pid);
-}
-
-/**
- * Terminates a quarantined process and asynchronously appends its threat event.
- *
- * @param {number} pid - The positive process identifier of the owned agent child.
- * @param {string} illegalPath - The denied absolute or project-relative path that triggered quarantine.
- * @returns {void} No value; the process is signaled and its event is queued for logging.
- * @complexity O(1) signal dispatch and stream enqueue; O(L) time and space to resolve and serialize the path.
- * @example
- * quarantineProcess(mockAgent.pid, "../.ssh/id_rsa");
- * // => undefined; the owned child receives SIGKILL and an alert is queued
- */
-export function quarantineProcess(pid: number, illegalPath: string): void {
-  assertValidProcessId(pid);
-
-  if (!monitoredProcessIds.delete(pid)) {
-    throw new Error("The process ID is not registered to this workspace.");
-  }
-
-  const event: QuarantineEvent = {
-    timestamp: new Date().toISOString(),
-    pid,
-    illegalPath: resolveRequestedPath(illegalPath),
-    action: "process_quarantined",
-    signal: "SIGKILL",
-  };
-
-  try {
-    process.kill(pid, "SIGKILL");
-  } finally {
-    // One JSON object per line keeps each append atomic and avoids blocking the
-    // event loop to read and rewrite the existing ledger.
-    alertStream.write(`${JSON.stringify(event)}\n`);
   }
 }
 
