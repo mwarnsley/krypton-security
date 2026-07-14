@@ -1,90 +1,167 @@
 # Krypton
 
-Krypton is an open-source, lightweight runtime boundary and isolation watchdog
-built to prevent indirect prompt injections and unauthorized local execution
-loops for local AI agents.
-
-The project establishes a deterministic local boundary around agent-accessible
-files. Requests are resolved to absolute paths, checked against the sandbox
-boundary and sensitive endpoints, and denied when they escape the permitted
-workspace. A process associated with a denied operation can be quarantined with
-an OS-level `SIGKILL`, while the event is appended asynchronously to a local
-security ledger.
+Krypton is an open-source runtime boundary and isolation watchdog for local AI
+agents. It evaluates deterministic filesystem and process actions at the local
+execution boundary, blocks sandbox escapes and sensitive-path access, isolates
+registered rogue child processes, and records enforcement telemetry without
+depending on probabilistic prompt classification.
 
 ## 🏗️ Core Architecture & Nomenclature
 
-To understand the architecture of this security sandbox environment, it is
-helpful to distinguish between the background engine and its visual interface:
+- **Krypton — the containment engine:** Owns path-policy evaluation, workspace
+  monitoring, least-privilege process registration, `SIGKILL` quarantine, and
+  append-only local telemetry.
+- **AegisAgent — the command center:** A Next.js and React dashboard that polls
+  the local telemetry API, renders newest-first enforcement events, reports the
+  active registered-process count, and exposes manual containment controls.
 
-- **🔒 Krypton (The Engine):** This is the core security runtime engine and
-  daemon. It runs silently in the background of the workspace, dynamically
-  initializing the `fs.watch` file-system loops, tracking process structures
-  within its internal `Set<number>` registry, and executing automated `SIGKILL`
-  isolation plumbing whenever a path breakout attempt occurs.
-- **🛡️ AegisAgent (The Command Center):** This is the administrative web
-  dashboard interface built natively via Next.js and the React App Router. It
-  functions as the visual command center, pulling real-time, non-blocking
-  asynchronous data streams from the local telemetry ledger (`alerts.json`) to
-  provide a fluid data grid of enforcement actions, live process counts, and
-  immediate system state visibility.
+Together, Krypton provides the execution boundary while AegisAgent provides the
+operator-facing visibility and control plane.
 
-Together, the **Krypton engine** acts as the indestructible containment cage,
-while the **AegisAgent dashboard** provides the crystal-clear window and control
-switchboard into that cage.
+## Dual-Engine Architecture
 
-## Getting started
+Krypton develops two execution layers against the same sandbox and telemetry
+contract:
 
-### Requirements
+| Layer                                   | Location           | Current role                                                                                                                                                                                                           |
+| --------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TypeScript/Node.js reference engine** | `src/core/`        | Functional reference implementation for path policy, `fs.watch` monitoring, owned-process registration, quarantine, and asynchronous ledger writes.                                                                    |
+| **Rust vanguard engine**                | `src/core-native/` | Compilable native foundation for canonical filesystem-boundary checks. Its manifest includes `notify`, `serde`, `serde_json`, and Unix process/signal support for the next native monitoring and telemetry milestones. |
+| **AegisAgent dashboard**                | `src/dashboard/`   | Next.js App Router interface and local API layer for telemetry reads and registered-process containment.                                                                                                               |
+
+The Rust vanguard is currently a foundational native implementation, not yet a
+feature-complete replacement for the Node.js reference engine.
+
+```text
+krypton-security/
+├── src/
+│   ├── core/                         # Node.js watchdog and process isolation
+│   ├── core-native/                  # Native Rust crate
+│   │   ├── Cargo.toml
+│   │   └── src/main.rs
+│   └── dashboard/                    # AegisAgent Next.js application
+│       ├── app/api/telemetry/        # Telemetry and containment endpoints
+│       └── components/               # Encapsulated dashboard UI
+├── **tests**/                        # Mirrored unit-test suites
+├── tests_simulation/                 # Live injection simulations
+├── sandbox_workspace/                # Quarantined agent operating zone
+├── alerts.json                       # Local append-only telemetry ledger
+└── FEATURES.md                       # Architectural milestone ledger
+```
+
+## Node.js Pathway
+
+### Prerequisites
 
 - Node.js
 - npm
 
-Install the development dependencies:
+Install dependencies from the repository root:
 
 ```sh
 npm install
 ```
 
-Run the watchdog and its built-in mock simulation:
+Run the unit and API/component test suites:
 
 ```sh
-npx ts-node src/watchdog.ts
+npm run test
 ```
 
-The simulation confirms that a valid sandbox path is allowed, directory
-traversal and sensitive endpoints are denied, and a disposable child process is
-terminated. Threat events are written locally to the ignored `alerts.json`
-ledger.
+Launch the AegisAgent dashboard development server:
 
-## Structural map
-
-```text
-krypton-security/
-├── src/
-│   └── watchdog.ts       # Path boundary checks, quarantine, and mock simulation
-├── sandbox_workspace/    # Isolated workspace for local agent operations
-├── alerts.json           # Local-only security event ledger, created at runtime
-├── FEATURES.md           # Public architectural milestone ledger
-└── README.md             # Project overview and usage
+```sh
+npm run dev
 ```
 
-### Isolation design patterns
+Run the end-to-end indirect prompt-injection simulation separately:
 
-- **Absolute path resolution:** Every requested path is normalized with
-  `path.resolve` before policy evaluation, preventing lexical `../` traversal
-  bypasses.
-- **Sandbox containment:** Operations are permitted only when their resolved
-  paths remain inside `/sandbox_workspace`.
-- **Sensitive endpoint denial:** Native `Set` lookups block endpoints such as
-  `.ssh`, `.aws`, `.env`, and `.env.*`, including when they appear inside the
-  sandbox.
-- **Fail-closed checks:** Unknown path-evaluation errors resolve to a denied
-  access decision.
-- **Process isolation:** Callers can quarantine a rogue child process with an
-  immediate OS-level `SIGKILL`.
-- **Local asynchronous telemetry:** Structured threat events are appended using
-  a non-blocking stream and never require an external network call.
+```sh
+npm run test:sim
+```
 
-The current Phase 1 module exposes the enforcement primitives and a mock
-simulation. Integration with real filesystem or process-execution hooks is an
-upcoming hardening step.
+The simulation creates an allowlisted temporary ticket inside the sandbox,
+registers its mock child process, intercepts the attempted breakout before file
+access, verifies the quarantine ledger entry, and removes its fixture during
+shutdown.
+
+## Rust Pathway
+
+### Prerequisites
+
+Install the Rust toolchain with the official [rustup](https://rustup.rs/)
+installer on Unix-compatible systems, then load the Cargo environment:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+Build the native crate in debug mode:
+
+```sh
+cd src/core-native
+cargo build
+```
+
+Build an optimized native binary:
+
+```sh
+cargo build --release
+```
+
+Debug and release binaries are emitted beneath `src/core-native/target/`, which
+is excluded from source control.
+
+## Runtime Configuration Contract
+
+The current implementation uses repository-local defaults. The following
+schema documents the shared contract; it is not yet loaded from a standalone
+configuration file:
+
+```json
+{
+  "sandboxWorkspace": "./sandbox_workspace",
+  "telemetryLedger": "./alerts.json",
+  "enforcementSignal": "SIGKILL",
+  "dashboardPollIntervalMs": 5000
+}
+```
+
+- `sandboxWorkspace` is the only authorized operating zone for monitored agent
+  filesystem activity.
+- `telemetryLedger` is a local, gitignored, append-only newline-delimited JSON
+  store. The dashboard API also accepts a JSON-array ledger for compatibility.
+- `enforcementSignal` records the immediate native process-isolation mechanism.
+  Only explicitly registered workspace child PIDs are eligible for quarantine.
+- `dashboardPollIntervalMs` reflects the current AegisAgent telemetry refresh
+  interval.
+
+A quarantine record currently includes an ISO timestamp, the target PID, the
+resolved denied path or containment context, the `process_quarantined` action,
+and the `SIGKILL` signal. The telemetry API returns records newest-first with the
+live in-memory count of registered workspace processes.
+
+## Security Boundary Model
+
+- **Absolute path evaluation:** The Node.js engine resolves paths before policy
+  checks; the Rust foundation canonicalizes existing paths to resolve physical
+  filesystem aliases and parent traversal.
+- **Sensitive endpoint denial:** Policy blocks high-risk segments such as
+  `.ssh`, `.aws`, `.env`, and `.env.*`, even when nested inside the sandbox.
+- **Fail-closed behavior:** Invalid or indeterminate path states are denied or
+  surfaced as errors for enforcement callers to reject.
+- **Least-privilege isolation:** Krypton signals only child PIDs explicitly
+  registered in its owned-process registry.
+- **Non-blocking telemetry:** Enforcement records are queued through a retained
+  append stream, while dashboard reads use asynchronous filesystem APIs.
+- **Local-only policy decisions:** Core filters do not call external APIs or
+  models when deciding whether an operation is permitted.
+
+## AegisAgent Command Center
+
+The dashboard uses TanStack Table for its data-dense alert grid and Tailwind CSS
+for its high-contrast dark console. Its **Force Isolate** action sends a
+non-blocking request to `POST /api/telemetry/terminate`; the endpoint validates
+the PID, rejects attempts to terminate the dashboard itself, and delegates only
+registered workspace processes to Krypton's quarantine engine.

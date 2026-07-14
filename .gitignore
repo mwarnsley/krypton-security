@@ -11,6 +11,7 @@ dist/
 build/
 out/
 *.tsbuildinfo
+src/core-native/target/
 
 # Test output
 coverage/
