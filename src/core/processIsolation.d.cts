@@ -1,3 +1,5 @@
+export function getActiveWorkspaceProcessCount(): number;
+
 export function quarantineProcess(pid: number, illegalPath: string): void;
 
 export function quarantineRegisteredProcesses(illegalPath: string): void;

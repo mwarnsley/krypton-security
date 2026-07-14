@@ -1,6 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import {
+  getActiveWorkspaceProcessCount,
+} from "../../../../core/processIsolation.cjs";
+
 export const runtime = "nodejs";
 
 const ALERTS_LEDGER_PATH = path.resolve(process.cwd(), "alerts.json");
@@ -74,16 +78,19 @@ function isFileSystemError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 /**
- * Returns the local threat ledger with the newest alert first.
+ * Returns the local threat ledger and live owned-process count.
  *
- * @returns {Promise<Response>} A JSON response containing reversed alert records, or an empty array when no ledger exists.
+ * @returns {Promise<Response>} A JSON response containing newest-first alerts
+ * and the active registry count.
  * @complexity O(N) time and O(N) space to read, parse, copy, and reverse N alert data.
  * @example
  * const response = await GET();
  * await response.json();
- * // => [{ "timestamp": "newest" }, { "timestamp": "oldest" }]
+ * // => { activeProcessCount: 2, alerts: [{ timestamp: "newest" }] }
  */
 export async function GET(): Promise<Response> {
+  const activeProcessCount = getActiveWorkspaceProcessCount();
+
   try {
     const ledgerContents = await fs.promises.readFile(
       ALERTS_LEDGER_PATH,
@@ -92,12 +99,21 @@ export async function GET(): Promise<Response> {
     const alerts = parseAlertLedger(ledgerContents);
     const newestAlertsFirst = [...alerts].reverse();
 
-    return Response.json(newestAlertsFirst, { status: 200 });
+    return Response.json(
+      { activeProcessCount, alerts: newestAlertsFirst },
+      { status: 200 },
+    );
   } catch (error: unknown) {
     if (isFileSystemError(error) && error.code === "ENOENT") {
-      return Response.json([], { status: 200 });
+      return Response.json(
+        { activeProcessCount, alerts: [] },
+        { status: 200 },
+      );
     }
 
-    return Response.json([], { status: 500 });
+    return Response.json(
+      { activeProcessCount, alerts: [] },
+      { status: 500 },
+    );
   }
 }

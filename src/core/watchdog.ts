@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  getActiveWorkspaceProcessCount,
   quarantineProcess,
   quarantineRegisteredProcesses,
   registerWorkspaceProcess,
@@ -9,6 +10,7 @@ import {
 } from "./processIsolation.cjs";
 
 export {
+  getActiveWorkspaceProcessCount,
   quarantineProcess,
   registerWorkspaceProcess,
   unregisterWorkspaceProcess,

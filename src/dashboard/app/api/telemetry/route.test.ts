@@ -1,13 +1,24 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const registryMocks = vi.hoisted(() => ({
+  getActiveWorkspaceProcessCount: vi.fn(() => 3),
+}));
+
+vi.mock("../../../../core/processIsolation.cjs", () => registryMocks);
 
 import { GET } from "./route";
 
 const ALERTS_LEDGER_PATH = path.resolve(process.cwd(), "alerts.json");
 
+beforeEach(() => {
+  registryMocks.getActiveWorkspaceProcessCount.mockReturnValue(3);
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.clearAllMocks();
 });
 
 describe("telemetry route", () => {
@@ -19,10 +30,10 @@ describe("telemetry route", () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([
-      { timestamp: "newest" },
-      { timestamp: "oldest" },
-    ]);
+    expect(body).toEqual({
+      activeProcessCount: 3,
+      alerts: [{ timestamp: "newest" }, { timestamp: "oldest" }],
+    });
   });
 
   it("returns JSON array alerts with the newest first", async () => {
@@ -33,19 +44,19 @@ describe("telemetry route", () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([
-      { timestamp: "newest" },
-      { timestamp: "oldest" },
-    ]);
+    expect(body).toEqual({
+      activeProcessCount: 3,
+      alerts: [{ timestamp: "newest" }, { timestamp: "oldest" }],
+    });
   });
 
-  it("returns an empty array for an empty ledger", async () => {
+  it("returns empty alerts for an empty ledger", async () => {
     vi.spyOn(fs.promises, "readFile").mockResolvedValue("   \n");
 
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([]);
+    expect(body).toEqual({ activeProcessCount: 3, alerts: [] });
   });
 
   it("returns one structured JSON object as one alert", async () => {
@@ -56,7 +67,10 @@ describe("telemetry route", () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([{ action: "process_quarantined" }]);
+    expect(body).toEqual({
+      activeProcessCount: 3,
+      alerts: [{ action: "process_quarantined" }],
+    });
   });
 
   it("rejects a primitive JSON ledger value", async () => {
@@ -65,7 +79,7 @@ describe("telemetry route", () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([]);
+    expect(body).toEqual({ activeProcessCount: 3, alerts: [] });
   });
 
   it("filters non-record values from a JSON array ledger", async () => {
@@ -76,7 +90,10 @@ describe("telemetry route", () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([{ timestamp: "valid" }]);
+    expect(body).toEqual({
+      activeProcessCount: 3,
+      alerts: [{ timestamp: "valid" }],
+    });
   });
 
   it("reads the root alerts ledger asynchronously", async () => {
@@ -100,7 +117,7 @@ describe("telemetry route", () => {
     expect(response.status).toBe(200);
   });
 
-  it("returns an empty array when the ledger does not exist", async () => {
+  it("returns empty alerts when the ledger does not exist", async () => {
     const missingLedgerError = Object.assign(new Error("missing ledger"), {
       code: "ENOENT",
     });
@@ -109,7 +126,7 @@ describe("telemetry route", () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([]);
+    expect(body).toEqual({ activeProcessCount: 3, alerts: [] });
   });
 
   it("fails closed when the ledger contains malformed JSON", async () => {
@@ -120,13 +137,13 @@ describe("telemetry route", () => {
     expect(response.status).toBe(500);
   });
 
-  it("returns an empty array for malformed ledger data", async () => {
+  it("returns empty alerts for malformed ledger data", async () => {
     vi.spyOn(fs.promises, "readFile").mockResolvedValue("not-json");
 
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual([]);
+    expect(body).toEqual({ activeProcessCount: 3, alerts: [] });
   });
 
   it("fails closed when a newline-delimited record is not an object", async () => {
@@ -156,5 +173,15 @@ describe("telemetry route", () => {
     const response = await GET();
 
     expect(response.status).toBe(500);
+  });
+
+  it("reads the active process count from the core registry", async () => {
+    vi.spyOn(fs.promises, "readFile").mockResolvedValue("[]");
+    registryMocks.getActiveWorkspaceProcessCount.mockReturnValue(7);
+
+    const response = await GET();
+    const body: unknown = await response.json();
+
+    expect(body).toEqual({ activeProcessCount: 7, alerts: [] });
   });
 });

@@ -99,6 +99,19 @@ function unregisterWorkspaceProcess(pid) {
 }
 
 /**
+ * Returns the number of child processes currently owned by this runtime registry.
+ *
+ * @returns {number} The current number of registered workspace process IDs.
+ * @complexity O(1) time and O(1) space through native `Set.prototype.size`.
+ * @example
+ * getActiveWorkspaceProcessCount();
+ * // => 2
+ */
+function getActiveWorkspaceProcessCount() {
+  return monitoredProcessIds.size;
+}
+
+/**
  * Terminates one registered process and asynchronously records its threat event.
  *
  * @param {number} pid - The positive process identifier of the owned agent child.
@@ -152,6 +165,7 @@ function quarantineRegisteredProcesses(illegalPath) {
 }
 
 module.exports = {
+  getActiveWorkspaceProcessCount,
   quarantineProcess,
   quarantineRegisteredProcesses,
   registerWorkspaceProcess,

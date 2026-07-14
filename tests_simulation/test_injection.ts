@@ -9,6 +9,10 @@ const POISONED_TICKET_PATH = path.resolve(
   SANDBOX_ROOT,
   "poisoned_ticket.txt",
 );
+const SIMULATION_ARTIFACT_PATHS: ReadonlySet<string> = new Set([
+  POISONED_TICKET_PATH,
+  path.resolve(SANDBOX_ROOT, "Poisoned_ticket.txt"),
+]);
 const ALERTS_LEDGER_PATH = path.resolve(PROJECT_ROOT, "alerts.json");
 const MOCK_AGENT_FLAG = "--mock-agent";
 const LEDGER_TIMEOUT_MS = 2_000;
@@ -31,6 +35,44 @@ interface AlertEvent {
   readonly illegalPath: string;
   readonly action: "process_quarantined";
   readonly signal: "SIGKILL";
+}
+
+/**
+ * Removes only sandbox artifacts explicitly owned by the injection simulation.
+ *
+ * @returns {void} No value; missing artifacts are ignored idempotently.
+ * @complexity O(A) time for A allowlisted artifacts and O(1) auxiliary space.
+ * @example
+ * cleanupSimulationArtifacts();
+ * // => undefined; poisoned ticket fixtures no longer exist
+ */
+function cleanupSimulationArtifacts(): void {
+  for (const artifactPath of SIMULATION_ARTIFACT_PATHS) {
+    fs.rmSync(artifactPath, { force: true });
+  }
+}
+
+/**
+ * Registers process lifecycle hooks that sanitize simulation-owned fixtures.
+ *
+ * @returns {void} No value; cleanup runs during normal exit and termination
+ * signals.
+ * @complexity O(1) listener registration time and space.
+ * @example
+ * registerSimulationCleanupListeners();
+ * // => undefined
+ */
+function registerSimulationCleanupListeners(): void {
+  process.once("beforeExit", cleanupSimulationArtifacts);
+  process.once("exit", cleanupSimulationArtifacts);
+  process.once("SIGINT", () => {
+    cleanupSimulationArtifacts();
+    process.exit(130);
+  });
+  process.once("SIGTERM", () => {
+    cleanupSimulationArtifacts();
+    process.exit(143);
+  });
 }
 
 function isPathAttempt(message: unknown): message is PathAttempt {
@@ -199,18 +241,28 @@ async function waitForMatchingAlert(
 }
 
 async function runInjectionSimulation(): Promise<void> {
-  const watchdog = require("../src/core/watchdog") as typeof import("../src/core/watchdog");
+  const watchdog = require("../src/core/watchdog") as typeof import(
+    "../src/core/watchdog"
+  );
   let mockAgent: childProcess.ChildProcess | undefined;
 
-  await fs.promises.writeFile(POISONED_TICKET_PATH, POISONED_TICKET, "utf8");
-  console.log(`[SETUP] Poisoned ticket written to ${POISONED_TICKET_PATH}.`);
-
   try {
-    mockAgent = childProcess.fork(__filename, [MOCK_AGENT_FLAG, POISONED_TICKET_PATH], {
-      cwd: SANDBOX_ROOT,
-      execArgv: ["-r", require.resolve("ts-node/register")],
-      stdio: ["ignore", "inherit", "inherit", "ipc"],
-    });
+    await fs.promises.writeFile(
+      POISONED_TICKET_PATH,
+      POISONED_TICKET,
+      "utf8",
+    );
+    console.log(`[SETUP] Poisoned ticket written to ${POISONED_TICKET_PATH}.`);
+
+    mockAgent = childProcess.fork(
+      __filename,
+      [MOCK_AGENT_FLAG, POISONED_TICKET_PATH],
+      {
+        cwd: SANDBOX_ROOT,
+        execArgv: ["-r", require.resolve("ts-node/register")],
+        stdio: ["ignore", "inherit", "inherit", "ipc"],
+      },
+    );
 
     const attempt = await waitForPathAttempt(mockAgent);
     const pid = mockAgent.pid;
@@ -260,6 +312,8 @@ async function runInjectionSimulation(): Promise<void> {
     ) {
       mockAgent.kill("SIGKILL");
     }
+
+    cleanupSimulationArtifacts();
   }
 }
 
@@ -279,6 +333,7 @@ if (process.argv[2] === MOCK_AGENT_FLAG) {
     }
   });
 } else {
+  registerSimulationCleanupListeners();
   void runInjectionSimulation().catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;

@@ -1,6 +1,7 @@
 import { describe, expect, it, test } from "vitest";
 
 import {
+  getActiveWorkspaceProcessCount,
   registerWorkspaceProcess,
   unregisterWorkspaceProcess,
 } from "../../src/core/processIsolation.cjs";
@@ -26,6 +27,16 @@ describe("process isolation registry", () => {
       expect(() => registerWorkspaceProcess(61_002)).not.toThrow();
     } finally {
       unregisterWorkspaceProcess(61_002);
+    }
+  });
+
+  it("reports the live number of registered process IDs", () => {
+    try {
+      registerWorkspaceProcess(61_003);
+
+      expect(getActiveWorkspaceProcessCount()).toBe(1);
+    } finally {
+      unregisterWorkspaceProcess(61_003);
     }
   });
 });
