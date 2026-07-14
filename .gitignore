@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test output
+coverage/
+
+# Runtime sandbox data
+sandbox_workspace/*
+!sandbox_workspace/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+alerts.json
+
+# Tooling and operating system files
+.cache/
+.DS_Store
+
+# Local strategy documents
+VC.md

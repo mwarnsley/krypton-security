@@ -1,0 +1,31 @@
+{
+  "name": "krypton-security",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:sim": "ts-node tests_simulation/test_injection.ts",
+    "test:unit": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mwarnsley/krypton-security.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mwarnsley/krypton-security/issues"
+  },
+  "homepage": "https://github.com/mwarnsley/krypton-security#readme",
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}
