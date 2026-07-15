@@ -1,13 +1,18 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../Tooltip';
 
 export interface InfoTooltipProps {
   /** The concise control or column name used in the trigger's accessible label. */
   readonly label: string;
 
-  /** The plain-language explanation displayed above the trigger. */
-  readonly content: string;
+  /** The plain-language explanation or structured onboarding content displayed above the trigger. */
+  readonly content: ReactNode;
+
+  /** Optional utility classes applied to the portaled tooltip content shell. */
+  readonly contentClassName?: string;
 }
 
 /**
@@ -20,7 +25,7 @@ export interface InfoTooltipProps {
  * // => renders a filled info icon with an above-positioned tooltip
  */
 export function InfoTooltip(props: InfoTooltipProps): React.JSX.Element {
-  const { content, label } = props;
+  const { content, contentClassName, label } = props;
 
   return (
     <TooltipProvider delayDuration={0} disableHoverableContent skipDelayDuration={0}>
@@ -47,7 +52,9 @@ export function InfoTooltip(props: InfoTooltipProps): React.JSX.Element {
             </svg>
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">{content}</TooltipContent>
+        <TooltipContent className={contentClassName} side="top">
+          {content}
+        </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

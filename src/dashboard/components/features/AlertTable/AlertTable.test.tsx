@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, test, vi } from 'vitest';
 
 import {
+  ActionsHeaderTooltipContent,
   AlertTable,
   formatAlertTimestamp,
   formatAttemptedAction,
@@ -59,16 +60,36 @@ describe('AlertTable', () => {
     expect(markup).toContain(columnLabel);
   });
 
-  test.each([
-    '2026-07-14 • 12:00:00 PM',
-    String(ALERT.targetProcessId),
-    'Read File',
-    ALERT.attemptedPath,
-    'Quarantined',
-  ])('renders alert field %s', (fieldValue) => {
+  test.each([String(ALERT.targetProcessId), 'Read File', ALERT.attemptedPath, 'Quarantined'])(
+    'renders alert field %s',
+    (fieldValue) => {
+      const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+      expect(markup).toContain(fieldValue);
+    }
+  );
+
+  it('renders the captured timestamp in the local device timezone', () => {
+    const originalTimezone = process.env.TZ;
+    process.env.TZ = 'America/Indiana/Indianapolis';
+
+    try {
+      const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+      expect(markup).toContain('2026-07-14 • 08:00:00 AM');
+    } finally {
+      if (originalTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTimezone;
+      }
+    }
+  });
+
+  it('preserves the captured ISO timestamp for machine-readable markup', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
-    expect(markup).toContain(fieldValue);
+    expect(markup).toContain(`dateTime="${ALERT.timestamp}"`);
   });
 
   it('renders the telemetry empty state', () => {
@@ -77,10 +98,41 @@ describe('AlertTable', () => {
     expect(markup).toContain('No security alerts detected.');
   });
 
-  it('renders the per-process Force Isolate action', () => {
+  it('renders one compact per-process action-menu trigger', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
+    expect(markup).toContain('aria-label="Open actions for process 4242"');
+    expect(markup).toContain('aria-haspopup="menu"');
+  });
+
+  it('removes inline action labels from the closed table row', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).not.toContain('aria-label="Force isolate process 4242"');
+    expect(markup).not.toContain('aria-label="Download exploit signature for process 4242"');
+  });
+
+  it('renders structured onboarding content for both Actions options', () => {
+    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
+
     expect(markup).toContain('Force Isolate');
+    expect(markup).toContain('Download Signature');
+    expect(markup).toContain('my-3 border-t border-slate-800/60');
+  });
+
+  it('styles both Actions descriptions with softer supporting text', () => {
+    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
+
+    expect(markup.match(/text-xs font-normal leading-relaxed text-slate-400/g)).toHaveLength(2);
+  });
+
+  it('uses distinct high-contrast treatments for both Actions headers', () => {
+    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
+
+    expect(markup).toContain('mb-1 flex items-center gap-2 text-sm font-semibold text-rose-400');
+    expect(markup).toContain(
+      'mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-cyan-400'
+    );
   });
 
   it('renders the default Timestamp sort as descending', () => {
@@ -176,13 +228,28 @@ describe('AlertTable', () => {
   });
 
   it('formats ISO telemetry dates for fast scanning', () => {
-    expect(formatAlertTimestamp(ALERT.timestamp)).toBe('2026-07-14 • 12:00:00 PM');
+    const originalTimezone = process.env.TZ;
+    process.env.TZ = 'America/Indiana/Indianapolis';
+
+    try {
+      expect(formatAlertTimestamp(ALERT.timestamp)).toBe('2026-07-14 • 08:00:00 AM');
+    } finally {
+      if (originalTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTimezone;
+      }
+    }
   });
 
-  it('provides an accessible process-specific isolation label', () => {
-    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+  it('returns malformed timestamps unchanged', () => {
+    expect(formatAlertTimestamp('not-an-iso-date')).toBe('not-an-iso-date');
+  });
 
-    expect(markup).toContain('aria-label="Force isolate process 4242"');
+  it('explains that Force Isolate sends SIGKILL', () => {
+    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
+
+    expect(markup).toContain('termination signal (SIGKILL)');
   });
 
   it('returns the verified native success message for table rendering', async () => {

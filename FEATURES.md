@@ -72,6 +72,13 @@ strong protection visible and intentional.
   quarantine only for processes registered to the active workspace.
 - Returns explicit success and error payloads so containment outcomes remain
   visible without blocking or destabilizing the interface.
+- Deploys a **"Timeline Rewind" (One-Click Exploit Reproduction)** capability.
+  Next to each intercepted alert, developers can use a dropdown option to
+  instantly download a perfectly formatted Markdown signature report. This
+  packages confusing, technical system logs (like Process IDs and absolute
+  folder pathways) into a clean, human-readable summary that a developer can
+  immediately pass to a security team or use to patch their code repository on
+  the spot.
 
 ## Future milestones
 

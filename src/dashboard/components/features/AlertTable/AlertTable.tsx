@@ -12,11 +12,24 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import clsx from 'clsx';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { format, isValid, parseISO } from 'date-fns';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Download,
+  MoreVertical,
+  SquareTerminal,
+} from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   InfoTooltip,
   Pagination,
   PaginationContent,
@@ -26,6 +39,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '../../ui';
+import { downloadExploitSignature } from './exploitSignature';
 
 export type EnforcementStatus = 'AUTOMATED_QUARANTINE' | 'INTERCEPTED' | 'QUARANTINED';
 
@@ -137,35 +151,59 @@ export function formatEnforcementStatus(enforcementStatus: EnforcementStatus): s
 }
 
 /**
- * Formats an ISO timestamp into the stable operator ledger date format.
- *
- * UTC fields are used so server rendering and browser hydration produce the
- * same display value.
+ * Parses an ISO timestamp and formats it in the local device timezone.
  *
  * @param {string} timestamp - The raw ISO-8601 timestamp from telemetry.
  * @returns {string} A readable `YYYY-MM-DD • HH:MM:SS AM/PM` timestamp.
  * @complexity O(L) time and O(1) auxiliary space for fixed-length date fields.
  * @example
- * formatAlertTimestamp("2026-07-14T12:00:00.000Z");
+ * formatAlertTimestamp("2026-07-14T12:00:00");
  * // => "2026-07-14 • 12:00:00 PM"
  */
 export function formatAlertTimestamp(timestamp: string): string {
-  const date = new Date(timestamp);
+  const capturedAt = parseISO(timestamp);
 
-  if (!Number.isFinite(date.getTime())) {
+  if (!isValid(capturedAt)) {
     return timestamp;
   }
 
-  const year = String(date.getUTCFullYear()).padStart(4, '0');
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = date.getUTCHours();
-  const twelveHour = hours % 12 || 12;
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-  const meridiem = hours >= 12 ? 'PM' : 'AM';
+  return format(capturedAt, 'yyyy-MM-dd • hh:mm:ss a');
+}
 
-  return `${year}-${month}-${day} • ${String(twelveHour).padStart(2, '0')}:${minutes}:${seconds} ${meridiem}`;
+/**
+ * Renders structured onboarding guidance for the alert-row action menu.
+ *
+ * @returns {React.JSX.Element} Two action explanations separated by a subtle divider.
+ * @example
+ * <ActionsHeaderTooltipContent />
+ * // => explains Force Isolate and Download Signature
+ */
+export function ActionsHeaderTooltipContent(): React.JSX.Element {
+  return (
+    <div>
+      <section>
+        <strong className="mb-1 flex items-center gap-2 text-sm font-semibold text-rose-400">
+          <SquareTerminal aria-hidden="true" className="h-4 w-4" />
+          Force Isolate
+        </strong>
+        <p className="text-xs font-normal leading-relaxed text-slate-400">
+          Immediately drops an OS-level termination signal (SIGKILL) onto the rogue process ID to
+          instantly halt execution.
+        </p>
+      </section>
+      <div aria-hidden="true" className="my-3 border-t border-slate-800/60" />
+      <section>
+        <strong className="mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-cyan-400">
+          <Download aria-hidden="true" className="h-4 w-4" />
+          Download Signature
+        </strong>
+        <p className="text-xs font-normal leading-relaxed text-slate-400">
+          Bundles the captured filesystem traversal paths, process identifiers, and mitigation
+          metrics into a structured Markdown security report wrapper.
+        </p>
+      </section>
+    </div>
+  );
 }
 
 /**
@@ -439,7 +477,8 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           <div className="flex items-center justify-between gap-3 w-full primitive-header-wrapper">
             <span className="whitespace-nowrap">Actions</span>
             <InfoTooltip
-              content="Force Isolate immediately requests termination of the selected process. Krypton only terminates registered child processes owned by the active workspace."
+              content={<ActionsHeaderTooltipContent />}
+              contentClassName="max-w-[320px] rounded-xl border border-slate-800 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-md sm:p-5"
               label="Actions"
             />
           </div>
@@ -450,18 +489,46 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           const isolationStatus = isolationStatuses.get(targetProcessId);
 
           return (
-            <div className="flex min-w-32 flex-col items-start gap-1.5">
-              <Button
-                aria-busy={isIsolating}
-                aria-label={`Force isolate process ${targetProcessId}`}
-                className="font-bold"
-                disabled={isIsolating}
-                onClick={() => void forceIsolate(targetProcessId)}
-                size="sm"
-                variant="destructive"
-              >
-                {isIsolating ? 'Isolating…' : 'Force Isolate'}
-              </Button>
+            <div className="flex min-w-10 flex-col items-start gap-1.5">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-busy={isIsolating}
+                    aria-label={`Open actions for process ${targetProcessId}`}
+                    disabled={isIsolating}
+                    size="icon"
+                    variant="ghost"
+                  >
+                    <MoreVertical aria-hidden="true" className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="text-rose-300 focus:bg-rose-500/10 focus:text-rose-200"
+                    disabled={isIsolating}
+                    onSelect={() => void forceIsolate(targetProcessId)}
+                  >
+                    <SquareTerminal aria-hidden="true" className="h-4 w-4" />
+                    {isIsolating ? 'Isolating…' : 'Force Isolate'}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-slate-200 focus:text-white"
+                    onSelect={() =>
+                      downloadExploitSignature({
+                        mitigationStatus: formatEnforcementStatus(row.original.enforcementStatus),
+                        securityEvent: formatAttemptedAction(row.original.attemptedAction),
+                        targetProcessId,
+                        timestamp: row.original.timestamp,
+                        violatedContainmentPath: row.original.attemptedPath,
+                      })
+                    }
+                  >
+                    <Download aria-hidden="true" className="h-4 w-4" />
+                    Download Signature
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               {isolationStatus ? (
                 <span
                   aria-live="polite"

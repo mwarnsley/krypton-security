@@ -1,4 +1,5 @@
 export * from './Button';
+export * from './DropdownMenu';
 export * from './InfoTooltip';
 export * from './Pagination';
 export * from './StatusCard';

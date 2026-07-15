@@ -1,4 +1,5 @@
 export {
+  ActionsHeaderTooltipContent,
   AlertTable,
   formatAlertTimestamp,
   formatAttemptedAction,
@@ -11,3 +12,9 @@ export type {
   IsolationExecutionStatus,
   SecurityAlert,
 } from './AlertTable';
+export { downloadExploitSignature, generateExploitSignatureReport } from './exploitSignature';
+export type {
+  ExploitSignatureFormat,
+  ExploitSignaturePayload,
+  ExploitSignatureReport,
+} from './exploitSignature';
