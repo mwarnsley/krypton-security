@@ -171,6 +171,19 @@ describe('telemetry termination route', () => {
     });
   });
 
+  it('returns conflict when audit-only mode suppresses isolation', async () => {
+    netMocks.setNextReceipt('ERROR: AUDIT_ONLY\n');
+
+    const response = await POST(createRequest(JSON.stringify({ targetProcessId: 4242 })));
+    const body: unknown = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toEqual({
+      success: false,
+      message: 'Isolation is disabled while Audit-Only Mode is active.',
+    });
+  });
+
   it('rejects unexpected native execution receipts', async () => {
     netMocks.setNextReceipt('ERROR: ISOLATION_FAILED\n');
 

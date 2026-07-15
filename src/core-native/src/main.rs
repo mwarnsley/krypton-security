@@ -2,13 +2,13 @@ use chrono::{SecondsFormat, Utc};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 use notify::{Event, RecursiveMode, Watcher};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, sync_channel, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, RwLock};
@@ -16,20 +16,76 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const ALERT_QUEUE_CAPACITY: usize = 1_024;
-const BREAKOUT_RATE_LIMIT: usize = 3;
-const BREAKOUT_RATE_WINDOW: Duration = Duration::from_secs(5);
+const CONFIG_FILE_NAME: &str = "krypton.config.json";
 const IPC_BIND_ADDRESS: &str = "127.0.0.1:9000";
 const IPC_MAX_PAYLOAD_BYTES: u64 = 64;
 const IPC_READ_TIMEOUT: Duration = Duration::from_secs(2);
 const IPC_ERROR_INVALID_COMMAND: &str = "ERROR: INVALID_COMMAND\n";
 const IPC_ERROR_ISOLATION_FAILED: &str = "ERROR: ISOLATION_FAILED\n";
+const IPC_ERROR_AUDIT_ONLY: &str = "ERROR: AUDIT_ONLY\n";
+const IPC_ERROR_MODE_UPDATE_FAILED: &str = "ERROR: MODE_UPDATE_FAILED\n";
 const IPC_ERROR_PID_NOT_OWNED: &str = "ERROR: PID_NOT_OWNED\n";
+const IPC_SUCCESS_AUDIT_MODE_UPDATED: &str = "SUCCESS: AUDIT_MODE_UPDATED\n";
 const IPC_SUCCESS_PID_ISOLATED: &str = "SUCCESS: PID_ISOLATED\n";
 const NATIVE_TRIGGER_SIGNATURE: &str = "NATIVE_FS_WATCH";
 static ALERT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 type OwnedProcessRegistry = Arc<RwLock<HashSet<u32>>>;
 type BreakoutHistory = Arc<Mutex<HashMap<u32, VecDeque<Instant>>>>;
+type ExecutionState = Arc<RwLock<EnforcementMode>>;
+
+/// Groups shared watchdog state used to process one filesystem breakout.
+struct BreakoutRuntime<'a> {
+    /// The thread-safe per-PID sliding event histories.
+    breakout_history: &'a BreakoutHistory,
+    /// The native least-privilege process ownership registry.
+    owned_processes: &'a OwnedProcessRegistry,
+    /// The current thread-safe enforcement mode.
+    execution_state: &'a ExecutionState,
+    /// The non-blocking telemetry queue sender.
+    alert_sender: &'a SyncSender<SecurityAlert>,
+    /// The configured duration and maximum breakout count.
+    rate_limit_policy: RateLimitPolicy,
+}
+
+/// Defines the repository-root runtime profile loaded during daemon startup.
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+struct RuntimeConfig {
+    /// The repository-relative directory authorized for agent filesystem work.
+    sandbox_path: PathBuf,
+    /// The sliding breakout-window duration in seconds.
+    rate_limit_window_seconds: u64,
+    /// The maximum breakouts allowed before active enforcement isolates a child.
+    rate_limit_max_breakouts: usize,
+}
+
+/// Stores the validated rate-limit values used by the monitoring loop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RateLimitPolicy {
+    /// The monotonic sliding window applied to each registered process.
+    window: Duration,
+    /// The maximum retained breakout count before quarantine enforcement.
+    max_breakouts: usize,
+}
+
+/// Controls whether detected breakouts trigger process termination.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum EnforcementMode {
+    /// Breakouts are logged and rate-limited child processes are terminated.
+    ActiveEnforcement,
+    /// Breakouts are logged without invoking native process termination.
+    #[default]
+    AuditOnly,
+}
+
+/// Represents one validated command received over the loopback IPC channel.
+#[derive(Debug, Eq, PartialEq)]
+enum IpcCommand {
+    /// Requests immediate isolation of one registered child process.
+    Isolate(u32),
+    /// Enables or disables telemetry-only audit operation.
+    SetAuditMode(bool),
+}
 
 /// Represents a fail-closed native process-isolation failure.
 #[derive(Debug, Eq, PartialEq)]
@@ -206,12 +262,105 @@ fn resolve_project_root(current_dir: &Path) -> Result<PathBuf, io::Error> {
     fs::canonicalize(project_root)
 }
 
+/// Loads and validates the repository-root Krypton runtime profile.
+///
+/// # Arguments
+///
+/// * `project_root` - The canonical repository root containing the profile.
+///
+/// # Returns
+///
+/// Returns the validated sandbox and rate-limit configuration.
+///
+/// # Errors
+///
+/// Returns an invalid-data error when JSON parsing fails, a rate-limit value is
+/// zero, or the sandbox is empty, absolute, or contains parent traversal.
+///
+/// # Complexity
+///
+/// Runs in O(C) time and space for configuration payload length C.
+///
+/// # Examples
+///
+/// ```ignore
+/// let config = load_runtime_config(Path::new("/project"))?;
+/// assert_eq!(config.sandbox_path, Path::new("sandbox_workspace"));
+/// ```
+fn load_runtime_config(project_root: &Path) -> Result<RuntimeConfig, io::Error> {
+    let config_path = project_root.join(CONFIG_FILE_NAME);
+    let config_contents = fs::read_to_string(&config_path)?;
+    let config: RuntimeConfig = serde_json::from_str(&config_contents).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{CONFIG_FILE_NAME} is not valid JSON: {error}"),
+        )
+    })?;
+    let contains_unsafe_component = config.sandbox_path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    });
+
+    if config.sandbox_path.as_os_str().is_empty() || contains_unsafe_component {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "sandbox_path must be a non-empty repository-relative path without parent traversal",
+        ));
+    }
+
+    if config.rate_limit_window_seconds == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "rate_limit_window_seconds must be greater than zero",
+        ));
+    }
+
+    if config.rate_limit_max_breakouts == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "rate_limit_max_breakouts must be greater than zero",
+        ));
+    }
+
+    Ok(config)
+}
+
+/// Converts one validated runtime profile into an immutable rate-limit policy.
+///
+/// # Arguments
+///
+/// * `config` - The validated runtime profile loaded from disk.
+///
+/// # Returns
+///
+/// Returns the duration and maximum breakout count used by event processing.
+///
+/// # Complexity
+///
+/// Runs in O(1) time and space.
+///
+/// # Examples
+///
+/// ```ignore
+/// let policy = rate_limit_policy(&config);
+/// assert_eq!(policy.max_breakouts, 3);
+/// ```
+fn rate_limit_policy(config: &RuntimeConfig) -> RateLimitPolicy {
+    RateLimitPolicy {
+        window: Duration::from_secs(config.rate_limit_window_seconds),
+        max_breakouts: config.rate_limit_max_breakouts,
+    }
+}
+
 /// Resolves and creates the repository-root sandbox directory when necessary.
 ///
 /// # Arguments
 ///
 /// * `project_root` - The absolute Krypton repository root resolved from the
 ///   process working directory.
+/// * `configured_path` - The validated repository-relative sandbox path.
 ///
 /// # Returns
 ///
@@ -221,8 +370,9 @@ fn resolve_project_root(current_dir: &Path) -> Result<PathBuf, io::Error> {
 ///
 /// Returns an error when the directory cannot be created or canonicalized, or
 /// when the configured sandbox path exists but is not a directory.
-fn ensure_sandbox_root(project_root: &Path) -> Result<PathBuf, io::Error> {
-    let sandbox_root = project_root.join("sandbox_workspace");
+fn ensure_sandbox_root(project_root: &Path, configured_path: &Path) -> Result<PathBuf, io::Error> {
+    let canonical_project_root = fs::canonicalize(project_root)?;
+    let sandbox_root = canonical_project_root.join(configured_path);
 
     if !sandbox_root.exists() {
         fs::create_dir_all(&sandbox_root)?;
@@ -234,6 +384,13 @@ fn ensure_sandbox_root(project_root: &Path) -> Result<PathBuf, io::Error> {
         return Err(io::Error::new(
             io::ErrorKind::NotADirectory,
             "the sandbox workspace path is not a directory",
+        ));
+    }
+
+    if !canonical_sandbox_root.starts_with(canonical_project_root) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "the configured sandbox must remain inside the Krypton project root",
         ));
     }
 
@@ -352,35 +509,37 @@ fn try_enqueue_security_alert(alert_sender: &SyncSender<SecurityAlert>, alert: S
 /// FSEvents does not identify the process that caused a filesystem mutation, so
 /// the native watchdog mirrors the reference engine's fail-closed behavior and
 /// applies the event only to the current owned-process registry snapshot.
-/// Histories are pruned to the five-second sliding window before the new event
-/// is appended, and stale or unregistered process entries are removed.
+/// Histories are pruned to the configured sliding window before the new event is
+/// appended, and stale or unregistered process entries are removed.
 ///
 /// # Arguments
 ///
 /// * `breakout_history` - The thread-safe per-PID sliding event histories.
 /// * `owned_processes` - The native least-privilege process ownership registry.
 /// * `observed_at` - The monotonic time at which the breakout was observed.
+/// * `rate_limit_policy` - The configured duration and maximum breakout count.
 ///
 /// # Returns
 ///
-/// Returns the registered PIDs whose histories now exceed three events, or a
+/// Returns registered PIDs whose histories exceed the configured maximum, or a
 /// fail-closed synchronization error.
 ///
 /// # Complexity
 ///
 /// Runs in O(P + E) time for P registered processes and E retained events, with
-/// O(P + E) history storage bounded by the active five-second window.
+/// O(P + E) history storage bounded by the configured active window.
 fn record_registered_breakout(
     breakout_history: &BreakoutHistory,
     owned_processes: &OwnedProcessRegistry,
     observed_at: Instant,
+    rate_limit_policy: RateLimitPolicy,
 ) -> Result<Vec<u32>, RateLimitError> {
     let registered_processes = owned_processes
         .read()
         .map_err(|_| RateLimitError::RegistryUnavailable)?
         .clone();
     let window_start = observed_at
-        .checked_sub(BREAKOUT_RATE_WINDOW)
+        .checked_sub(rate_limit_policy.window)
         .unwrap_or(observed_at);
     let mut histories = breakout_history
         .lock()
@@ -403,7 +562,7 @@ fn record_registered_breakout(
         let history = histories.entry(target_pid).or_default();
         history.push_back(observed_at);
 
-        if history.len() > BREAKOUT_RATE_LIMIT {
+        if history.len() > rate_limit_policy.max_breakouts {
             rate_limited_processes.push(target_pid);
         }
     }
@@ -437,6 +596,7 @@ fn clear_breakout_history(breakout_history: &BreakoutHistory, target_pid: u32) {
 /// * `alert_sender` - The non-blocking telemetry queue sender.
 /// * `event_path` - The denied path associated with this breakout event.
 /// * `observed_at` - The monotonic time at which the breakout was observed.
+/// * `rate_limit_policy` - The configured duration and maximum breakout count.
 /// * `signal_process` - The injected native signal operation.
 fn enforce_breakout_rate_limit<F>(
     breakout_history: &BreakoutHistory,
@@ -444,18 +604,23 @@ fn enforce_breakout_rate_limit<F>(
     alert_sender: &SyncSender<SecurityAlert>,
     event_path: &Path,
     observed_at: Instant,
+    rate_limit_policy: RateLimitPolicy,
     mut signal_process: F,
 ) where
     F: FnMut(u32) -> Result<(), String>,
 {
-    let rate_limited_processes =
-        match record_registered_breakout(breakout_history, owned_processes, observed_at) {
-            Ok(rate_limited_processes) => rate_limited_processes,
-            Err(error) => {
-                eprintln!("[ERROR] Breakout rate evaluation failed closed: {error:?}");
-                return;
-            }
-        };
+    let rate_limited_processes = match record_registered_breakout(
+        breakout_history,
+        owned_processes,
+        observed_at,
+        rate_limit_policy,
+    ) {
+        Ok(rate_limited_processes) => rate_limited_processes,
+        Err(error) => {
+            eprintln!("[ERROR] Breakout rate evaluation failed closed: {error:?}");
+            return;
+        }
+    };
 
     for target_pid in rate_limited_processes {
         let isolation_result = isolate_registered_process(
@@ -483,6 +648,129 @@ fn enforce_breakout_rate_limit<F>(
             ),
         }
     }
+}
+
+/// Reads the current execution mode and fails closed to active enforcement.
+///
+/// # Arguments
+///
+/// * `execution_state` - The thread-safe mode shared by IPC and watcher workers.
+///
+/// # Returns
+///
+/// Returns the current mode, or [`EnforcementMode::ActiveEnforcement`] when the
+/// synchronization state is unavailable.
+///
+/// # Complexity
+///
+/// Runs in O(1) time and space.
+///
+/// # Examples
+///
+/// ```ignore
+/// let mode = read_enforcement_mode(&state);
+/// assert_eq!(mode, EnforcementMode::ActiveEnforcement);
+/// ```
+fn read_enforcement_mode(execution_state: &ExecutionState) -> EnforcementMode {
+    match execution_state.read() {
+        Ok(mode) => *mode,
+        Err(_) => {
+            eprintln!(
+                "[ERROR] Execution mode state is unavailable; defaulting to active enforcement."
+            );
+            EnforcementMode::ActiveEnforcement
+        }
+    }
+}
+
+/// Updates the current execution mode through the shared thread-safe state.
+///
+/// # Arguments
+///
+/// * `execution_state` - The thread-safe mode shared by IPC and watcher workers.
+/// * `audit_only` - Whether telemetry-only audit operation should be enabled.
+///
+/// # Returns
+///
+/// Returns the newly stored execution mode or an error when the state lock is
+/// unavailable.
+///
+/// # Complexity
+///
+/// Runs in O(1) time and space.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(set_audit_mode(&state, true)?, EnforcementMode::AuditOnly);
+/// ```
+fn set_audit_mode(
+    execution_state: &ExecutionState,
+    audit_only: bool,
+) -> Result<EnforcementMode, &'static str> {
+    let next_mode = if audit_only {
+        EnforcementMode::AuditOnly
+    } else {
+        EnforcementMode::ActiveEnforcement
+    };
+    let mut mode = execution_state
+        .write()
+        .map_err(|_| "the execution mode state is unavailable")?;
+
+    *mode = next_mode;
+
+    Ok(next_mode)
+}
+
+/// Logs one denied filesystem event and conditionally applies rate enforcement.
+///
+/// Audit-only operation always persists the normal seven-field intercepted
+/// alert but bypasses breakout tracking and native signal delivery entirely.
+///
+/// # Arguments
+///
+/// * `runtime` - The shared registries, execution state, sender, and rate policy.
+/// * `event_path` - The denied or indeterminate filesystem event path.
+/// * `observed_at` - The monotonic time at which the breakout was observed.
+/// * `signal_process` - The injected native signal operation.
+///
+/// # Complexity
+///
+/// Audit-only handling runs in O(L) time and space for path length L. Active
+/// enforcement inherits O(P + E) time and space from rate-limit tracking.
+///
+/// # Examples
+///
+/// ```ignore
+/// process_breakout_event(&runtime, path, Instant::now(), terminate_native_process);
+/// ```
+fn process_breakout_event<F>(
+    runtime: &BreakoutRuntime<'_>,
+    event_path: &Path,
+    observed_at: Instant,
+    signal_process: F,
+) where
+    F: FnMut(u32) -> Result<(), String>,
+{
+    enqueue_security_alert(runtime.alert_sender, event_path);
+
+    if read_enforcement_mode(runtime.execution_state) == EnforcementMode::AuditOnly {
+        println!(
+            "[AUDIT ONLY] Breakout logged without process termination: {}",
+            event_path.display()
+        );
+        return;
+    }
+
+    enforce_breakout_rate_limit(
+        runtime.breakout_history,
+        runtime.owned_processes,
+        runtime.alert_sender,
+        event_path,
+        observed_at,
+        runtime.rate_limit_policy,
+        signal_process,
+    );
 }
 
 /// Parses one strict force-isolation IPC command.
@@ -518,6 +806,35 @@ fn parse_isolate_command(payload: &str) -> Result<u32, &'static str> {
     }
 
     Ok(target_pid)
+}
+
+/// Parses one bounded isolation or audit-mode IPC command.
+///
+/// # Arguments
+///
+/// * `payload` - The complete UTF-8 command payload received over loopback TCP.
+///
+/// # Returns
+///
+/// Returns a validated isolation or boolean audit-mode command, or a strict
+/// validation error for all other payloads.
+///
+/// # Complexity
+///
+/// Runs in O(L) time for payload length L and uses O(1) additional space.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(parse_ipc_command("TOGGLE_AUDIT_MODE:true"),
+///   Ok(IpcCommand::SetAuditMode(true)));
+/// ```
+fn parse_ipc_command(payload: &str) -> Result<IpcCommand, &'static str> {
+    match payload.trim() {
+        "TOGGLE_AUDIT_MODE:true" => Ok(IpcCommand::SetAuditMode(true)),
+        "TOGGLE_AUDIT_MODE:false" => Ok(IpcCommand::SetAuditMode(false)),
+        isolate_payload => parse_isolate_command(isolate_payload).map(IpcCommand::Isolate),
+    }
 }
 
 /// Sends `SIGKILL` to one validated native process identifier.
@@ -631,6 +948,7 @@ where
 ///
 /// * `stream` - The accepted loopback TCP client stream.
 /// * `owned_processes` - The shared native process ownership registry.
+/// * `execution_state` - The current thread-safe enforcement mode.
 ///
 /// # Returns
 ///
@@ -643,9 +961,13 @@ where
 /// # Examples
 ///
 /// ```ignore
-/// handle_ipc_connection(stream, registry);
+/// handle_ipc_connection(stream, &registry, &state);
 /// ```
-fn handle_ipc_connection(mut stream: TcpStream, owned_processes: &OwnedProcessRegistry) {
+fn handle_ipc_connection(
+    mut stream: TcpStream,
+    owned_processes: &OwnedProcessRegistry,
+    execution_state: &ExecutionState,
+) {
     if let Err(error) = stream.set_read_timeout(Some(IPC_READ_TIMEOUT)) {
         eprintln!("[IPC ERROR] Could not configure the client read timeout: {error}");
         return;
@@ -682,10 +1004,10 @@ fn handle_ipc_connection(mut stream: TcpStream, owned_processes: &OwnedProcessRe
         return;
     }
 
-    let target_pid = match parse_isolate_command(&payload) {
-        Ok(target_pid) => target_pid,
+    let command = match parse_ipc_command(&payload) {
+        Ok(command) => command,
         Err(error) => {
-            eprintln!("[IPC ERROR] Rejected isolation command: {error}");
+            eprintln!("[IPC ERROR] Rejected command: {error}");
             if let Err(write_error) = write_ipc_receipt(&mut stream, IPC_ERROR_INVALID_COMMAND) {
                 eprintln!(
                     "[IPC ERROR] Could not return the invalid-command receipt: {write_error}"
@@ -695,33 +1017,70 @@ fn handle_ipc_connection(mut stream: TcpStream, owned_processes: &OwnedProcessRe
         }
     };
 
-    println!(
-        "[IPC COMMAND] Received Force Isolate request for PID: {}",
-        target_pid
-    );
-
-    match isolate_registered_process(owned_processes, target_pid, terminate_native_process) {
-        Ok(()) => {
-            println!("[IPC ISOLATED] Successfully isolated owned PID: {target_pid}");
-            if let Err(error) = write_ipc_receipt(&mut stream, IPC_SUCCESS_PID_ISOLATED) {
-                eprintln!("[IPC ERROR] Could not return the isolation receipt: {error}");
+    match command {
+        IpcCommand::SetAuditMode(audit_only) => match set_audit_mode(execution_state, audit_only) {
+            Ok(next_mode) => {
+                println!("[IPC COMMAND] Execution mode updated to {next_mode:?}.");
+                if let Err(error) = write_ipc_receipt(&mut stream, IPC_SUCCESS_AUDIT_MODE_UPDATED) {
+                    eprintln!("[IPC ERROR] Could not return the mode-update receipt: {error}");
+                }
             }
-        }
-        Err(IsolationError::TargetNotOwned) => {
+            Err(error) => {
+                eprintln!("[IPC ERROR] Could not update execution mode: {error}");
+                if let Err(write_error) =
+                    write_ipc_receipt(&mut stream, IPC_ERROR_MODE_UPDATE_FAILED)
+                {
+                    eprintln!(
+                            "[IPC ERROR] Could not return the mode-update failure receipt: {write_error}"
+                        );
+                }
+            }
+        },
+        IpcCommand::Isolate(target_pid) => {
             println!(
-                "[SECURITY AUDIT] Unauthorized isolation request rejected for untracked PID: {}",
+                "[IPC COMMAND] Received Force Isolate request for PID: {}",
                 target_pid
             );
-            if let Err(error) = write_ipc_receipt(&mut stream, IPC_ERROR_PID_NOT_OWNED) {
-                eprintln!("[IPC ERROR] Could not return the ownership rejection receipt: {error}");
-            }
-        }
-        Err(error) => {
-            eprintln!("[IPC REJECTED] Could not isolate PID {target_pid}: {error:?}");
-            if let Err(write_error) = write_ipc_receipt(&mut stream, IPC_ERROR_ISOLATION_FAILED) {
-                eprintln!(
-                    "[IPC ERROR] Could not return the isolation failure receipt: {write_error}"
+
+            if read_enforcement_mode(execution_state) == EnforcementMode::AuditOnly {
+                println!(
+                    "[SECURITY AUDIT] Force Isolate skipped for PID {target_pid} while Audit-Only mode is active."
                 );
+                if let Err(error) = write_ipc_receipt(&mut stream, IPC_ERROR_AUDIT_ONLY) {
+                    eprintln!("[IPC ERROR] Could not return the audit-only receipt: {error}");
+                }
+                return;
+            }
+
+            match isolate_registered_process(owned_processes, target_pid, terminate_native_process)
+            {
+                Ok(()) => {
+                    println!("[IPC ISOLATED] Successfully isolated owned PID: {target_pid}");
+                    if let Err(error) = write_ipc_receipt(&mut stream, IPC_SUCCESS_PID_ISOLATED) {
+                        eprintln!("[IPC ERROR] Could not return the isolation receipt: {error}");
+                    }
+                }
+                Err(IsolationError::TargetNotOwned) => {
+                    println!(
+                        "[SECURITY AUDIT] Unauthorized isolation request rejected for untracked PID: {}",
+                        target_pid
+                    );
+                    if let Err(error) = write_ipc_receipt(&mut stream, IPC_ERROR_PID_NOT_OWNED) {
+                        eprintln!(
+                            "[IPC ERROR] Could not return the ownership rejection receipt: {error}"
+                        );
+                    }
+                }
+                Err(error) => {
+                    eprintln!("[IPC REJECTED] Could not isolate PID {target_pid}: {error:?}");
+                    if let Err(write_error) =
+                        write_ipc_receipt(&mut stream, IPC_ERROR_ISOLATION_FAILED)
+                    {
+                        eprintln!(
+                            "[IPC ERROR] Could not return the isolation failure receipt: {write_error}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -732,6 +1091,7 @@ fn handle_ipc_connection(mut stream: TcpStream, owned_processes: &OwnedProcessRe
 /// # Arguments
 ///
 /// * `owned_processes` - The shared native process ownership registry.
+/// * `execution_state` - The current thread-safe enforcement mode.
 ///
 /// # Returns
 ///
@@ -749,14 +1109,17 @@ fn handle_ipc_connection(mut stream: TcpStream, owned_processes: &OwnedProcessRe
 /// # Examples
 ///
 /// ```ignore
-/// let worker = start_ipc_listener(registry)?;
+/// let worker = start_ipc_listener(registry, state)?;
 /// ```
-fn start_ipc_listener(owned_processes: OwnedProcessRegistry) -> Result<JoinHandle<()>, io::Error> {
+fn start_ipc_listener(
+    owned_processes: OwnedProcessRegistry,
+    execution_state: ExecutionState,
+) -> Result<JoinHandle<()>, io::Error> {
     let listener = TcpListener::bind(IPC_BIND_ADDRESS)?;
     let worker_handle = thread::spawn(move || {
         for connection_result in listener.incoming() {
             match connection_result {
-                Ok(stream) => handle_ipc_connection(stream, &owned_processes),
+                Ok(stream) => handle_ipc_connection(stream, &owned_processes, &execution_state),
                 Err(error) => eprintln!("[IPC ERROR] Could not accept a connection: {error}"),
             }
         }
@@ -781,20 +1144,37 @@ fn start_ipc_listener(owned_processes: OwnedProcessRegistry) -> Result<JoinHandl
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let current_dir = std::env::current_dir()?;
     let project_root = resolve_project_root(&current_dir)?;
+    let runtime_config = load_runtime_config(&project_root)?;
+    let rate_limit_policy = rate_limit_policy(&runtime_config);
     let alerts_ledger_path = project_root.join("alerts.json");
-    let canonical_sandbox_root = ensure_sandbox_root(&project_root)?;
+    let canonical_sandbox_root = ensure_sandbox_root(&project_root, &runtime_config.sandbox_path)?;
     let (alert_sender, alert_writer) = start_alert_writer(alerts_ledger_path.clone());
     let owned_processes = Arc::new(RwLock::new(HashSet::new()));
     let breakout_history = Arc::new(Mutex::new(HashMap::new()));
-    let _ipc_worker = start_ipc_listener(Arc::clone(&owned_processes))?;
+    let execution_state = Arc::new(RwLock::new(EnforcementMode::default()));
+    let _ipc_worker =
+        start_ipc_listener(Arc::clone(&owned_processes), Arc::clone(&execution_state))?;
     let (event_sender, event_receiver) = channel::<notify::Result<Event>>();
     let sandbox_root_string = canonical_sandbox_root.to_string_lossy().into_owned();
     let mut watcher = notify::recommended_watcher(event_sender)?;
+    let breakout_runtime = BreakoutRuntime {
+        breakout_history: &breakout_history,
+        owned_processes: &owned_processes,
+        execution_state: &execution_state,
+        alert_sender: &alert_sender,
+        rate_limit_policy,
+    };
 
     watcher.watch(&project_root, RecursiveMode::Recursive)?;
 
     println!("[KRYPTON NATIVE] krypton-core-native startup verification successful.");
     println!("[KRYPTON NATIVE] IPC listener active at {IPC_BIND_ADDRESS}.");
+    println!(
+        "[KRYPTON NATIVE] Loaded {CONFIG_FILE_NAME}: sandbox={}, window={}s, max_breakouts={}.",
+        runtime_config.sandbox_path.display(),
+        runtime_config.rate_limit_window_seconds,
+        runtime_config.rate_limit_max_breakouts
+    );
     println!(
         "[KRYPTON NATIVE] Monitoring canonical project root path: {}",
         project_root.display()
@@ -828,11 +1208,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "[CRITICAL] PROJECT ROOT BREAKOUT EVENT INTERCEPTED AT: {}",
                                 event_path.display()
                             );
-                            enqueue_security_alert(&alert_sender, &event_path);
-                            enforce_breakout_rate_limit(
-                                &breakout_history,
-                                &owned_processes,
-                                &alert_sender,
+                            process_breakout_event(
+                                &breakout_runtime,
                                 &event_path,
                                 Instant::now(),
                                 terminate_native_process,
@@ -843,11 +1220,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "[CRITICAL] PROJECT ROOT EVENT FAILED CLOSED AT: {} ({error})",
                                 event_path.display()
                             );
-                            enqueue_security_alert(&alert_sender, &event_path);
-                            enforce_breakout_rate_limit(
-                                &breakout_history,
-                                &owned_processes,
-                                &alert_sender,
+                            process_breakout_event(
+                                &breakout_runtime,
                                 &event_path,
                                 Instant::now(),
                                 terminate_native_process,
@@ -874,13 +1248,17 @@ mod tests {
     use super::{
         append_security_alert, enforce_breakout_rate_limit, enqueue_security_alert,
         ensure_sandbox_root, is_ignored_event_path, is_path_safe, isolate_registered_process,
-        parse_isolate_command, record_registered_breakout, resolve_project_root, write_ipc_receipt,
-        IsolationError, SecurityAlert, IPC_ERROR_PID_NOT_OWNED, IPC_SUCCESS_PID_ISOLATED,
+        load_runtime_config, parse_ipc_command, parse_isolate_command, process_breakout_event,
+        rate_limit_policy, read_enforcement_mode, record_registered_breakout, resolve_project_root,
+        set_audit_mode, write_ipc_receipt, BreakoutRuntime, EnforcementMode, IpcCommand,
+        IsolationError, RateLimitPolicy, SecurityAlert, IPC_ERROR_PID_NOT_OWNED,
+        IPC_SUCCESS_PID_ISOLATED,
     };
     use serde_json::json;
     use std::cell::Cell;
     use std::collections::{HashMap, HashSet};
     use std::fs;
+    use std::io;
     use std::path::Path;
     use std::sync::mpsc::{sync_channel, TrySendError};
     use std::sync::{Arc, Mutex, RwLock};
@@ -896,6 +1274,14 @@ mod tests {
             attempted_path: "/tmp/escape".to_owned(),
             enforcement_status: "INTERCEPTED".to_owned(),
             trigger_signature: "NATIVE_FS_WATCH".to_owned(),
+        }
+    }
+
+    /// Builds the default configured five-second, three-breakout test policy.
+    fn rate_limit_policy_fixture() -> RateLimitPolicy {
+        RateLimitPolicy {
+            window: Duration::from_secs(5),
+            max_breakouts: 3,
         }
     }
 
@@ -1011,6 +1397,7 @@ mod tests {
                 &breakout_history,
                 &owned_processes,
                 started_at + Duration::from_secs(offset_seconds),
+                rate_limit_policy_fixture(),
             )
             .expect("the breakout history must remain available");
 
@@ -1021,6 +1408,7 @@ mod tests {
             &breakout_history,
             &owned_processes,
             started_at + Duration::from_secs(3),
+            rate_limit_policy_fixture(),
         )
         .expect("the breakout history must remain available");
 
@@ -1038,6 +1426,7 @@ mod tests {
                 &breakout_history,
                 &owned_processes,
                 started_at + Duration::from_secs(offset_seconds),
+                rate_limit_policy_fixture(),
             )
             .expect("the breakout history must remain available");
 
@@ -1068,6 +1457,7 @@ mod tests {
                 &sender,
                 Path::new("/tmp/escape"),
                 started_at + Duration::from_millis(offset_milliseconds),
+                rate_limit_policy_fixture(),
                 |target_pid| {
                     signaled_pid.set(target_pid);
                     Ok(())
@@ -1100,6 +1490,7 @@ mod tests {
                 &sender,
                 Path::new("/tmp/escape"),
                 Instant::now(),
+                rate_limit_policy_fixture(),
                 |_| panic!("an unregistered PID must never reach native signal delivery"),
             );
         }
@@ -1155,6 +1546,18 @@ mod tests {
     #[test]
     fn parses_a_valid_force_isolate_command() {
         assert_eq!(parse_isolate_command("ISOLATE:4242\n"), Ok(4242));
+    }
+
+    #[test]
+    fn parses_boolean_audit_mode_commands() {
+        assert_eq!(
+            parse_ipc_command("TOGGLE_AUDIT_MODE:true\n"),
+            Ok(IpcCommand::SetAuditMode(true))
+        );
+        assert_eq!(
+            parse_ipc_command("TOGGLE_AUDIT_MODE:false"),
+            Ok(IpcCommand::SetAuditMode(false))
+        );
     }
 
     #[test]
@@ -1282,13 +1685,108 @@ mod tests {
         let project_root = temporary_test_path("sandbox-project");
         fs::create_dir_all(&project_root).expect("the temporary project root must be created");
 
-        let sandbox_root = ensure_sandbox_root(&project_root)
+        let sandbox_root = ensure_sandbox_root(&project_root, Path::new("sandbox_workspace"))
             .expect("the missing sandbox directory must be initialized");
         let expected_sandbox_root = fs::canonicalize(project_root.join("sandbox_workspace"))
             .expect("the initialized sandbox must be canonicalizable");
         fs::remove_dir_all(&project_root).expect("the temporary project root must be removable");
 
         assert_eq!(sandbox_root, expected_sandbox_root);
+    }
+
+    #[test]
+    fn loads_the_runtime_profile_from_the_project_root() {
+        let project_root = temporary_test_path("runtime-config");
+        fs::create_dir_all(&project_root).expect("the temporary project root must be created");
+        fs::write(
+            project_root.join("krypton.config.json"),
+            r#"{"sandbox_path":"agent_zone","rate_limit_window_seconds":8,"rate_limit_max_breakouts":2}"#,
+        )
+        .expect("the runtime profile must be written");
+
+        let config = load_runtime_config(&project_root).expect("the runtime profile must load");
+        fs::remove_dir_all(&project_root).expect("the runtime profile fixture must be removable");
+
+        assert_eq!(config.sandbox_path, Path::new("agent_zone"));
+        assert_eq!(
+            rate_limit_policy(&config),
+            RateLimitPolicy {
+                window: Duration::from_secs(8),
+                max_breakouts: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_parent_traversal_in_the_configured_sandbox() {
+        let project_root = temporary_test_path("unsafe-runtime-config");
+        fs::create_dir_all(&project_root).expect("the temporary project root must be created");
+        fs::write(
+            project_root.join("krypton.config.json"),
+            r#"{"sandbox_path":"../outside","rate_limit_window_seconds":5,"rate_limit_max_breakouts":3}"#,
+        )
+        .expect("the unsafe runtime profile must be written");
+
+        let result = load_runtime_config(&project_root);
+        fs::remove_dir_all(&project_root).expect("the runtime profile fixture must be removable");
+
+        assert_eq!(
+            result.map_err(|error| error.kind()),
+            Err(io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn defaults_to_audit_only_and_toggles_to_active_enforcement() {
+        let execution_state = Arc::new(RwLock::new(EnforcementMode::default()));
+
+        assert_eq!(
+            read_enforcement_mode(&execution_state),
+            EnforcementMode::AuditOnly
+        );
+        assert_eq!(
+            set_audit_mode(&execution_state, false),
+            Ok(EnforcementMode::ActiveEnforcement)
+        );
+        assert_eq!(
+            read_enforcement_mode(&execution_state),
+            EnforcementMode::ActiveEnforcement
+        );
+    }
+
+    #[test]
+    fn audit_only_breakouts_log_intercepted_alerts_without_signaling() {
+        let owned_processes = Arc::new(RwLock::new(HashSet::from([4242])));
+        let breakout_history = Arc::new(Mutex::new(HashMap::new()));
+        let execution_state = Arc::new(RwLock::new(EnforcementMode::AuditOnly));
+        let (sender, receiver) = sync_channel(1);
+        let runtime = BreakoutRuntime {
+            breakout_history: &breakout_history,
+            owned_processes: &owned_processes,
+            execution_state: &execution_state,
+            alert_sender: &sender,
+            rate_limit_policy: rate_limit_policy_fixture(),
+        };
+
+        process_breakout_event(
+            &runtime,
+            Path::new("/tmp/audit-only-escape"),
+            Instant::now(),
+            |_| panic!("audit-only mode must never invoke native signal delivery"),
+        );
+
+        let alert = receiver
+            .try_recv()
+            .expect("audit-only telemetry must be queued");
+        assert_eq!(alert.enforcement_status, "INTERCEPTED");
+        assert!(owned_processes
+            .read()
+            .expect("the ownership registry must remain readable")
+            .contains(&4242));
+        assert!(breakout_history
+            .lock()
+            .expect("the breakout history must remain readable")
+            .is_empty());
     }
 
     #[test]

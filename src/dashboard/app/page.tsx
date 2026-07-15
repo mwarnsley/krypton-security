@@ -11,7 +11,10 @@ import {
   type EnforcementStatus,
   type SecurityAlert,
 } from '../components/features/AlertTable';
+import { Button } from '../components/ui/Button';
+import { InfoTooltip } from '../components/ui/InfoTooltip';
 import { StatusCard, type SystemStatus } from '../components/ui/StatusCard';
+import { Switch } from '../components/ui/Switch';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
 const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
@@ -237,20 +240,72 @@ export function selectFreshBreakoutAlerts(
 }
 
 /**
- * Displays one high-severity containment breakout notification for eight seconds.
+ * Displays one mode-aware containment breakout notification for eight seconds.
  *
  * @param {SecurityAlert} breakout - The fresh normalized breakout alert to display.
+ * @param {boolean} auditOnly - Whether the process was allowed to continue for observation.
  * @returns {string | number} The Sonner-generated toast identifier.
  * @complexity O(L) time and space for the rendered path and PID description.
  * @example
- * showContainmentBreakoutToast(alert);
+ * showContainmentBreakoutToast(alert, true);
  * // => a Sonner toast identifier
  */
-export function showContainmentBreakoutToast(breakout: SecurityAlert): string | number {
+export function showContainmentBreakoutToast(
+  breakout: SecurityAlert,
+  auditOnly: boolean
+): string | number {
+  if (auditOnly) {
+    return toast.warning(
+      'Learning Loop: Process attempted a folder escape but was permitted to continue running.',
+      {
+        description: `PID ${String(breakout.targetProcessId)} attempted: ${formatAttemptedAction(breakout.attemptedAction)}.`,
+        duration: 8_000,
+      }
+    );
+  }
+
   return toast.error('CRITICAL: Boundary Breakout', {
     description: `PID ${String(breakout.targetProcessId)} triggered: ${formatAttemptedAction(breakout.attemptedAction)}. Status: ${formatEnforcementStatus(breakout.enforcementStatus)}.`,
     duration: 8_000,
   });
+}
+
+/**
+ * Dismisses every currently visible desktop notification.
+ *
+ * @returns {void} No value; Sonner clears its active toast stack.
+ * @complexity O(1) client dispatch time and O(1) auxiliary space.
+ * @example
+ * clearAlertToasts();
+ * // => removes all active dashboard toasts
+ */
+export function clearAlertToasts(): void {
+  toast.dismiss();
+}
+
+/**
+ * Sends one operator-selected execution mode to the local dashboard API.
+ *
+ * @param {boolean} auditOnly - Whether native process termination should be disabled.
+ * @returns {Promise<void>} Resolves after the native daemon confirms the mode update.
+ * @complexity O(1) request construction with bounded local IPC response handling.
+ * @example
+ * await dispatchAuditModeUpdate(true);
+ * // => native watchdog enters Audit-Only Mode
+ */
+export async function dispatchAuditModeUpdate(auditOnly: boolean): Promise<void> {
+  const response = await fetch('/api/telemetry/audit-mode', {
+    body: JSON.stringify({ auditOnly }),
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Audit mode update failed with status ${response.status}.`);
+  }
 }
 
 /**
@@ -263,6 +318,8 @@ export function showContainmentBreakoutToast(breakout: SecurityAlert): string | 
  * // => renders the status overview and intercepted-alert telemetry table
  */
 export default function DashboardPage(): React.JSX.Element {
+  const [auditOnly, setAuditOnly] = useState(true);
+  const [isAuditModeUpdating, setIsAuditModeUpdating] = useState(false);
   const [telemetry, setTelemetry] = useState<TelemetryState>(EMPTY_TELEMETRY);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>('degraded');
   const notifiedBreakoutIds = useRef(new Set<string>());
@@ -277,31 +334,61 @@ export default function DashboardPage(): React.JSX.Element {
    * await refreshTelemetry(new AbortController().signal);
    * // => updates telemetry state after a successful local response
    */
-  const refreshTelemetry = useCallback(async (signal: AbortSignal): Promise<void> => {
-    const response = await fetch('/api/telemetry', {
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-      signal,
-    });
+  const refreshTelemetry = useCallback(
+    async (signal: AbortSignal): Promise<void> => {
+      const response = await fetch('/api/telemetry', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        signal,
+      });
 
-    if (!response.ok) {
-      throw new Error(`Telemetry request failed with status ${response.status}.`);
+      if (!response.ok) {
+        throw new Error(`Telemetry request failed with status ${response.status}.`);
+      }
+
+      const payload: unknown = await response.json();
+      const nextTelemetry = normalizeTelemetryPayload(payload);
+      const freshBreakouts = selectFreshBreakoutAlerts(
+        nextTelemetry.alerts,
+        Date.now(),
+        notifiedBreakoutIds.current
+      );
+
+      for (const breakout of freshBreakouts) {
+        showContainmentBreakoutToast(breakout, auditOnly);
+      }
+
+      setTelemetry(nextTelemetry);
+      setSystemStatus('operational');
+    },
+    [auditOnly]
+  );
+
+  /**
+   * Optimistically updates the switch and synchronizes native execution state.
+   *
+   * @param {boolean} nextAuditOnly - The operator-selected switch state.
+   * @returns {Promise<void>} Resolves after success or a handled rollback.
+   * @complexity O(1) local state work plus bounded local API request time.
+   * @example
+   * await handleAuditModeChange(true);
+   * // => enables audit-only operation or restores the previous switch state
+   */
+  const handleAuditModeChange = useCallback(async (nextAuditOnly: boolean): Promise<void> => {
+    setAuditOnly(nextAuditOnly);
+    setIsAuditModeUpdating(true);
+
+    try {
+      await dispatchAuditModeUpdate(nextAuditOnly);
+      toast.success(nextAuditOnly ? 'Audit-Only Mode enabled' : 'Active Enforcement restored');
+    } catch {
+      setAuditOnly(!nextAuditOnly);
+      toast.error('Execution mode update failed', {
+        description: 'The native Krypton watchdog did not confirm the requested mode.',
+      });
+    } finally {
+      setIsAuditModeUpdating(false);
     }
-
-    const payload: unknown = await response.json();
-    const nextTelemetry = normalizeTelemetryPayload(payload);
-    const freshBreakouts = selectFreshBreakoutAlerts(
-      nextTelemetry.alerts,
-      Date.now(),
-      notifiedBreakoutIds.current
-    );
-
-    for (const breakout of freshBreakouts) {
-      showContainmentBreakoutToast(breakout);
-    }
-
-    setTelemetry(nextTelemetry);
-    setSystemStatus('operational');
   }, []);
 
   /**
@@ -376,24 +463,48 @@ export default function DashboardPage(): React.JSX.Element {
                 events.
               </p>
             </div>
-            <p
-              aria-live="polite"
-              className={clsx(
-                'inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-wider',
-                systemStatus === 'operational'
-                  ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
-                  : 'border-amber-400/40 bg-amber-400/10 text-amber-200'
-              )}
-            >
-              <span
-                aria-hidden="true"
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <div
+                aria-busy={isAuditModeUpdating}
+                className="flex items-center gap-3 rounded-full border border-slate-700 bg-slate-950/70 px-3 py-2"
+              >
+                <label
+                  className="cursor-pointer text-xs font-bold uppercase tracking-wider text-slate-200"
+                  htmlFor="audit-only-mode"
+                >
+                  Audit-Only Mode
+                </label>
+                <Switch
+                  aria-label="Audit-Only Mode"
+                  checked={auditOnly}
+                  disabled={isAuditModeUpdating}
+                  id="audit-only-mode"
+                  onCheckedChange={(checked) => void handleAuditModeChange(checked)}
+                />
+                <InfoTooltip
+                  content="Audit-Only Mode records folder escapes and shows warnings without terminating the process, so you can observe normal workspace activity before enabling enforcement."
+                  label="Audit-Only Mode"
+                />
+              </div>
+              <p
+                aria-live="polite"
                 className={clsx(
-                  'h-2 w-2 rounded-full',
-                  systemStatus === 'operational' ? 'bg-emerald-400' : 'bg-amber-300'
+                  'inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-wider',
+                  systemStatus === 'operational'
+                    ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
+                    : 'border-amber-400/40 bg-amber-400/10 text-amber-200'
                 )}
-              />
-              Telemetry stream: {systemStatus}
-            </p>
+              >
+                <span
+                  aria-hidden="true"
+                  className={clsx(
+                    'h-2 w-2 rounded-full',
+                    systemStatus === 'operational' ? 'bg-emerald-400' : 'bg-amber-300'
+                  )}
+                />
+                Telemetry stream: {systemStatus}
+              </p>
+            </div>
           </div>
         </header>
 
@@ -406,11 +517,12 @@ export default function DashboardPage(): React.JSX.Element {
               Engine overview
             </p>
             <h2 className="mt-2 text-xl font-bold text-white" id="firewall-overview-title">
-              Global firewall status
+              Active Workspace Protection
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Krypton continuously evaluates filesystem boundaries and isolates registered processes
-              that violate containment policy.
+              Krypton maps file interactions inside your current folder directory and safely
+              isolates malicious scripts before they can read or write data to other areas of your
+              computer.
             </p>
           </div>
           <div className="w-full lg:max-w-md">
@@ -422,7 +534,7 @@ export default function DashboardPage(): React.JSX.Element {
         </section>
 
         <section aria-labelledby="threat-telemetry-title" className="space-y-4">
-          <header className="px-1">
+          <header className="flex items-end justify-between gap-4 px-1">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
                 Enforcement ledger
@@ -431,6 +543,15 @@ export default function DashboardPage(): React.JSX.Element {
                 Intercepted security alerts
               </h2>
             </div>
+            <Button
+              aria-label="Clear desktop alerts"
+              className="h-auto px-2 py-1 text-xs font-semibold text-slate-300 hover:text-white"
+              onClick={clearAlertToasts}
+              size="sm"
+              variant="ghost"
+            >
+              Clear Alerts
+            </Button>
           </header>
           <AlertTable alerts={telemetry.alerts} />
         </section>

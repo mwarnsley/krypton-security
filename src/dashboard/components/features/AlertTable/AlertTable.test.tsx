@@ -108,10 +108,57 @@ describe('AlertTable', () => {
     expect(markup).not.toContain('4000');
   });
 
-  it('explains process IDs in plain language', () => {
+  test.each(['Target Process ID', 'Attempted Action', 'Enforcement Status', 'Actions'])(
+    'renders a separate info control for %s',
+    (columnLabel) => {
+      const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+
+      expect(markup).toContain(`aria-label="Info for ${columnLabel}"`);
+    }
+  );
+
+  it('keeps Timestamp free of an info control', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
 
-    expect(markup).toContain('PID means Process ID');
+    expect(markup).not.toContain('aria-label="Info for Timestamp"');
+  });
+
+  it('uses the standardized full-width header wrapper', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+    const headerWrappers = markup.match(
+      /flex items-center justify-between gap-3 w-full primitive-header-wrapper/g
+    );
+
+    expect(headerWrappers).toHaveLength(5);
+  });
+
+  it('keeps sortable header labels from wrapping into adjacent controls', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+
+    expect(markup).toContain('min-w-0 whitespace-nowrap');
+  });
+
+  it('renders filled high-contrast help icons', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+
+    expect(markup).toContain('class="fill-cyan-300/30"');
+    expect(markup).toContain('class="fill-current"');
+  });
+
+  it('keeps the help trigger outside the sortable header button', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+    const sortButtonStart = markup.indexOf('aria-label="Sort by Target Process ID"');
+    const sortButtonEnd = markup.indexOf('</button>', sortButtonStart);
+    const helpButtonStart = markup.indexOf('aria-label="Info for Target Process ID"');
+
+    expect(sortButtonStart).toBeGreaterThan(-1);
+    expect(helpButtonStart).toBeGreaterThan(sortButtonEnd);
+  });
+
+  it('adds the process-termination info control to Actions', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+
+    expect(markup).toContain('aria-label="Info for Actions"');
   });
 
   it('translates the boundary breakout action', () => {

@@ -12,11 +12,12 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import clsx from 'clsx';
-import { ArrowDown, ArrowUp, ArrowUpDown, CircleHelp } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   Button,
+  InfoTooltip,
   Pagination,
   PaginationContent,
   PaginationEllipsis,
@@ -183,10 +184,10 @@ function SortableColumnHeader(props: SortableColumnHeaderProps): React.JSX.Eleme
     sortDirection === 'asc' ? ArrowUp : sortDirection === 'desc' ? ArrowDown : ArrowUpDown;
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center justify-between gap-3 w-full primitive-header-wrapper">
       <Button
         aria-label={`Sort by ${label}${sortDirection ? `, currently ${sortDirection === 'asc' ? 'ascending' : 'descending'}` : ''}`}
-        className="-ml-2 h-8 px-2 font-semibold uppercase tracking-wider"
+        className="-ml-2 h-8 min-w-0 whitespace-nowrap px-2 font-semibold uppercase tracking-wider"
         onClick={() => column.toggleSorting(sortDirection === 'asc')}
         size="sm"
         variant="ghost"
@@ -194,16 +195,7 @@ function SortableColumnHeader(props: SortableColumnHeaderProps): React.JSX.Eleme
         {label}
         <SortIcon aria-hidden="true" className="h-3.5 w-3.5" />
       </Button>
-      {helperText ? (
-        <span
-          aria-label={helperText}
-          className="inline-flex text-slate-500"
-          role="note"
-          title={helperText}
-        >
-          <CircleHelp aria-hidden="true" className="h-3.5 w-3.5" />
-        </span>
-      ) : null}
+      {helperText ? <InfoTooltip content={helperText} label={label} /> : null}
     </div>
   );
 }
@@ -417,7 +409,13 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
       },
       {
         accessorKey: 'enforcementStatus',
-        header: ({ column }) => <SortableColumnHeader column={column} label="Enforcement Status" />,
+        header: ({ column }) => (
+          <SortableColumnHeader
+            column={column}
+            helperText="Enforcement Status shows whether Krypton intercepted the action or quarantined the associated process."
+            label="Enforcement Status"
+          />
+        ),
         cell: ({ getValue }) => {
           const enforcementStatus = getValue<EnforcementStatus>();
 
@@ -437,7 +435,15 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
       },
       {
         id: 'actions',
-        header: 'Actions',
+        header: () => (
+          <div className="flex items-center justify-between gap-3 w-full primitive-header-wrapper">
+            <span className="whitespace-nowrap">Actions</span>
+            <InfoTooltip
+              content="Force Isolate immediately requests termination of the selected process. Krypton only terminates registered child processes owned by the active workspace."
+              label="Actions"
+            />
+          </div>
+        ),
         cell: ({ row }) => {
           const targetProcessId = row.original.targetProcessId;
           const isIsolating = isolatingProcessIds.has(targetProcessId);

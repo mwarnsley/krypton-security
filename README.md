@@ -159,27 +159,28 @@ is excluded from source control.
 
 ## Runtime Configuration Contract
 
-The current implementation uses repository-local defaults. The following
-schema documents the shared contract; it is not yet loaded from a standalone
-configuration file:
+The native daemon loads `krypton.config.json` from the repository root during
+startup. The default profile is:
 
 ```json
 {
-  "sandboxWorkspace": "./sandbox_workspace",
-  "telemetryLedger": "./alerts.json",
-  "enforcementSignal": "SIGKILL",
-  "dashboardPollIntervalMs": 5000
+  "sandbox_path": "sandbox_workspace",
+  "rate_limit_window_seconds": 5,
+  "rate_limit_max_breakouts": 3
 }
 ```
 
-- `sandboxWorkspace` is the only authorized operating zone for monitored agent
-  filesystem activity.
-- `telemetryLedger` is a local, gitignored, append-only newline-delimited JSON
-  store. The dashboard API also accepts a JSON-array ledger for compatibility.
-- `enforcementSignal` records the immediate native process-isolation mechanism.
-  Only explicitly registered workspace child PIDs are eligible for quarantine.
-- `dashboardPollIntervalMs` reflects the current AegisAgent telemetry refresh
-  interval.
+- `sandbox_path` is the repository-relative operating zone authorized for
+  monitored agent filesystem activity. Empty, absolute, and parent-traversing
+  values fail startup validation.
+- `rate_limit_window_seconds` sets the per-process sliding breakout window.
+- `rate_limit_max_breakouts` sets the maximum breakouts allowed in that window
+  before active enforcement quarantines an explicitly registered child PID.
+
+The AegisAgent header can switch the daemon between **Active Enforcement** and
+**Audit-Only Mode** over the loopback IPC channel. Audit-Only Mode retains the
+seven-field `INTERCEPTED` telemetry record and dashboard warning toast while
+skipping all native `SIGKILL` delivery.
 
 A quarantine record currently includes an ISO timestamp, the target PID, the
 resolved denied path or containment context, the `process_quarantined` action,

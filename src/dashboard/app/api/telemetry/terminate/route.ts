@@ -1,11 +1,8 @@
-import { createConnection } from 'node:net';
+import { dispatchNativeCommand } from '../ipc';
 
 export const runtime = 'nodejs';
 
-const IPC_HOST = '127.0.0.1';
-const IPC_PORT = 9000;
-const IPC_TIMEOUT_MS = 2_000;
-const IPC_MAX_RECEIPT_BYTES = 64;
+const IPC_AUDIT_ONLY_RECEIPT = 'ERROR: AUDIT_ONLY';
 const IPC_PID_NOT_OWNED_RECEIPT = 'ERROR: PID_NOT_OWNED';
 const IPC_SUCCESS_RECEIPT = 'SUCCESS: PID_ISOLATED';
 const MAX_UNSIGNED_32_BIT_INTEGER = 4_294_967_295;
@@ -32,49 +29,10 @@ function isRequestBody(value: unknown): value is RequestBody {
 }
 
 /**
- * Dispatches one force-isolation command to the loopback native daemon.
- *
- * @param {number} targetProcessId - The validated positive unsigned 32-bit PID.
- * @returns {Promise<string>} The bounded execution receipt returned by Rust.
- * @complexity O(L) time and space for bounded receipt length L.
- * @example
- * await dispatchIsolationCommand(4242);
- * // => "SUCCESS: PID_ISOLATED"
- */
-function dispatchIsolationCommand(targetProcessId: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const socket = createConnection({ host: IPC_HOST, port: IPC_PORT });
-    let receipt = '';
-
-    socket.setTimeout(IPC_TIMEOUT_MS);
-    socket.setEncoding('utf8');
-    socket.once('connect', () => {
-      socket.end(`ISOLATE:${String(targetProcessId)}`, 'utf8');
-    });
-    socket.on('data', (chunk: string) => {
-      receipt += chunk;
-
-      if (Buffer.byteLength(receipt, 'utf8') > IPC_MAX_RECEIPT_BYTES) {
-        socket.destroy();
-        reject(new Error('The native vanguard IPC receipt is oversized.'));
-      }
-    });
-    socket.once('end', () => {
-      resolve(receipt.trim());
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      reject(new Error('The native vanguard IPC connection timed out.'));
-    });
-    socket.once('error', reject);
-  });
-}
-
-/**
  * Sends one validated dashboard isolation request to the native Krypton daemon.
  *
  * @param {Request} request - The JSON request containing `targetProcessId`.
- * @returns {Promise<Response>} A JSON execution result with HTTP 200, 400, 403, or 502.
+ * @returns {Promise<Response>} A JSON execution result with HTTP 200, 400, 403, 409, or 502.
  * @complexity O(1) validation and IPC dispatch time with O(1) auxiliary space.
  * @example
  * const response = await POST(new Request("http://localhost/api/telemetry/terminate", {
@@ -146,7 +104,7 @@ export async function POST(request: Request): Promise<Response> {
   let executionReceipt: string;
 
   try {
-    executionReceipt = await dispatchIsolationCommand(targetProcessId);
+    executionReceipt = await dispatchNativeCommand(`ISOLATE:${String(targetProcessId)}`);
   } catch (error: unknown) {
     console.error(
       `${ROUTE_LOG_PREFIX} Native IPC dispatch failed for PID ${String(targetProcessId)}.`,
@@ -171,6 +129,16 @@ export async function POST(request: Request): Promise<Response> {
         message: OWNERSHIP_REJECTION_MESSAGE,
       },
       { status: 403 }
+    );
+  }
+
+  if (executionReceipt === IPC_AUDIT_ONLY_RECEIPT) {
+    return Response.json(
+      {
+        success: false,
+        message: 'Isolation is disabled while Audit-Only Mode is active.',
+      },
+      { status: 409 }
     );
   }
 

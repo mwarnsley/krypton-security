@@ -1,4 +1,4 @@
-# Krypton product backlog
+# Krypton Product Roadmap
 
 This backlog records strategic product work that remains intentionally outside
 the current hardened runtime and dashboard scope.
@@ -43,3 +43,20 @@ the current hardened runtime and dashboard scope.
       extensions transitioning user-space watchers to low-level kernel auditing
       systems (e.g., eBPF on Linux or the Endpoint Security framework on macOS)
       for deep process monitoring.
+
+## Advanced Developer Operations & Attestation
+
+- [ ] "One-Click Exploit Reproduction" (Timeline Rewind): Add a "Download
+      Exploit Signature" action button next to intercepted alert rows to package
+      the exact sequence of unauthorized directory traversals into a clean,
+      shareable Markdown or JSON exploit report.
+- [ ] The "Dry-Run" (Audit Only) Mode: Implement a global dashboard toggle
+      switch that switches the native Rust daemon between Enforcement Mode
+      (active SIGKILL/termination) and Audit Mode (telemetry logging and
+      high-priority warning toasts only), allowing safe profiling of complex
+      local codebases.
+- [ ] Automated Dependency Attestation: Build a reverse-lookup utility to trace
+      a target process ID back to its originating node module or local script
+      execution path, dynamically rendering a clear UI badge—for example,
+      `Spawning Dependency: minimist@1.2.5`—to eliminate malicious package
+      guesswork.
