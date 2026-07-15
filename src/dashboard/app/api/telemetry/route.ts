@@ -1,13 +1,11 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import {
-  getActiveWorkspaceProcessCount,
-} from "../../../../core/processIsolation.cjs";
+import { getActiveWorkspaceProcessCount } from '../../../../core/processIsolation.cjs';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-const ALERTS_LEDGER_PATH = path.resolve(process.cwd(), "alerts.json");
+const ALERTS_LEDGER_PATH = path.resolve(process.cwd(), 'alerts.json');
 
 type AlertRecord = Record<string, unknown>;
 
@@ -22,7 +20,7 @@ type AlertRecord = Record<string, unknown>;
  * // => true
  */
 function isAlertRecord(value: unknown): value is AlertRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -38,7 +36,7 @@ function isAlertRecord(value: unknown): value is AlertRecord {
 function parseAlertLedger(ledgerContents: string): AlertRecord[] {
   const normalizedContents = ledgerContents.trim();
 
-  if (normalizedContents === "") {
+  if (normalizedContents === '') {
     return [];
   }
 
@@ -51,11 +49,11 @@ function parseAlertLedger(ledgerContents: string): AlertRecord[] {
 
     return isAlertRecord(parsedLedger) ? [parsedLedger] : [];
   } catch {
-    return normalizedContents.split("\n").map((line) => {
+    return normalizedContents.split('\n').map((line) => {
       const parsedAlert: unknown = JSON.parse(line);
 
       if (!isAlertRecord(parsedAlert)) {
-        throw new TypeError("The alert ledger contains an invalid record.");
+        throw new TypeError('The alert ledger contains an invalid record.');
       }
 
       return parsedAlert;
@@ -74,7 +72,7 @@ function parseAlertLedger(ledgerContents: string): AlertRecord[] {
  * // => true
  */
 function isFileSystemError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
+  return error instanceof Error && 'code' in error;
 }
 
 /**
@@ -92,28 +90,16 @@ export async function GET(): Promise<Response> {
   const activeProcessCount = getActiveWorkspaceProcessCount();
 
   try {
-    const ledgerContents = await fs.promises.readFile(
-      ALERTS_LEDGER_PATH,
-      "utf8",
-    );
+    const ledgerContents = await fs.promises.readFile(ALERTS_LEDGER_PATH, 'utf8');
     const alerts = parseAlertLedger(ledgerContents);
     const newestAlertsFirst = [...alerts].reverse();
 
-    return Response.json(
-      { activeProcessCount, alerts: newestAlertsFirst },
-      { status: 200 },
-    );
+    return Response.json({ activeProcessCount, alerts: newestAlertsFirst }, { status: 200 });
   } catch (error: unknown) {
-    if (isFileSystemError(error) && error.code === "ENOENT") {
-      return Response.json(
-        { activeProcessCount, alerts: [] },
-        { status: 200 },
-      );
+    if (isFileSystemError(error) && error.code === 'ENOENT') {
+      return Response.json({ activeProcessCount, alerts: [] }, { status: 200 });
     }
 
-    return Response.json(
-      { activeProcessCount, alerts: [] },
-      { status: 500 },
-    );
+    return Response.json({ activeProcessCount, alerts: [] }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
-import clsx from "clsx";
+import clsx from 'clsx';
 
-export type SystemStatus = "degraded" | "offline" | "operational";
+export type SystemStatus = 'degraded' | 'offline' | 'operational';
 
 export interface StatusCardProps {
   /** The number of agent child processes currently monitored by Krypton. */
@@ -11,9 +11,9 @@ export interface StatusCardProps {
 }
 
 const SYSTEM_STATUS_LABELS: Readonly<Record<SystemStatus, string>> = {
-  degraded: "Degraded",
-  offline: "Offline",
-  operational: "Operational",
+  degraded: 'Degraded',
+  offline: 'Offline',
+  operational: 'Operational',
 };
 
 /**
@@ -39,20 +39,16 @@ export function StatusCard(props: StatusCardProps): React.JSX.Element {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-400">
             Runtime boundary
           </p>
-          <h2 className="mt-1 text-lg font-bold text-slate-100">
-            Watchdog status
-          </h2>
+          <h2 className="mt-1 text-lg font-bold text-slate-100">Watchdog status</h2>
         </div>
         <strong
           aria-live="polite"
           className={clsx(
-            "inline-flex rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wider",
-            systemStatus === "operational" &&
-              "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
-            systemStatus === "degraded" &&
-              "border-amber-400/40 bg-amber-400/10 text-amber-200",
-            systemStatus === "offline" &&
-              "border-rose-500/40 bg-rose-500/10 text-rose-300",
+            'inline-flex rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wider',
+            systemStatus === 'operational' &&
+              'border-emerald-400/40 bg-emerald-400/10 text-emerald-300',
+            systemStatus === 'degraded' && 'border-amber-400/40 bg-amber-400/10 text-amber-200',
+            systemStatus === 'offline' && 'border-rose-500/40 bg-rose-500/10 text-rose-300'
           )}
           data-tone={systemStatus}
         >
@@ -62,9 +58,7 @@ export function StatusCard(props: StatusCardProps): React.JSX.Element {
 
       <dl className="pt-5">
         <div className="flex items-end justify-between gap-4">
-          <dt className="text-sm font-medium text-slate-400">
-            Active processes
-          </dt>
+          <dt className="text-sm font-medium text-slate-400">Active processes</dt>
           <dd className="font-mono text-3xl font-bold tabular-nums text-slate-50">
             {activeProcessCount}
           </dd>

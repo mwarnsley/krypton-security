@@ -10,11 +10,18 @@ node_modules/
 dist/
 build/
 out/
+.next/
+target/
 *.tsbuildinfo
 src/core-native/target/
 
 # Test output
 coverage/
+*.dSYM/
+*.test
+*.test.exe
+*_test
+unauthorized_breakout_test.*
 
 # Runtime sandbox data
 sandbox_workspace/*
@@ -28,9 +35,6 @@ alerts.json
 # Tooling and operating system files
 .cache/
 .DS_Store
-
-# Local strategy documents
-VC.md
 
 # Next.js build output and local cache isolation
 src/dashboard/.next/

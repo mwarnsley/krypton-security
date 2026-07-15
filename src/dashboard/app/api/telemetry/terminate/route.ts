@@ -1,16 +1,24 @@
-import { quarantineProcess } from "../../../../../core/processIsolation.cjs";
+import { createConnection } from 'node:net';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-const MANUAL_CONTAINMENT_CONTEXT =
-  "./sandbox_workspace/.aegisagent/manual-containment";
-const UNREGISTERED_PROCESS_ERROR =
-  "The process ID is not registered to this workspace.";
+const IPC_HOST = '127.0.0.1';
+const IPC_PORT = 9000;
+const IPC_TIMEOUT_MS = 2_000;
+const IPC_MAX_RECEIPT_BYTES = 64;
+const IPC_PID_NOT_OWNED_RECEIPT = 'ERROR: PID_NOT_OWNED';
+const IPC_SUCCESS_RECEIPT = 'SUCCESS: PID_ISOLATED';
+const MAX_UNSIGNED_32_BIT_INTEGER = 4_294_967_295;
+const REQUIRED_PID_KEY = 'targetProcessId';
+const ROUTE_LOG_PREFIX = '[API /api/telemetry/terminate]';
+const DISPATCH_SUCCESS_MESSAGE = 'Target child process successfully verified and isolated.';
+const OWNERSHIP_REJECTION_MESSAGE =
+  'Isolation rejected: target process is not an authorized Krypton workspace child.';
 
 type RequestBody = Record<string, unknown>;
 
 /**
- * Determines whether an unknown JSON payload is an object request body.
+ * Determines whether an unknown JSON value is an object request body.
  *
  * @param {unknown} value - The parsed request payload to inspect.
  * @returns {boolean} `true` when the value is a non-array object.
@@ -20,37 +28,59 @@ type RequestBody = Record<string, unknown>;
  * // => true
  */
 function isRequestBody(value: unknown): value is RequestBody {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
- * Determines whether a caught quarantine failure is an ownership rejection.
+ * Dispatches one force-isolation command to the loopback native daemon.
  *
- * @param {unknown} error - The caught watchdog failure to inspect.
- * @returns {boolean} `true` when the PID was not registered as an owned workspace process.
- * @complexity O(1) time and O(1) space.
+ * @param {number} targetProcessId - The validated positive unsigned 32-bit PID.
+ * @returns {Promise<string>} The bounded execution receipt returned by Rust.
+ * @complexity O(L) time and space for bounded receipt length L.
  * @example
- * isUnregisteredProcessError(new Error("The process ID is not registered to this workspace."));
- * // => true
+ * await dispatchIsolationCommand(4242);
+ * // => "SUCCESS: PID_ISOLATED"
  */
-function isUnregisteredProcessError(error: unknown): boolean {
-  return (
-    error instanceof Error && error.message === UNREGISTERED_PROCESS_ERROR
-  );
+function dispatchIsolationCommand(targetProcessId: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host: IPC_HOST, port: IPC_PORT });
+    let receipt = '';
+
+    socket.setTimeout(IPC_TIMEOUT_MS);
+    socket.setEncoding('utf8');
+    socket.once('connect', () => {
+      socket.end(`ISOLATE:${String(targetProcessId)}`, 'utf8');
+    });
+    socket.on('data', (chunk: string) => {
+      receipt += chunk;
+
+      if (Buffer.byteLength(receipt, 'utf8') > IPC_MAX_RECEIPT_BYTES) {
+        socket.destroy();
+        reject(new Error('The native vanguard IPC receipt is oversized.'));
+      }
+    });
+    socket.once('end', () => {
+      resolve(receipt.trim());
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      reject(new Error('The native vanguard IPC connection timed out.'));
+    });
+    socket.once('error', reject);
+  });
 }
 
 /**
- * Terminates one registered workspace child through Krypton's quarantine engine.
+ * Sends one validated dashboard isolation request to the native Krypton daemon.
  *
- * @param {Request} request - The JSON request containing a `targetProcessId` number.
- * @returns {Promise<Response>} A JSON isolation result with an HTTP 200, 400, or 500 status.
- * @complexity O(1) validation, ownership lookup, and signal dispatch time with O(1) auxiliary space.
+ * @param {Request} request - The JSON request containing `targetProcessId`.
+ * @returns {Promise<Response>} A JSON execution result with HTTP 200, 400, 403, or 502.
+ * @complexity O(1) validation and IPC dispatch time with O(1) auxiliary space.
  * @example
- * const request = new Request("http://localhost/api/telemetry/terminate", {
+ * const response = await POST(new Request("http://localhost/api/telemetry/terminate", {
  *   method: "POST",
  *   body: JSON.stringify({ targetProcessId: 4242 }),
- * });
- * const response = await POST(request);
+ * }));
  * // => Response { status: 200 }
  */
 export async function POST(request: Request): Promise<Response> {
@@ -59,65 +89,103 @@ export async function POST(request: Request): Promise<Response> {
   try {
     payload = await request.json();
   } catch {
+    console.error(
+      `${ROUTE_LOG_PREFIX} Missing required keys: ${REQUIRED_PID_KEY}. Request body is not valid JSON.`
+    );
     return Response.json(
-      { success: false, error: "The request body must contain valid JSON." },
-      { status: 400 },
+      { success: false, error: 'The request body must contain valid JSON.' },
+      { status: 400 }
     );
   }
 
-  const targetProcessId = isRequestBody(payload)
-    ? payload.targetProcessId
-    : undefined;
-
-  if (
-    typeof targetProcessId !== "number" ||
-    !Number.isFinite(targetProcessId) ||
-    !Number.isSafeInteger(targetProcessId) ||
-    targetProcessId <= 0
-  ) {
+  if (!isRequestBody(payload) || !Object.prototype.hasOwnProperty.call(payload, REQUIRED_PID_KEY)) {
+    console.error(`${ROUTE_LOG_PREFIX} Missing required keys: ${REQUIRED_PID_KEY}.`);
     return Response.json(
       {
         success: false,
-        error: "targetProcessId must be a positive, finite integer.",
+        error: `Missing required keys: ${REQUIRED_PID_KEY}.`,
       },
-      { status: 400 },
+      { status: 400 }
+    );
+  }
+
+  const targetProcessId = payload.targetProcessId;
+
+  if (
+    typeof targetProcessId !== 'number' ||
+    !Number.isFinite(targetProcessId) ||
+    !Number.isSafeInteger(targetProcessId) ||
+    targetProcessId <= 0 ||
+    targetProcessId > MAX_UNSIGNED_32_BIT_INTEGER
+  ) {
+    console.error(
+      `${ROUTE_LOG_PREFIX} Missing required keys: none. Invalid keys: ${REQUIRED_PID_KEY}.`
+    );
+    return Response.json(
+      {
+        success: false,
+        error: `${REQUIRED_PID_KEY} must be a positive unsigned 32-bit integer.`,
+      },
+      { status: 400 }
     );
   }
 
   if (targetProcessId === process.pid) {
+    console.error(
+      `${ROUTE_LOG_PREFIX} Missing required keys: none. Invalid keys: ${REQUIRED_PID_KEY} cannot reference the dashboard process.`
+    );
     return Response.json(
       {
         success: false,
-        error: "The AegisAgent dashboard process cannot terminate itself.",
+        error: 'The AegisAgent dashboard process cannot isolate itself.',
       },
-      { status: 400 },
+      { status: 400 }
     );
   }
+
+  let executionReceipt: string;
 
   try {
-    quarantineProcess(targetProcessId, MANUAL_CONTAINMENT_CONTEXT);
+    executionReceipt = await dispatchIsolationCommand(targetProcessId);
   } catch (error: unknown) {
-    if (isUnregisteredProcessError(error)) {
-      return Response.json(
-        {
-          success: false,
-          error: "The target PID is not a registered workspace process.",
-        },
-        { status: 400 },
-      );
-    }
-
+    console.error(
+      `${ROUTE_LOG_PREFIX} Native IPC dispatch failed for PID ${String(targetProcessId)}.`,
+      error
+    );
     return Response.json(
       {
         success: false,
-        error: "The target process could not be isolated.",
+        error: 'The native vanguard core is unavailable.',
       },
-      { status: 500 },
+      { status: 502 }
     );
   }
 
-  return Response.json(
-    { success: true, isolatedPid: targetProcessId },
-    { status: 200 },
-  );
+  if (executionReceipt === IPC_PID_NOT_OWNED_RECEIPT) {
+    console.error(
+      `${ROUTE_LOG_PREFIX} Native ownership verification rejected PID ${String(targetProcessId)}.`
+    );
+    return Response.json(
+      {
+        success: false,
+        message: OWNERSHIP_REJECTION_MESSAGE,
+      },
+      { status: 403 }
+    );
+  }
+
+  if (executionReceipt !== IPC_SUCCESS_RECEIPT) {
+    console.error(
+      `${ROUTE_LOG_PREFIX} Native IPC returned an unexpected receipt: ${executionReceipt || '<empty>'}.`
+    );
+    return Response.json(
+      {
+        success: false,
+        error: 'The native vanguard core did not confirm isolation.',
+      },
+      { status: 502 }
+    );
+  }
+
+  return Response.json({ success: true, message: DISPATCH_SUCCESS_MESSAGE }, { status: 200 });
 }

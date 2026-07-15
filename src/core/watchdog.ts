@@ -1,30 +1,20 @@
-import fs from "node:fs";
-import path from "node:path";
+import fs from 'node:fs';
+import path from 'node:path';
 
-import {
-  getActiveWorkspaceProcessCount,
-  quarantineProcess,
-  quarantineRegisteredProcesses,
-  registerWorkspaceProcess,
-  unregisterWorkspaceProcess,
-} from "./processIsolation.cjs";
+import { quarantineRegisteredProcesses } from './processIsolation.cjs';
 
 export {
   getActiveWorkspaceProcessCount,
   quarantineProcess,
   registerWorkspaceProcess,
   unregisterWorkspaceProcess,
-} from "./processIsolation.cjs";
+} from './processIsolation.cjs';
 
-const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
-const SANDBOX_ROOT = path.resolve(PROJECT_ROOT, "sandbox_workspace");
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const SANDBOX_ROOT = path.resolve(PROJECT_ROOT, 'sandbox_workspace');
 
-const HIGH_RISK_ENDPOINTS: ReadonlySet<string> = new Set([
-  ".ssh",
-  ".aws",
-  ".env",
-]);
-const WATCH_EVENT_TYPES: ReadonlySet<string> = new Set(["change", "rename"]);
+const HIGH_RISK_ENDPOINTS: ReadonlySet<string> = new Set(['.ssh', '.aws', '.env']);
+const WATCH_EVENT_TYPES: ReadonlySet<string> = new Set(['change', 'rename']);
 const activeWorkspaceWatchers = new Map<string, fs.FSWatcher>();
 
 /**
@@ -55,8 +45,8 @@ function isInsideSandbox(resolvedPath: string): boolean {
   const relativePath = path.relative(SANDBOX_ROOT, resolvedPath);
 
   return (
-    relativePath === "" ||
-    (relativePath !== ".." &&
+    relativePath === '' ||
+    (relativePath !== '..' &&
       !relativePath.startsWith(`..${path.sep}`) &&
       !path.isAbsolute(relativePath))
   );
@@ -75,16 +65,11 @@ function isInsideSandbox(resolvedPath: string): boolean {
 function containsHighRiskEndpoint(resolvedPath: string): boolean {
   const pathSegments = resolvedPath.split(path.sep);
 
-  return pathSegments.some(
-    (segment) => {
-      const normalizedSegment = segment.toLowerCase();
+  return pathSegments.some((segment) => {
+    const normalizedSegment = segment.toLowerCase();
 
-      return (
-        HIGH_RISK_ENDPOINTS.has(normalizedSegment) ||
-        normalizedSegment.startsWith(".env.")
-      );
-    },
-  );
+    return HIGH_RISK_ENDPOINTS.has(normalizedSegment) || normalizedSegment.startsWith('.env.');
+  });
 }
 
 /**
@@ -102,7 +87,7 @@ function containsHighRiskEndpoint(resolvedPath: string): boolean {
 function handleWorkspaceEvent(
   workspacePath: string,
   eventType: string,
-  filename: string | null,
+  filename: string | null
 ): void {
   if (!WATCH_EVENT_TYPES.has(eventType)) {
     return;
@@ -112,7 +97,7 @@ function handleWorkspaceEvent(
 
   try {
     if (filename === null) {
-      throw new Error("The filesystem event did not include a filename.");
+      throw new Error('The filesystem event did not include a filename.');
     }
 
     targetPath = path.resolve(workspacePath, filename);
@@ -139,10 +124,7 @@ export function verifyPathAccess(targetPath: string): boolean {
   try {
     const resolvedPath = resolveRequestedPath(targetPath);
 
-    return (
-      isInsideSandbox(resolvedPath) &&
-      !containsHighRiskEndpoint(resolvedPath)
-    );
+    return isInsideSandbox(resolvedPath) && !containsHighRiskEndpoint(resolvedPath);
   } catch {
     return false;
   }
@@ -162,7 +144,7 @@ export function startWorkspaceWatcher(workspacePath: string): void {
   const resolvedWorkspacePath = resolveRequestedPath(workspacePath);
 
   if (resolvedWorkspacePath !== SANDBOX_ROOT) {
-    throw new RangeError("Only the Krypton sandbox workspace may be watched.");
+    throw new RangeError('Only the Krypton sandbox workspace may be watched.');
   }
 
   if (activeWorkspaceWatchers.has(resolvedWorkspacePath)) {
@@ -175,13 +157,13 @@ export function startWorkspaceWatcher(workspacePath: string): void {
     watcher = fs.watch(
       resolvedWorkspacePath,
       {
-        encoding: "utf8",
+        encoding: 'utf8',
         persistent: true,
         recursive: true,
       },
       (eventType, filename) => {
         handleWorkspaceEvent(resolvedWorkspacePath, eventType, filename);
-      },
+      }
     );
   } catch (error: unknown) {
     quarantineRegisteredProcesses(resolvedWorkspacePath);
@@ -190,7 +172,7 @@ export function startWorkspaceWatcher(workspacePath: string): void {
 
   activeWorkspaceWatchers.set(resolvedWorkspacePath, watcher);
 
-  watcher.on("error", () => {
+  watcher.on('error', () => {
     activeWorkspaceWatchers.delete(resolvedWorkspacePath);
     watcher.close();
     quarantineRegisteredProcesses(resolvedWorkspacePath);

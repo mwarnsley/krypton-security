@@ -1,0 +1,7 @@
+.next/
+coverage/
+dist/
+node_modules/
+out/
+sandbox_workspace/
+target/

@@ -1,1 +1,1 @@
-export * from "./AlertTable";
+export * from './AlertTable';

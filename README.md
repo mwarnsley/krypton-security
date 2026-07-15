@@ -68,6 +68,31 @@ Run the unit and API/component test suites:
 npm run test
 ```
 
+Format every tracked JavaScript, TypeScript, JSON, and Markdown source file:
+
+```sh
+npm run format
+```
+
+Verify formatting without modifying files:
+
+```sh
+npm run format:check
+```
+
+Run the Next.js, React, and TypeScript ESLint analysis:
+
+```sh
+npm run lint
+```
+
+Run both TypeScript compiler verification scopes:
+
+```sh
+npx tsc --noEmit
+npx tsc --noEmit --project src/dashboard/tsconfig.json
+```
+
 Launch the AegisAgent dashboard development server:
 
 ```sh
@@ -108,6 +133,25 @@ Build an optimized native binary:
 
 ```sh
 cargo build --release
+```
+
+Run the native Rust safety-validation test suite from `src/core-native`:
+
+```sh
+cargo test
+```
+
+From the repository root, the equivalent command is:
+
+```sh
+npm run test:rust
+```
+
+Verify Rust formatting and run Clippy with warnings treated as errors:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 Debug and release binaries are emitted beneath `src/core-native/target/`, which

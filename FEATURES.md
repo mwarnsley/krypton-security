@@ -58,3 +58,12 @@ verification structure.
 - **Objectives:** Concise architectural outcomes.
 - **Verification:** Observable evidence that the milestone works.
 ```
+
+## Absolute status checklist
+
+- [x] Native macOS Kernel Stream Integration via FSEvents
+- [x] Thread-Safe Canonical Absolute Path Resolution
+- [x] Secure Synchronous IPC Transaction Verification Loop (Port 9000)
+- [x] High-Fidelity Shadcn Data Grid (Sorted, Paginated, & Human-Readable)
+- [x] Live Stack-Limited Real-Time Warning Toasts (Sonner)
+- [x] Rolling-Window Autonomous Process Quarantine Mitigation Engine

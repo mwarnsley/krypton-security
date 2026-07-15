@@ -11,6 +11,27 @@ prompt injections on local systems.
 - Run a no-output typecheck: `npx tsc --noEmit`
 - Execute the mock attack simulation: `npx ts-node tests_simulation/test_injection.ts`
 
+## ✅ Mandatory Deployment Quality Contract
+
+Every workflow pass that changes source, configuration, tests, or documentation
+must conclude with active confirmation runs of all applicable quality gates.
+Before pushing to the main branch, agents and engineers must verify that every
+command exits with zero errors:
+
+- Run JavaScript and TypeScript lint analysis: `npm run lint`
+- Run the root TypeScript verification: `npx tsc --noEmit`
+- Run the dashboard TypeScript verification:
+  `npx tsc --noEmit --project src/dashboard/tsconfig.json`
+- Run the repository Prettier verification: `npm run format:check`
+- Run Rust formatting verification:
+  `cargo fmt --manifest-path src/core-native/Cargo.toml --check`
+- Run Rust static analysis:
+  `cargo clippy --manifest-path src/core-native/Cargo.toml --all-targets --all-features -- -D warnings`
+
+Do not describe a workflow as deployment-ready when one of these checks was
+skipped, failed, or produced unresolved warnings. Report the exact blocker and
+leave the workflow explicitly incomplete until the zero-error contract passes.
+
 ## ⚡ Performance & Complexity Invariants
 
 Because this software operates as a security filter in the local operating
@@ -160,7 +181,7 @@ export interface BadgeProps {
    *
    * @default "neutral"
    */
-  readonly tone?: "neutral" | "positive" | "critical";
+  readonly tone?: 'neutral' | 'positive' | 'critical';
 }
 ```
 

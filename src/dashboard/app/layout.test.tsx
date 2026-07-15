@@ -1,36 +1,46 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
 
-import RootLayout from "./layout";
+import RootLayout from './layout';
 
-describe("RootLayout", () => {
-  it("renders the semantic HTML root", () => {
+describe('RootLayout', () => {
+  it('renders the semantic HTML root', () => {
     const markup = renderToStaticMarkup(
       <RootLayout>
         <main>Dashboard</main>
-      </RootLayout>,
+      </RootLayout>
     );
 
     expect(markup).toContain('<html lang="en">');
   });
 
-  it("renders the semantic body root", () => {
+  it('renders the semantic body root', () => {
     const markup = renderToStaticMarkup(
       <RootLayout>
         <main>Dashboard</main>
-      </RootLayout>,
+      </RootLayout>
     );
 
     expect(markup).toContain('<body class="min-h-screen');
   });
 
-  it("renders the active route content", () => {
+  it('renders the active route content', () => {
     const markup = renderToStaticMarkup(
       <RootLayout>
         <main>Dashboard</main>
-      </RootLayout>,
+      </RootLayout>
     );
 
-    expect(markup).toContain("<main>Dashboard</main>");
+    expect(markup).toContain('<main>Dashboard</main>');
+  });
+
+  it('mounts the global Sonner notification region', () => {
+    const markup = renderToStaticMarkup(
+      <RootLayout>
+        <main>Dashboard</main>
+      </RootLayout>
+    );
+
+    expect(markup).toContain('aria-label="Notifications alt+T"');
   });
 });

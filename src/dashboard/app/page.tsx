@@ -1,19 +1,20 @@
-"use client";
+'use client';
 
-import clsx from "clsx";
-import { useCallback, useEffect, useState } from "react";
+import clsx from 'clsx';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   AlertTable,
+  formatAttemptedAction,
+  formatEnforcementStatus,
   type EnforcementStatus,
   type SecurityAlert,
-} from "../components/features/AlertTable";
-import {
-  StatusCard,
-  type SystemStatus,
-} from "../components/ui/StatusCard";
+} from '../components/features/AlertTable';
+import { StatusCard, type SystemStatus } from '../components/ui/StatusCard';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
+const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
 
 interface TelemetryState {
   /** The number of owned child processes currently monitored by Krypton. */
@@ -30,94 +31,137 @@ const EMPTY_TELEMETRY: TelemetryState = {
   alerts: [],
 };
 
+/**
+ * Determines whether an unknown telemetry payload is a non-array record.
+ *
+ * @param {unknown} value - The telemetry value to inspect.
+ * @returns {boolean} `true` when the value can be read as a telemetry record.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * isTelemetryRecord({ alerts: [] });
+ * // => true
+ */
 function isTelemetryRecord(value: unknown): value is TelemetryRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Reads a string field from a telemetry record with optional legacy-key support.
+ *
+ * @param {TelemetryRecord} record - The normalized object containing telemetry fields.
+ * @param {string} primaryKey - The preferred current schema key.
+ * @param {string | undefined} fallbackKey - The optional legacy schema key.
+ * @returns {string | undefined} The first valid string value or `undefined`.
+ * @complexity O(1) time and O(1) space for direct object-key access.
+ * @example
+ * readString({ action: 'blocked' }, 'attemptedAction', 'action');
+ * // => 'blocked'
+ */
 function readString(
   record: TelemetryRecord,
   primaryKey: string,
-  fallbackKey?: string,
+  fallbackKey?: string
 ): string | undefined {
   const primaryValue = record[primaryKey];
 
-  if (typeof primaryValue === "string") {
+  if (typeof primaryValue === 'string') {
     return primaryValue;
   }
 
-  const fallbackValue =
-    fallbackKey === undefined ? undefined : record[fallbackKey];
+  const fallbackValue = fallbackKey === undefined ? undefined : record[fallbackKey];
 
-  return typeof fallbackValue === "string" ? fallbackValue : undefined;
+  return typeof fallbackValue === 'string' ? fallbackValue : undefined;
 }
 
-function normalizeEnforcementStatus(
-  record: TelemetryRecord,
-): EnforcementStatus {
+/**
+ * Maps current and legacy telemetry records to a supported enforcement status.
+ *
+ * Unknown states fail closed to an intercepted outcome unless the legacy action
+ * explicitly records completed process quarantine.
+ *
+ * @param {TelemetryRecord} record - The raw telemetry record to normalize.
+ * @returns {EnforcementStatus} A dashboard-supported containment state.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * normalizeEnforcementStatus({ enforcementStatus: 'INTERCEPTED' });
+ * // => 'INTERCEPTED'
+ */
+function normalizeEnforcementStatus(record: TelemetryRecord): EnforcementStatus {
   const enforcementStatus = record.enforcementStatus;
 
   if (
-    enforcementStatus === "INTERCEPTED" ||
-    enforcementStatus === "QUARANTINED"
+    enforcementStatus === 'AUTOMATED_QUARANTINE' ||
+    enforcementStatus === 'INTERCEPTED' ||
+    enforcementStatus === 'QUARANTINED'
   ) {
     return enforcementStatus;
   }
 
-  return record.action === "process_quarantined"
-    ? "QUARANTINED"
-    : "INTERCEPTED";
+  return record.action === 'process_quarantined' ? 'QUARANTINED' : 'INTERCEPTED';
 }
 
-function normalizeAlert(
-  value: unknown,
-  alertIndex: number,
-): SecurityAlert | undefined {
+/**
+ * Converts one unknown current or legacy ledger value into a security alert.
+ *
+ * @param {unknown} value - The untrusted ledger value to validate.
+ * @param {number} alertIndex - The stable payload position used in fallback IDs.
+ * @returns {SecurityAlert | undefined} A valid alert or `undefined` for malformed input.
+ * @complexity O(L) time and space for fallback ID construction over path and timestamp length.
+ * @example
+ * normalizeAlert({ timestamp: '2026-01-01T00:00:00Z', targetProcessId: 42,
+ *   attemptedAction: 'read_file', attemptedPath: '/tmp/file' }, 0);
+ * // => a normalized SecurityAlert
+ */
+function normalizeAlert(value: unknown, alertIndex: number): SecurityAlert | undefined {
   if (!isTelemetryRecord(value)) {
     return undefined;
   }
 
-  const attemptedAction = readString(value, "attemptedAction", "action");
-  const attemptedPath = readString(value, "attemptedPath", "illegalPath");
-  const timestamp = readString(value, "timestamp");
+  const attemptedAction = readString(value, 'attemptedAction', 'action');
+  const attemptedPath = readString(value, 'attemptedPath', 'illegalPath');
+  const timestamp = readString(value, 'timestamp');
   const legacyProcessId = value.pid;
   const targetProcessId =
-    typeof value.targetProcessId === "number"
-      ? value.targetProcessId
-      : legacyProcessId;
+    typeof value.targetProcessId === 'number' ? value.targetProcessId : legacyProcessId;
 
   if (
     attemptedAction === undefined ||
     attemptedPath === undefined ||
     timestamp === undefined ||
-    typeof targetProcessId !== "number" ||
+    typeof targetProcessId !== 'number' ||
     !Number.isSafeInteger(targetProcessId) ||
     targetProcessId <= 0
   ) {
     return undefined;
   }
 
-  const recordId = readString(value, "id");
-  const triggerSignature =
-    readString(value, "triggerSignature") ?? "PATH_BOUNDARY_ESCAPE";
+  const recordId = readString(value, 'id');
+  const triggerSignature = readString(value, 'triggerSignature') ?? 'PATH_BOUNDARY_ESCAPE';
 
   return {
     attemptedAction,
     attemptedPath,
     enforcementStatus: normalizeEnforcementStatus(value),
-    id:
-      recordId ??
-      `${timestamp}:${targetProcessId}:${attemptedPath}:${alertIndex}`,
+    id: recordId ?? `${timestamp}:${targetProcessId}:${attemptedPath}:${alertIndex}`,
     targetProcessId,
     timestamp,
     triggerSignature,
   };
 }
 
+/**
+ * Normalizes an API response into the dashboard's stable telemetry state.
+ *
+ * @param {unknown} payload - The untrusted telemetry endpoint response.
+ * @returns {TelemetryState} Valid alerts and a non-negative active-process count.
+ * @complexity O(A * L) time and O(A) space for A alerts with maximum field length L.
+ * @example
+ * normalizeTelemetryPayload({ activeProcessCount: 0, alerts: [] });
+ * // => { activeProcessCount: 0, alerts: [] }
+ */
 function normalizeTelemetryPayload(payload: unknown): TelemetryState {
   const payloadRecord = isTelemetryRecord(payload) ? payload : undefined;
-  const alertPayload = Array.isArray(payload)
-    ? payload
-    : payloadRecord?.alerts;
+  const alertPayload = Array.isArray(payload) ? payload : payloadRecord?.alerts;
   const alerts = Array.isArray(alertPayload)
     ? alertPayload.flatMap((alert, index) => {
         const normalizedAlert = normalizeAlert(alert, index);
@@ -127,13 +171,86 @@ function normalizeTelemetryPayload(payload: unknown): TelemetryState {
     : [];
   const reportedProcessCount = payloadRecord?.activeProcessCount;
   const activeProcessCount =
-    typeof reportedProcessCount === "number" &&
+    typeof reportedProcessCount === 'number' &&
     Number.isSafeInteger(reportedProcessCount) &&
     reportedProcessCount >= 0
       ? reportedProcessCount
       : 0;
 
   return { activeProcessCount, alerts };
+}
+
+/**
+ * Selects previously unseen containment breakouts that are still brand new.
+ *
+ * The supplied ID set is updated in place and pruned to the currently fresh
+ * breakout window so repeated telemetry polls do not replay notifications.
+ *
+ * @param {readonly SecurityAlert[]} alerts - The normalized newest-first telemetry alerts.
+ * @param {number} currentTimeMs - The current Unix timestamp in milliseconds.
+ * @param {Set<string>} notifiedAlertIds - The breakout IDs already toasted during the active window.
+ * @returns {SecurityAlert[]} The fresh breakout alerts that require critical error toasts.
+ * @complexity O(A + N) time for A alerts and N tracked IDs, with O(A) temporary space.
+ * @example
+ * selectFreshBreakoutAlerts([alert], Date.now(), new Set());
+ * // => [alert] when the breakout timestamp is within ten seconds
+ */
+export function selectFreshBreakoutAlerts(
+  alerts: readonly SecurityAlert[],
+  currentTimeMs: number,
+  notifiedAlertIds: Set<string>
+): SecurityAlert[] {
+  const freshBreakoutIds = new Set<string>();
+  const unseenFreshBreakouts: SecurityAlert[] = [];
+
+  for (const alert of alerts) {
+    if (alert.attemptedAction !== 'filesystem_boundary_breakout') {
+      continue;
+    }
+
+    const alertTimeMs = Date.parse(alert.timestamp);
+    const alertAgeMs = currentTimeMs - alertTimeMs;
+
+    if (
+      !Number.isFinite(alertTimeMs) ||
+      alertAgeMs < 0 ||
+      alertAgeMs > BREAKOUT_TOAST_FRESHNESS_WINDOW_MS
+    ) {
+      continue;
+    }
+
+    freshBreakoutIds.add(alert.id);
+
+    if (!notifiedAlertIds.has(alert.id)) {
+      notifiedAlertIds.add(alert.id);
+      unseenFreshBreakouts.push(alert);
+    }
+  }
+
+  for (const notifiedAlertId of notifiedAlertIds) {
+    if (!freshBreakoutIds.has(notifiedAlertId)) {
+      notifiedAlertIds.delete(notifiedAlertId);
+    }
+  }
+
+  return unseenFreshBreakouts;
+}
+
+/**
+ * Displays one high-severity containment breakout notification for eight seconds.
+ *
+ * @param {SecurityAlert} breakout - The fresh normalized breakout alert to display.
+ * @returns {string | number} The Sonner-generated toast identifier.
+ * @complexity O(L) time and space for the rendered path and PID description.
+ * @example
+ * showContainmentBreakoutToast(alert);
+ * // => a Sonner toast identifier
+ */
+export function showContainmentBreakoutToast(breakout: SecurityAlert): string | number {
+  return toast.error('CRITICAL: Boundary Breakout', {
+    description: `PID ${String(breakout.targetProcessId)} triggered: ${formatAttemptedAction(breakout.attemptedAction)}. Status: ${formatEnforcementStatus(breakout.enforcementStatus)}.`,
+    duration: 8_000,
+  });
 }
 
 /**
@@ -147,34 +264,67 @@ function normalizeTelemetryPayload(payload: unknown): TelemetryState {
  */
 export default function DashboardPage(): React.JSX.Element {
   const [telemetry, setTelemetry] = useState<TelemetryState>(EMPTY_TELEMETRY);
-  const [systemStatus, setSystemStatus] =
-    useState<SystemStatus>("degraded");
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>('degraded');
+  const notifiedBreakoutIds = useRef(new Set<string>());
 
-  const refreshTelemetry = useCallback(
-    async (signal: AbortSignal): Promise<void> => {
-      const response = await fetch("/api/telemetry", {
-        cache: "no-store",
-        headers: { Accept: "application/json" },
-        signal,
-      });
+  /**
+   * Fetches, validates, publishes, and notifies on one telemetry snapshot.
+   *
+   * @param {AbortSignal} signal - The lifecycle signal used to cancel an obsolete request.
+   * @returns {Promise<void>} Resolves after the dashboard state reflects the response.
+   * @complexity O(A * L) time and O(A) space for A returned alerts of field length L.
+   * @example
+   * await refreshTelemetry(new AbortController().signal);
+   * // => updates telemetry state after a successful local response
+   */
+  const refreshTelemetry = useCallback(async (signal: AbortSignal): Promise<void> => {
+    const response = await fetch('/api/telemetry', {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      signal,
+    });
 
-      if (!response.ok) {
-        throw new Error(
-          `Telemetry request failed with status ${response.status}.`,
-        );
-      }
+    if (!response.ok) {
+      throw new Error(`Telemetry request failed with status ${response.status}.`);
+    }
 
-      const payload: unknown = await response.json();
-      setTelemetry(normalizeTelemetryPayload(payload));
-      setSystemStatus("operational");
-    },
-    [],
-  );
+    const payload: unknown = await response.json();
+    const nextTelemetry = normalizeTelemetryPayload(payload);
+    const freshBreakouts = selectFreshBreakoutAlerts(
+      nextTelemetry.alerts,
+      Date.now(),
+      notifiedBreakoutIds.current
+    );
 
+    for (const breakout of freshBreakouts) {
+      showContainmentBreakoutToast(breakout);
+    }
+
+    setTelemetry(nextTelemetry);
+    setSystemStatus('operational');
+  }, []);
+
+  /**
+   * Starts the non-overlapping telemetry polling lifecycle and cleans it up on unmount.
+   *
+   * @returns {void} React owns the returned cleanup callback for this effect.
+   * @complexity O(1) setup space; each poll inherits `refreshTelemetry` complexity.
+   * @example
+   * // Mounted DashboardPage instances poll immediately and every five seconds.
+   */
   useEffect(() => {
     const abortController = new AbortController();
     let requestInFlight = false;
 
+    /**
+     * Executes one guarded poll without allowing overlapping requests.
+     *
+     * @returns {Promise<void>} Resolves after success, handled failure, or an overlap skip.
+     * @complexity O(A * L) time and O(A) space through `refreshTelemetry`.
+     * @example
+     * await pollTelemetry();
+     * // => refreshes once when no prior request is active
+     */
     const pollTelemetry = async (): Promise<void> => {
       if (requestInFlight) {
         return;
@@ -186,7 +336,7 @@ export default function DashboardPage(): React.JSX.Element {
         await refreshTelemetry(abortController.signal);
       } catch {
         if (!abortController.signal.aborted) {
-          setSystemStatus("degraded");
+          setSystemStatus('degraded');
         }
       } finally {
         requestInFlight = false;
@@ -194,10 +344,7 @@ export default function DashboardPage(): React.JSX.Element {
     };
 
     void pollTelemetry();
-    const pollInterval = window.setInterval(
-      () => void pollTelemetry(),
-      TELEMETRY_POLL_INTERVAL_MS,
-    );
+    const pollInterval = window.setInterval(() => void pollTelemetry(), TELEMETRY_POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(pollInterval);
@@ -225,26 +372,24 @@ export default function DashboardPage(): React.JSX.Element {
                 AegisAgent Security Command
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                Live containment visibility for monitored agent processes and
-                filesystem enforcement events.
+                Live containment visibility for monitored agent processes and filesystem enforcement
+                events.
               </p>
             </div>
             <p
               aria-live="polite"
               className={clsx(
-                "inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-wider",
-                systemStatus === "operational"
-                  ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                  : "border-amber-400/40 bg-amber-400/10 text-amber-200",
+                'inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-wider',
+                systemStatus === 'operational'
+                  ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
+                  : 'border-amber-400/40 bg-amber-400/10 text-amber-200'
               )}
             >
               <span
                 aria-hidden="true"
                 className={clsx(
-                  "h-2 w-2 rounded-full",
-                  systemStatus === "operational"
-                    ? "bg-emerald-400"
-                    : "bg-amber-300",
+                  'h-2 w-2 rounded-full',
+                  systemStatus === 'operational' ? 'bg-emerald-400' : 'bg-amber-300'
                 )}
               />
               Telemetry stream: {systemStatus}
@@ -260,15 +405,12 @@ export default function DashboardPage(): React.JSX.Element {
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
               Engine overview
             </p>
-            <h2
-              className="mt-2 text-xl font-bold text-white"
-              id="firewall-overview-title"
-            >
+            <h2 className="mt-2 text-xl font-bold text-white" id="firewall-overview-title">
               Global firewall status
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Krypton continuously evaluates filesystem boundaries and isolates
-              registered processes that violate containment policy.
+              Krypton continuously evaluates filesystem boundaries and isolates registered processes
+              that violate containment policy.
             </p>
           </div>
           <div className="w-full lg:max-w-md">
@@ -279,25 +421,16 @@ export default function DashboardPage(): React.JSX.Element {
           </div>
         </section>
 
-        <section
-          aria-labelledby="threat-telemetry-title"
-          className="space-y-4"
-        >
-          <header className="flex flex-col justify-between gap-2 px-1 sm:flex-row sm:items-end">
+        <section aria-labelledby="threat-telemetry-title" className="space-y-4">
+          <header className="px-1">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
                 Enforcement ledger
               </p>
-              <h2
-                className="mt-1 text-xl font-bold text-white"
-                id="threat-telemetry-title"
-              >
+              <h2 className="mt-1 text-xl font-bold text-white" id="threat-telemetry-title">
                 Intercepted security alerts
               </h2>
             </div>
-            <p className="text-sm text-slate-500">
-              Newest enforcement events appear first.
-            </p>
           </header>
           <AlertTable alerts={telemetry.alerts} />
         </section>
