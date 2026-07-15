@@ -8,6 +8,7 @@ import {
   formatAttemptedAction,
   formatEnforcementStatus,
   requestProcessIsolation,
+  resolveAlertPageSize,
   type SecurityAlert,
 } from './AlertTable';
 
@@ -16,6 +17,7 @@ const ALERT: SecurityAlert = {
   attemptedPath: '/project/.ssh/id_rsa',
   enforcementStatus: 'QUARANTINED',
   id: 'alert-1',
+  origin_attribution: '@scope/dependency-name',
   targetProcessId: 4242,
   timestamp: '2026-07-14T12:00:00.000Z',
   triggerSignature: 'PATH_BOUNDARY_ESCAPE',
@@ -86,6 +88,15 @@ describe('AlertTable', () => {
     }
   });
 
+  it('renders process origin attribution below the process ID', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain('@scope/dependency-name');
+    expect(markup).toContain(
+      'text-[10px] font-mono tracking-tight font-semibold bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded mt-1 block max-w-max'
+    );
+  });
+
   it('preserves the captured ISO timestamp for machine-readable markup', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
@@ -147,8 +158,8 @@ describe('AlertTable', () => {
     expect(markup).toContain('aria-label="Pagination"');
   });
 
-  it('limits the first page to ten newest alerts', () => {
-    const alerts = Array.from({ length: 11 }, (_, index) => ({
+  it('limits the first page to twenty-five newest alerts by default', () => {
+    const alerts = Array.from({ length: 26 }, (_, index) => ({
       ...ALERT,
       id: `alert-${index}`,
       targetProcessId: 4_000 + index,
@@ -156,8 +167,79 @@ describe('AlertTable', () => {
     }));
     const markup = renderToStaticMarkup(<AlertTable alerts={alerts} />);
 
-    expect(markup).toContain('4010');
+    expect(markup).toContain('4025');
     expect(markup).not.toContain('4000');
+  });
+
+  it('renders the standardized table-footer alignment wrapper', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain(
+      'flex flex-col sm:flex-row items-center justify-between w-full gap-4 px-4 py-4 border-t border-slate-800 bg-slate-950/60 select-none'
+    );
+    expect(markup).toContain('whitespace-nowrap text-sm leading-6 text-slate-400');
+  });
+
+  it('isolates wide table content inside its horizontal scroll wrapper', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain('w-full overflow-x-auto bg-slate-950/40');
+    expect(markup).toContain(
+      'w-full min-w-0 overflow-hidden rounded-xl border border-slate-800 shadow-2xl'
+    );
+  });
+
+  it('keeps the responsive footer controls aligned without clipping navigation', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain('flex items-center gap-6 justify-end w-full sm:w-auto');
+    expect(markup).toContain('flex items-center gap-1 min-w-max');
+  });
+
+  it('orders the rows-per-page selector before the navigation buttons', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup.indexOf('aria-label="Rows per page"')).toBeLessThan(
+      markup.indexOf('aria-label="Pagination"')
+    );
+  });
+
+  it('uses one outer outline and one footer divider without a table-shell bottom border', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).not.toContain(
+      'overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40'
+    );
+    expect(markup).toContain('border-t border-slate-800 bg-slate-950/60');
+  });
+
+  it('renders every supported rows-per-page option with 25 selected', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain('aria-label="Rows per page"');
+    expect(markup.match(/<option/g)).toHaveLength(6);
+    expect(markup).toContain('<option value="25" selected="">25</option>');
+    expect(markup).toContain('<option value="ALL">ALL</option>');
+  });
+
+  it('styles the rows-per-page selector with the compact dark treatment', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
+    expect(markup).toContain(
+      'text-xs bg-slate-900 border border-slate-800 text-slate-300 rounded px-2 py-1'
+    );
+  });
+
+  test.each([
+    ['10', 4970, 10],
+    ['25', 4970, 25],
+    ['50', 4970, 50],
+    ['75', 4970, 75],
+    ['100', 4970, 100],
+    ['ALL', 4970, 4970],
+    ['ALL', 0, 1],
+  ])('resolves page-size selection %s', (selection, totalAlerts, expectedPageSize) => {
+    expect(resolveAlertPageSize(selection, totalAlerts)).toBe(expectedPageSize);
   });
 
   test.each(['Target Process ID', 'Attempted Action', 'Enforcement Status', 'Actions'])(

@@ -5,6 +5,7 @@ export {
   formatAttemptedAction,
   formatEnforcementStatus,
   requestProcessIsolation,
+  resolveAlertPageSize,
 } from './AlertTable';
 export type {
   AlertTableProps,

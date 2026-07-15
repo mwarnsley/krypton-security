@@ -43,7 +43,8 @@ import { downloadExploitSignature } from './exploitSignature';
 
 export type EnforcementStatus = 'AUTOMATED_QUARANTINE' | 'INTERCEPTED' | 'QUARANTINED';
 
-const ALERTS_PER_PAGE = 10;
+const DEFAULT_ALERTS_PER_PAGE = 25;
+const ALERT_PAGE_SIZE_OPTIONS = [10, 25, 50, 75, 100] as const;
 
 const ATTEMPTED_ACTION_LABELS: Readonly<Record<string, string>> = {
   filesystem_boundary_breakout: 'Unauthorized Workspace Escape Attempt',
@@ -66,6 +67,9 @@ export interface SecurityAlert {
 
   /** The stable unique identifier used to preserve table-row identity. */
   readonly id: string;
+
+  /** The dependency package or local script attributed to the process. */
+  readonly origin_attribution: string;
 
   /** The operating-system process identifier associated with the alert. */
   readonly targetProcessId: number;
@@ -168,6 +172,29 @@ export function formatAlertTimestamp(timestamp: string): string {
   }
 
   return format(capturedAt, 'yyyy-MM-dd • hh:mm:ss a');
+}
+
+/**
+ * Resolves a row-count selector value into a safe TanStack page size.
+ *
+ * @param {string} selection - A supported numeric option or the `ALL` sentinel.
+ * @param {number} totalAlertCount - The current total number of alert rows.
+ * @returns {number} A positive page size, defaulting to 25 for invalid input.
+ * @complexity O(P) time for the fixed option count P and O(1) space.
+ * @example
+ * resolveAlertPageSize('ALL', 4970);
+ * // => 4970
+ */
+export function resolveAlertPageSize(selection: string, totalAlertCount: number): number {
+  if (selection === 'ALL') {
+    return Math.max(1, totalAlertCount);
+  }
+
+  const numericSelection = Number(selection);
+
+  return ALERT_PAGE_SIZE_OPTIONS.some((pageSize) => pageSize === numericSelection)
+    ? numericSelection
+    : DEFAULT_ALERTS_PER_PAGE;
 }
 
 /**
@@ -358,8 +385,9 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
   const inFlightProcessIds = useRef(new Set<number>());
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
-    pageSize: ALERTS_PER_PAGE,
+    pageSize: DEFAULT_ALERTS_PER_PAGE,
   });
+  const [pageSizeSelection, setPageSizeSelection] = useState('25');
   const [sorting, setSorting] = useState<SortingState>([{ desc: true, id: 'timestamp' }]);
   const [isolatingProcessIds, setIsolatingProcessIds] = useState<ReadonlySet<number>>(new Set());
   const [isolationStatuses, setIsolationStatuses] = useState<
@@ -421,8 +449,13 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
             label="Target Process ID"
           />
         ),
-        cell: ({ getValue }) => (
-          <code className="font-mono font-semibold text-cyan-300">{getValue<number>()}</code>
+        cell: ({ getValue, row }) => (
+          <div>
+            <code className="font-mono font-semibold text-cyan-300">{getValue<number>()}</code>
+            <span className="text-[10px] font-mono tracking-tight font-semibold bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded mt-1 block max-w-max">
+              {row.original.origin_attribution}
+            </span>
+          </div>
         ),
       },
       {
@@ -550,6 +583,10 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
   );
 
   const tableData = useMemo<SecurityAlert[]>(() => [...alerts], [alerts]);
+  const tablePagination =
+    pageSizeSelection === 'ALL'
+      ? { pageIndex: 0, pageSize: resolveAlertPageSize('ALL', tableData.length) }
+      : pagination;
   const table = useReactTable({
     columns,
     data: tableData,
@@ -559,7 +596,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
     getSortedRowModel: getSortedRowModel(),
     onPaginationChange: setPagination,
     onSortingChange: setSorting,
-    state: { pagination, sorting },
+    state: { pagination: tablePagination, sorting },
   });
   const rows = table.getRowModel().rows;
   const pageCount = Math.max(1, table.getPageCount());
@@ -567,10 +604,10 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
 
   return (
     <div
-      className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80 shadow-2xl shadow-black/20"
+      className="w-full min-w-0 overflow-hidden rounded-xl border border-slate-800 shadow-2xl shadow-black/20"
       data-component="alert-table"
     >
-      <div className="overflow-x-auto">
+      <div className="w-full overflow-x-auto bg-slate-950/40">
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">Security alert telemetry</caption>
           <thead className="border-b border-slate-700 bg-slate-900/95 text-xs uppercase tracking-wider text-slate-400">
@@ -611,41 +648,72 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           </tbody>
         </table>
       </div>
-      <footer className="flex flex-col gap-3 border-t border-slate-800 bg-slate-900/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-slate-400" role="status">
+      <footer className="flex flex-col sm:flex-row items-center justify-between w-full gap-4 px-4 py-4 border-t border-slate-800 bg-slate-950/60 select-none primitive-table-footer">
+        <p className="whitespace-nowrap text-sm leading-6 text-slate-400" role="status">
           Page {table.getState().pagination.pageIndex + 1} of {pageCount} ·{' '}
           {table.getPrePaginationRowModel().rows.length} alerts
         </p>
-        <Pagination className="w-auto">
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                disabled={!table.getCanPreviousPage()}
-                onClick={() => table.previousPage()}
-              />
-            </PaginationItem>
-            {visiblePageTokens.map((pageToken) =>
-              typeof pageToken === 'number' ? (
-                <PaginationItem key={pageToken}>
-                  <PaginationLink
-                    aria-label={`Go to page ${pageToken + 1}`}
-                    isActive={pageToken === table.getState().pagination.pageIndex}
-                    onClick={() => table.setPageIndex(pageToken)}
-                  >
-                    {pageToken + 1}
-                  </PaginationLink>
-                </PaginationItem>
-              ) : (
-                <PaginationItem key={pageToken}>
-                  <PaginationEllipsis />
-                </PaginationItem>
-              )
-            )}
-            <PaginationItem>
-              <PaginationNext disabled={!table.getCanNextPage()} onClick={() => table.nextPage()} />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
+        <div className="flex items-center gap-6 justify-end w-full sm:w-auto">
+          <div className="flex shrink-0 items-center gap-2">
+            <label className="whitespace-nowrap text-xs text-slate-400" htmlFor="alert-page-size">
+              Rows per page
+            </label>
+            <select
+              aria-label="Rows per page"
+              className="text-xs bg-slate-900 border border-slate-800 text-slate-300 rounded px-2 py-1"
+              id="alert-page-size"
+              onChange={(event) => {
+                const nextSelection = event.currentTarget.value;
+                setPageSizeSelection(nextSelection);
+                setPagination({
+                  pageIndex: 0,
+                  pageSize: resolveAlertPageSize(nextSelection, tableData.length),
+                });
+              }}
+              value={pageSizeSelection}
+            >
+              {ALERT_PAGE_SIZE_OPTIONS.map((pageSize) => (
+                <option key={pageSize} value={pageSize}>
+                  {pageSize}
+                </option>
+              ))}
+              <option value="ALL">ALL</option>
+            </select>
+          </div>
+          <Pagination className="w-auto shrink-0">
+            <PaginationContent className="flex items-center gap-1 min-w-max">
+              <PaginationItem>
+                <PaginationPrevious
+                  disabled={!table.getCanPreviousPage()}
+                  onClick={() => table.previousPage()}
+                />
+              </PaginationItem>
+              {visiblePageTokens.map((pageToken) =>
+                typeof pageToken === 'number' ? (
+                  <PaginationItem key={pageToken}>
+                    <PaginationLink
+                      aria-label={`Go to page ${pageToken + 1}`}
+                      isActive={pageToken === table.getState().pagination.pageIndex}
+                      onClick={() => table.setPageIndex(pageToken)}
+                    >
+                      {pageToken + 1}
+                    </PaginationLink>
+                  </PaginationItem>
+                ) : (
+                  <PaginationItem key={pageToken}>
+                    <PaginationEllipsis />
+                  </PaginationItem>
+                )
+              )}
+              <PaginationItem>
+                <PaginationNext
+                  disabled={!table.getCanNextPage()}
+                  onClick={() => table.nextPage()}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
       </footer>
     </div>
   );

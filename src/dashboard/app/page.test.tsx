@@ -6,6 +6,7 @@ import type { SecurityAlert } from '../components/features/AlertTable';
 import DashboardPage, {
   clearAlertToasts,
   dispatchAuditModeUpdate,
+  scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
 } from './page';
@@ -17,6 +18,7 @@ const BREAKOUT_ALERT: SecurityAlert = {
   attemptedPath: '/project/private.txt',
   enforcementStatus: 'INTERCEPTED',
   id: 'breakout-1',
+  origin_attribution: 'scripts/agent.ts',
   targetProcessId: 4242,
   timestamp: '2026-07-14T12:00:05.000Z',
   triggerSignature: 'NATIVE_FS_WATCH',
@@ -95,6 +97,31 @@ describe('DashboardPage', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 
     expect(markup).toContain('Security alert telemetry');
+  });
+
+  it('renders an initially hidden and unfocusable Back to Top control', () => {
+    const markup = renderToStaticMarkup(<DashboardPage />);
+
+    expect(markup).toContain('aria-label="Back to top"');
+    expect(markup).toContain('opacity-0 translate-y-4 pointer-events-none');
+    expect(markup).toContain('tabindex="-1"');
+  });
+
+  it('applies responsive floating bounds and the robust arrow-icon size', () => {
+    const markup = renderToStaticMarkup(<DashboardPage />);
+
+    expect(markup).toContain('fixed bottom-6 right-6 z-50');
+    expect(markup).toContain('sm:bottom-8 sm:right-8');
+    expect(markup).toContain('h-5 w-5');
+  });
+
+  it('smoothly scrolls the dashboard viewport to the top', () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal('window', { scrollTo });
+
+    scrollDashboardToTop();
+
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: 'smooth', top: 0 });
   });
 
   it('does not emit page-owned inline styles', () => {

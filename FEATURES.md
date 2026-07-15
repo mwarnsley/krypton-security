@@ -79,6 +79,14 @@ strong protection visible and intentional.
   folder pathways) into a clean, human-readable summary that a developer can
   immediately pass to a security team or use to patch their code repository on
   the spot.
+- Integrates an **Automated Dependency Attestation Engine**. Instead of forcing
+  a developer to stare at a meaningless raw process identification number (PID)
+  like 51384 during an alert event, Krypton automatically traces that number
+  back to its root execution path or parent task in real time. It renders a
+  high-contrast mini-badge directly inside the data row showing exactly which
+  software script or third-party bundle (like a background shell script or a
+  package running inside `node_modules`) is responsible for triggering the
+  directory escape attempt.
 
 ## Future milestones
 

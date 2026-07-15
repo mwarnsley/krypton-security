@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { getActiveWorkspaceProcessCount } from '../../../../core/processIsolation.cjs';
+import { attestProcessOrigin, deriveFallbackOriginAttribution } from './attest';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +22,75 @@ type AlertRecord = Record<string, unknown>;
  */
 function isAlertRecord(value: unknown): value is AlertRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Reads a positive process identifier from the current or legacy alert schema.
+ *
+ * @param {AlertRecord} alert - The raw ledger alert to inspect.
+ * @returns {number | undefined} The valid PID or `undefined` for malformed input.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * readTargetProcessId({ targetProcessId: 4242 });
+ * // => 4242
+ */
+function readTargetProcessId(alert: AlertRecord): number | undefined {
+  const candidate = typeof alert.targetProcessId === 'number' ? alert.targetProcessId : alert.pid;
+
+  return typeof candidate === 'number' && Number.isSafeInteger(candidate) && candidate > 0
+    ? candidate
+    : undefined;
+}
+
+/**
+ * Appends origin attribution to every raw alert before frontend publication.
+ *
+ * Repeated PID/path pairs within one ledger snapshot share the same asynchronous
+ * lookup. Existing non-empty attribution is retained for forward compatibility.
+ *
+ * @param {AlertRecord[]} alerts - The raw structured ledger alerts to enrich.
+ * @returns {Promise<AlertRecord[]>} Alerts with an explicit `origin_attribution` field.
+ * @complexity O(A + P * C) time and O(A + P) space for A alerts, P unique PID/path
+ * contexts, and bounded process-command length C.
+ * @example
+ * await appendOriginAttributions([{ targetProcessId: 4242 }]);
+ * // => [{ targetProcessId: 4242, origin_attribution: "scripts/agent.ts" }]
+ */
+async function appendOriginAttributions(alerts: AlertRecord[]): Promise<AlertRecord[]> {
+  const pendingAttributions = new Map<string, Promise<string>>();
+
+  return Promise.all(
+    alerts.map(async (alert) => {
+      if (typeof alert.origin_attribution === 'string' && alert.origin_attribution.trim() !== '') {
+        return alert;
+      }
+
+      const targetProcessId = readTargetProcessId(alert);
+      const attemptedPath =
+        typeof alert.attemptedPath === 'string'
+          ? alert.attemptedPath
+          : typeof alert.illegalPath === 'string'
+            ? alert.illegalPath
+            : undefined;
+
+      if (targetProcessId === undefined) {
+        return {
+          ...alert,
+          origin_attribution: deriveFallbackOriginAttribution(attemptedPath),
+        };
+      }
+
+      const attestationKey = `${String(targetProcessId)}:${attemptedPath ?? ''}`;
+      let pendingAttribution = pendingAttributions.get(attestationKey);
+
+      if (pendingAttribution === undefined) {
+        pendingAttribution = attestProcessOrigin(targetProcessId, { attemptedPath });
+        pendingAttributions.set(attestationKey, pendingAttribution);
+      }
+
+      return { ...alert, origin_attribution: await pendingAttribution };
+    })
+  );
 }
 
 /**
@@ -91,7 +161,7 @@ export async function GET(): Promise<Response> {
 
   try {
     const ledgerContents = await fs.promises.readFile(ALERTS_LEDGER_PATH, 'utf8');
-    const alerts = parseAlertLedger(ledgerContents);
+    const alerts = await appendOriginAttributions(parseAlertLedger(ledgerContents));
     const newestAlertsFirst = [...alerts].reverse();
 
     return Response.json({ activeProcessCount, alerts: newestAlertsFirst }, { status: 200 });

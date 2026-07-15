@@ -5,8 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const registryMocks = vi.hoisted(() => ({
   getActiveWorkspaceProcessCount: vi.fn(() => 3),
 }));
+const attestMocks = vi.hoisted(() => ({
+  attestProcessOrigin: vi.fn(),
+  deriveFallbackOriginAttribution: vi.fn(() => 'Ephemeral Shell Task'),
+}));
 
 vi.mock('../../../../core/processIsolation.cjs', () => registryMocks);
+vi.mock('./attest', () => ({
+  attestProcessOrigin: attestMocks.attestProcessOrigin,
+  deriveFallbackOriginAttribution: attestMocks.deriveFallbackOriginAttribution,
+}));
 
 import { GET } from './route';
 
@@ -14,6 +22,7 @@ const ALERTS_LEDGER_PATH = path.resolve(process.cwd(), 'alerts.json');
 
 beforeEach(() => {
   registryMocks.getActiveWorkspaceProcessCount.mockReturnValue(3);
+  attestMocks.attestProcessOrigin.mockResolvedValue('Ephemeral Shell Task');
 });
 
 afterEach(() => {
@@ -32,7 +41,10 @@ describe('telemetry route', () => {
 
     expect(body).toEqual({
       activeProcessCount: 3,
-      alerts: [{ timestamp: 'newest' }, { timestamp: 'oldest' }],
+      alerts: [
+        { origin_attribution: 'Ephemeral Shell Task', timestamp: 'newest' },
+        { origin_attribution: 'Ephemeral Shell Task', timestamp: 'oldest' },
+      ],
     });
   });
 
@@ -46,7 +58,10 @@ describe('telemetry route', () => {
 
     expect(body).toEqual({
       activeProcessCount: 3,
-      alerts: [{ timestamp: 'newest' }, { timestamp: 'oldest' }],
+      alerts: [
+        { origin_attribution: 'Ephemeral Shell Task', timestamp: 'newest' },
+        { origin_attribution: 'Ephemeral Shell Task', timestamp: 'oldest' },
+      ],
     });
   });
 
@@ -67,7 +82,59 @@ describe('telemetry route', () => {
 
     expect(body).toEqual({
       activeProcessCount: 3,
-      alerts: [{ action: 'process_quarantined' }],
+      alerts: [{ action: 'process_quarantined', origin_attribution: 'Ephemeral Shell Task' }],
+    });
+  });
+
+  it('attests distinct process IDs before returning alerts', async () => {
+    attestMocks.attestProcessOrigin.mockResolvedValue('@scope/dependency-name');
+    vi.spyOn(fs.promises, 'readFile').mockResolvedValue(
+      '[{"targetProcessId":4242,"attemptedPath":"/workspace/scripts/setup.sh","timestamp":"oldest"},{"targetProcessId":4242,"attemptedPath":"/workspace/scripts/setup.sh","timestamp":"newest"}]'
+    );
+
+    const response = await GET();
+    const body: unknown = await response.json();
+
+    expect(attestMocks.attestProcessOrigin).toHaveBeenCalledOnce();
+    expect(attestMocks.attestProcessOrigin).toHaveBeenCalledWith(4242, {
+      attemptedPath: '/workspace/scripts/setup.sh',
+    });
+    expect(body).toEqual({
+      activeProcessCount: 3,
+      alerts: [
+        {
+          origin_attribution: '@scope/dependency-name',
+          attemptedPath: '/workspace/scripts/setup.sh',
+          targetProcessId: 4242,
+          timestamp: 'newest',
+        },
+        {
+          origin_attribution: '@scope/dependency-name',
+          attemptedPath: '/workspace/scripts/setup.sh',
+          targetProcessId: 4242,
+          timestamp: 'oldest',
+        },
+      ],
+    });
+  });
+
+  it('retains an origin attribution already written to a ledger alert', async () => {
+    vi.spyOn(fs.promises, 'readFile').mockResolvedValue(
+      '{"targetProcessId":4242,"origin_attribution":"scripts/setup.sh"}'
+    );
+
+    const response = await GET();
+    const body: unknown = await response.json();
+
+    expect(attestMocks.attestProcessOrigin).not.toHaveBeenCalled();
+    expect(body).toEqual({
+      activeProcessCount: 3,
+      alerts: [
+        {
+          origin_attribution: 'scripts/setup.sh',
+          targetProcessId: 4242,
+        },
+      ],
     });
   });
 
@@ -88,7 +155,7 @@ describe('telemetry route', () => {
 
     expect(body).toEqual({
       activeProcessCount: 3,
-      alerts: [{ timestamp: 'valid' }],
+      alerts: [{ origin_attribution: 'Ephemeral Shell Task', timestamp: 'valid' }],
     });
   });
 

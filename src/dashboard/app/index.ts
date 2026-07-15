@@ -4,6 +4,7 @@ export {
   clearAlertToasts,
   default as DashboardPage,
   dispatchAuditModeUpdate,
+  scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
 } from './page';

@@ -1,6 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
+import { ArrowUp } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -18,6 +19,7 @@ import { Switch } from '../components/ui/Switch';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
 const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
+const BACK_TO_TOP_VISIBILITY_THRESHOLD_PX = 300;
 
 interface TelemetryState {
   /** The number of owned child processes currently monitored by Krypton. */
@@ -139,6 +141,7 @@ function normalizeAlert(value: unknown, alertIndex: number): SecurityAlert | und
   }
 
   const recordId = readString(value, 'id');
+  const originAttribution = readString(value, 'origin_attribution') ?? 'Ephemeral Shell Task';
   const triggerSignature = readString(value, 'triggerSignature') ?? 'PATH_BOUNDARY_ESCAPE';
 
   return {
@@ -146,6 +149,7 @@ function normalizeAlert(value: unknown, alertIndex: number): SecurityAlert | und
     attemptedPath,
     enforcementStatus: normalizeEnforcementStatus(value),
     id: recordId ?? `${timestamp}:${targetProcessId}:${attemptedPath}:${alertIndex}`,
+    origin_attribution: originAttribution,
     targetProcessId,
     timestamp,
     triggerSignature,
@@ -284,6 +288,19 @@ export function clearAlertToasts(): void {
 }
 
 /**
+ * Smoothly returns the browser viewport to the dashboard header.
+ *
+ * @returns {void} No value; the browser owns the animated viewport transition.
+ * @complexity O(1) dispatch time and O(1) auxiliary space.
+ * @example
+ * scrollDashboardToTop();
+ * // => scrolls the viewport to its top edge
+ */
+export function scrollDashboardToTop(): void {
+  window.scrollTo({ behavior: 'smooth', top: 0 });
+}
+
+/**
  * Sends one operator-selected execution mode to the local dashboard API.
  *
  * @param {boolean} auditOnly - Whether native process termination should be disabled.
@@ -320,6 +337,7 @@ export async function dispatchAuditModeUpdate(auditOnly: boolean): Promise<void>
 export default function DashboardPage(): React.JSX.Element {
   const [auditOnly, setAuditOnly] = useState(true);
   const [isAuditModeUpdating, setIsAuditModeUpdating] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
   const [telemetry, setTelemetry] = useState<TelemetryState>(EMPTY_TELEMETRY);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>('degraded');
   const notifiedBreakoutIds = useRef(new Set<string>());
@@ -439,6 +457,33 @@ export default function DashboardPage(): React.JSX.Element {
     };
   }, [refreshTelemetry]);
 
+  /**
+   * Tracks whether the viewport has crossed the floating-navigation threshold.
+   *
+   * @returns {void} React owns the returned scroll-listener cleanup callback.
+   * @complexity O(1) work and space per passive scroll event.
+   * @example
+   * // Scrolling below 300 pixels keeps the Back to Top control hidden.
+   */
+  useEffect(() => {
+    /**
+     * Synchronizes floating-button visibility with the current vertical offset.
+     *
+     * @returns {void} No value; React receives the next visibility state.
+     * @complexity O(1) time and O(1) auxiliary space.
+     * @example
+     * handleWindowScroll();
+     * // => shows the control when window.scrollY exceeds 300
+     */
+    const handleWindowScroll = (): void => {
+      setIsVisible(window.scrollY > BACK_TO_TOP_VISIBILITY_THRESHOLD_PX);
+    };
+
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    return () => window.removeEventListener('scroll', handleWindowScroll);
+  }, []);
+
   return (
     <main
       className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100 sm:px-6 lg:px-8 lg:py-8"
@@ -556,6 +601,22 @@ export default function DashboardPage(): React.JSX.Element {
           <AlertTable alerts={telemetry.alerts} />
         </section>
       </div>
+      <button
+        aria-hidden={!isVisible}
+        aria-label="Back to top"
+        className={clsx(
+          'fixed bottom-6 right-6 z-50 flex items-center justify-center rounded-full p-3 shadow-2xl transition-all duration-300 transform ease-in-out sm:bottom-8 sm:right-8',
+          'bg-slate-900/90 backdrop-blur-sm border border-slate-800 text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 hover:scale-105 active:scale-95',
+          isVisible
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-4 pointer-events-none'
+        )}
+        onClick={scrollDashboardToTop}
+        tabIndex={isVisible ? 0 : -1}
+        type="button"
+      >
+        <ArrowUp aria-hidden="true" className="h-5 w-5" />
+      </button>
     </main>
   );
 }
