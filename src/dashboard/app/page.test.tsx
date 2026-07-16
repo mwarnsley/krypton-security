@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { toast } from 'sonner';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { SecurityAlert } from '../components/features/AlertTable';
+import type { SecurityAlert } from '../components/patterns';
 import DashboardPage, {
   clearAlertToasts,
   dispatchAuditModeUpdate,

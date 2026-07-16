@@ -8,11 +8,11 @@
   }
 
   html {
-    @apply bg-slate-950;
+    @apply bg-krypton-bg-main;
   }
 
   body {
-    @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
+    @apply min-h-screen bg-krypton-bg-main text-slate-100 antialiased;
   }
 
   button,

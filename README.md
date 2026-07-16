@@ -41,7 +41,11 @@ krypton-security/
 │   │   └── src/main.rs
 │   └── dashboard/                    # AegisAgent Next.js application
 │       ├── app/api/telemetry/        # Telemetry and containment endpoints
-│       └── components/               # Encapsulated dashboard UI
+│       ├── components/               # Encapsulated dashboard UI
+│           ├── primitives/           # Token-bound controls and generic data-table engine
+│           ├── patterns/             # Security table, cards, and tooltip compositions
+│           └── ui/                   # Thin third-party engine wrappers only
+│       └── utils/exploitSignature/   # Exploit report generation and download utilities
 ├── **tests**/                        # Mirrored unit-test suites
 ├── tests_simulation/                 # Live injection simulations
 ├── sandbox_workspace/                # Quarantined agent operating zone

@@ -36,7 +36,7 @@ export const DropdownMenuContent = forwardRef<
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         className={clsx(
-          'z-50 min-w-52 overflow-hidden rounded-lg border border-slate-700 bg-slate-950 p-1.5 text-slate-100 shadow-2xl shadow-black/60',
+          'z-50 min-w-52 overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-main p-1.5 text-slate-100 shadow-2xl shadow-black/60',
           className
         )}
         ref={ref}
@@ -63,7 +63,7 @@ export const DropdownMenuItem = forwardRef<
   return (
     <DropdownMenuPrimitive.Item
       className={clsx(
-        'relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium outline-none transition-colors focus:bg-slate-800 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        'relative flex cursor-pointer select-none items-center gap-krypton-space-2 rounded-krypton-radius-control px-2.5 py-krypton-space-2 text-sm font-medium outline-none transition-colors focus:bg-slate-800 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
         className
       )}
       ref={ref}
@@ -87,7 +87,7 @@ export const DropdownMenuSeparator = forwardRef<
 >(function DropdownMenuSeparator({ className, ...props }, ref): React.JSX.Element {
   return (
     <DropdownMenuPrimitive.Separator
-      className={clsx('-mx-1 my-1 h-px bg-slate-800', className)}
+      className={clsx('-mx-1 my-1 h-px bg-krypton-border-muted', className)}
       ref={ref}
       {...props}
     />

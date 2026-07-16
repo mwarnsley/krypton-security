@@ -11,11 +11,11 @@ import {
   formatEnforcementStatus,
   type EnforcementStatus,
   type SecurityAlert,
-} from '../components/features/AlertTable';
-import { Button } from '../components/ui/Button';
-import { InfoTooltip } from '../components/ui/InfoTooltip';
-import { StatusCard, type SystemStatus } from '../components/ui/StatusCard';
-import { Switch } from '../components/ui/Switch';
+  InfoTooltip,
+  StatusCard,
+  type SystemStatus,
+} from '../components/patterns';
+import { KryptonButton, KryptonIconButton, KryptonToggle } from '../components/primitives';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
 const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
@@ -486,11 +486,11 @@ export default function DashboardPage(): React.JSX.Element {
 
   return (
     <main
-      className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100 sm:px-6 lg:px-8 lg:py-8"
+      className="min-h-screen bg-krypton-bg-main px-krypton-space-4 py-krypton-space-5 text-slate-100 sm:px-krypton-space-5 lg:px-krypton-space-6 lg:py-krypton-space-6"
       data-system-status={systemStatus}
     >
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <header className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 px-6 py-7 shadow-2xl shadow-black/30 sm:px-8">
+        <header className="relative overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-7 shadow-2xl shadow-black/30 sm:px-krypton-space-6">
           <div
             aria-hidden="true"
             className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-cyan-400 via-blue-500 to-violet-500"
@@ -511,7 +511,7 @@ export default function DashboardPage(): React.JSX.Element {
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
               <div
                 aria-busy={isAuditModeUpdating}
-                className="flex items-center gap-3 rounded-full border border-slate-700 bg-slate-950/70 px-3 py-2"
+                className="flex items-center gap-krypton-space-3 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"
               >
                 <label
                   className="cursor-pointer text-xs font-bold uppercase tracking-wider text-slate-200"
@@ -519,12 +519,13 @@ export default function DashboardPage(): React.JSX.Element {
                 >
                   Audit-Only Mode
                 </label>
-                <Switch
+                <KryptonToggle
                   aria-label="Audit-Only Mode"
                   checked={auditOnly}
                   disabled={isAuditModeUpdating}
                   id="audit-only-mode"
                   onCheckedChange={(checked) => void handleAuditModeChange(checked)}
+                  variant="warning"
                 />
                 <InfoTooltip
                   content="Audit-Only Mode records folder escapes and shows warnings without terminating the process, so you can observe normal workspace activity before enabling enforcement."
@@ -534,7 +535,7 @@ export default function DashboardPage(): React.JSX.Element {
               <p
                 aria-live="polite"
                 className={clsx(
-                  'inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-wider',
+                  'inline-flex w-fit items-center gap-krypton-space-2 rounded-krypton-radius-full border px-krypton-space-3 py-1.5 text-xs font-bold uppercase tracking-wider',
                   systemStatus === 'operational'
                     ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
                     : 'border-amber-400/40 bg-amber-400/10 text-amber-200'
@@ -543,7 +544,7 @@ export default function DashboardPage(): React.JSX.Element {
                 <span
                   aria-hidden="true"
                   className={clsx(
-                    'h-2 w-2 rounded-full',
+                    'h-2 w-2 rounded-krypton-radius-full',
                     systemStatus === 'operational' ? 'bg-emerald-400' : 'bg-amber-300'
                   )}
                 />
@@ -555,7 +556,7 @@ export default function DashboardPage(): React.JSX.Element {
 
         <section
           aria-labelledby="firewall-overview-title"
-          className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 lg:flex-row lg:items-stretch lg:justify-between lg:p-6"
+          className="flex flex-col gap-krypton-space-4 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-main/70 p-krypton-space-5 lg:flex-row lg:items-stretch lg:justify-between lg:p-krypton-space-5"
         >
           <div className="max-w-xl py-1">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
@@ -588,35 +589,36 @@ export default function DashboardPage(): React.JSX.Element {
                 Intercepted security alerts
               </h2>
             </div>
-            <Button
+            <KryptonButton
               aria-label="Clear desktop alerts"
-              className="h-auto px-2 py-1 text-xs font-semibold text-slate-300 hover:text-white"
               onClick={clearAlertToasts}
               size="sm"
-              variant="ghost"
+              variant="link"
             >
               Clear Alerts
-            </Button>
+            </KryptonButton>
           </header>
           <AlertTable alerts={telemetry.alerts} />
         </section>
       </div>
-      <button
+      <div
         aria-hidden={!isVisible}
-        aria-label="Back to top"
         className={clsx(
-          'fixed bottom-6 right-6 z-50 flex items-center justify-center rounded-full p-3 shadow-2xl transition-all duration-300 transform ease-in-out sm:bottom-8 sm:right-8',
-          'bg-slate-900/90 backdrop-blur-sm border border-slate-800 text-cyan-400 hover:text-cyan-300 hover:bg-slate-800 hover:scale-105 active:scale-95',
+          'fixed bottom-6 right-6 z-50 transform rounded-krypton-radius-control shadow-2xl transition-all duration-300 ease-in-out sm:bottom-8 sm:right-8',
           isVisible
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-4 pointer-events-none'
         )}
-        onClick={scrollDashboardToTop}
-        tabIndex={isVisible ? 0 : -1}
-        type="button"
       >
-        <ArrowUp aria-hidden="true" className="h-5 w-5" />
-      </button>
+        <KryptonIconButton
+          aria-label="Back to top"
+          icon={<ArrowUp />}
+          onClick={scrollDashboardToTop}
+          size="lg"
+          tabIndex={isVisible ? 0 : -1}
+          variant="secondary"
+        />
+      </div>
     </main>
   );
 }
