@@ -3,6 +3,8 @@ import * as path from 'node:path';
 
 import { getActiveWorkspaceProcessCount } from '../../../../core/processIsolation.cjs';
 import { attestProcessOrigin, deriveFallbackOriginAttribution } from './attest';
+import { isNativeDaemonReachable } from './ipc';
+import { generateMockTelemetryEvents } from './mockTelemetry';
 
 export const runtime = 'nodejs';
 
@@ -132,44 +134,52 @@ function parseAlertLedger(ledgerContents: string): AlertRecord[] {
 }
 
 /**
- * Determines whether an unknown failure is a Node filesystem error.
+ * Builds a successful, explicitly identified mock telemetry response.
  *
- * @param {unknown} error - The caught failure to inspect.
- * @returns {boolean} `true` when the failure exposes a filesystem error code.
- * @complexity O(1) time and O(1) space.
+ * @param {boolean} nativeDaemonReachable - Whether the daemon passed its health probe.
+ * @returns {Response} A resilient table-compatible fallback payload.
+ * @complexity O(1) time and space for the fixed-size fallback snapshot.
  * @example
- * isFileSystemError(Object.assign(new Error("missing"), { code: "ENOENT" }));
- * // => true
+ * createMockTelemetryResponse(false);
+ * // => Response with source "mock" and high-fidelity fallback alerts
  */
-function isFileSystemError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+function createMockTelemetryResponse(nativeDaemonReachable: boolean): Response {
+  return Response.json(
+    {
+      activeProcessCount: 0,
+      alerts: generateMockTelemetryEvents(),
+      nativeDaemonReachable,
+      source: 'mock',
+    },
+    { status: 200 }
+  );
 }
 
 /**
- * Returns the local threat ledger and live owned-process count.
+ * Returns native telemetry or a high-fidelity fallback when the daemon or ledger is unavailable.
  *
- * @returns {Promise<Response>} A JSON response containing newest-first alerts
- * and the active registry count.
- * @complexity O(N) time and O(N) space to read, parse, copy, and reverse N alert data.
+ * @returns {Promise<Response>} A JSON response containing newest-first native or mock alerts.
+ * @complexity O(N) time and O(N) space to probe, read, parse, copy, and reverse N alert data.
  * @example
  * const response = await GET();
  * await response.json();
  * // => { activeProcessCount: 2, alerts: [{ timestamp: "newest" }] }
  */
 export async function GET(): Promise<Response> {
-  const activeProcessCount = getActiveWorkspaceProcessCount();
+  const nativeDaemonReachable = await isNativeDaemonReachable();
+
+  if (!nativeDaemonReachable) {
+    return createMockTelemetryResponse(false);
+  }
 
   try {
+    const activeProcessCount = getActiveWorkspaceProcessCount();
     const ledgerContents = await fs.promises.readFile(ALERTS_LEDGER_PATH, 'utf8');
     const alerts = await appendOriginAttributions(parseAlertLedger(ledgerContents));
     const newestAlertsFirst = [...alerts].reverse();
 
     return Response.json({ activeProcessCount, alerts: newestAlertsFirst }, { status: 200 });
-  } catch (error: unknown) {
-    if (isFileSystemError(error) && error.code === 'ENOENT') {
-      return Response.json({ activeProcessCount, alerts: [] }, { status: 200 });
-    }
-
-    return Response.json({ activeProcessCount, alerts: [] }, { status: 500 });
+  } catch {
+    return createMockTelemetryResponse(true);
   }
 }

@@ -26,6 +26,7 @@ const IPC_ERROR_AUDIT_ONLY: &str = "ERROR: AUDIT_ONLY\n";
 const IPC_ERROR_MODE_UPDATE_FAILED: &str = "ERROR: MODE_UPDATE_FAILED\n";
 const IPC_ERROR_PID_NOT_OWNED: &str = "ERROR: PID_NOT_OWNED\n";
 const IPC_SUCCESS_AUDIT_MODE_UPDATED: &str = "SUCCESS: AUDIT_MODE_UPDATED\n";
+const IPC_SUCCESS_DAEMON_READY: &str = "SUCCESS: DAEMON_READY\n";
 const IPC_SUCCESS_PID_ISOLATED: &str = "SUCCESS: PID_ISOLATED\n";
 const NATIVE_TRIGGER_SIGNATURE: &str = "NATIVE_FS_WATCH";
 static ALERT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -81,6 +82,8 @@ enum EnforcementMode {
 /// Represents one validated command received over the loopback IPC channel.
 #[derive(Debug, Eq, PartialEq)]
 enum IpcCommand {
+    /// Requests a bounded readiness receipt without changing daemon state.
+    Health,
     /// Requests immediate isolation of one registered child process.
     Isolate(u32),
     /// Enables or disables telemetry-only audit operation.
@@ -831,6 +834,7 @@ fn parse_isolate_command(payload: &str) -> Result<u32, &'static str> {
 /// ```
 fn parse_ipc_command(payload: &str) -> Result<IpcCommand, &'static str> {
     match payload.trim() {
+        "HEALTH" => Ok(IpcCommand::Health),
         "TOGGLE_AUDIT_MODE:true" => Ok(IpcCommand::SetAuditMode(true)),
         "TOGGLE_AUDIT_MODE:false" => Ok(IpcCommand::SetAuditMode(false)),
         isolate_payload => parse_isolate_command(isolate_payload).map(IpcCommand::Isolate),
@@ -1018,6 +1022,11 @@ fn handle_ipc_connection(
     };
 
     match command {
+        IpcCommand::Health => {
+            if let Err(error) = write_ipc_receipt(&mut stream, IPC_SUCCESS_DAEMON_READY) {
+                eprintln!("[IPC ERROR] Could not return the health receipt: {error}");
+            }
+        }
         IpcCommand::SetAuditMode(audit_only) => match set_audit_mode(execution_state, audit_only) {
             Ok(next_mode) => {
                 println!("[IPC COMMAND] Execution mode updated to {next_mode:?}.");
@@ -1558,6 +1567,11 @@ mod tests {
             parse_ipc_command("TOGGLE_AUDIT_MODE:false"),
             Ok(IpcCommand::SetAuditMode(false))
         );
+    }
+
+    #[test]
+    fn parses_the_health_command() {
+        assert_eq!(parse_ipc_command("HEALTH\n"), Ok(IpcCommand::Health));
     }
 
     #[test]

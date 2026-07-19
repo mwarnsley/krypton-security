@@ -2,7 +2,10 @@ import type { HTMLAttributes } from 'react';
 
 export type KryptonTypographyVariant = 'h1' | 'h2' | 'body' | 'mono-code';
 
-export interface KryptonTypographyProps extends Omit<HTMLAttributes<HTMLElement>, 'className'> {
+export interface KryptonTypographyProps extends Omit<
+  HTMLAttributes<HTMLElement>,
+  'className' | 'style'
+> {
   /** Selects both the semantic element and its fixed typographic scale. @default "body" */
   readonly variant?: KryptonTypographyVariant;
 }
@@ -18,7 +21,7 @@ const VARIANT_CLASSES: Readonly<Record<KryptonTypographyVariant, string>> = {
   h1: 'text-3xl font-bold tracking-tight text-slate-50 sm:text-4xl',
   h2: 'text-xl font-bold tracking-tight text-slate-100 sm:text-2xl',
   body: 'text-sm leading-6 text-slate-300',
-  'mono-code': 'font-mono text-xs leading-5 text-cyan-200',
+  'mono-code': 'font-mono text-xs leading-5 tracking-krypton-mono text-krypton-accent-cyan',
 };
 
 /**

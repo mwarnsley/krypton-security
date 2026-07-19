@@ -5,7 +5,7 @@ import { forwardRef } from 'react';
 
 export interface KryptonToggleProps extends Omit<
   React.ComponentPropsWithoutRef<typeof SwitchPrimitive.Root>,
-  'className'
+  'className' | 'style'
 > {
   /** Controls the toggle track and thumb dimensions. @default "md" */
   readonly size?: 'sm' | 'md';
@@ -47,12 +47,12 @@ export const KryptonToggle = forwardRef<
 ): React.JSX.Element {
   return (
     <SwitchPrimitive.Root
-      className={`peer inline-flex shrink-0 cursor-pointer items-center rounded-krypton-radius-full border-2 border-transparent bg-slate-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-krypton-bg-main disabled:cursor-not-allowed disabled:opacity-50 ${ROOT_SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]}`}
+      className={`peer inline-flex shrink-0 cursor-pointer items-center rounded-krypton-radius-full border-2 border-krypton-border-muted bg-krypton-bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-krypton-bg-main disabled:cursor-not-allowed disabled:opacity-50 ${ROOT_SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]}`}
       ref={ref}
       {...toggleProps}
     >
       <SwitchPrimitive.Thumb
-        className={`pointer-events-none block translate-x-0 rounded-krypton-radius-full bg-white shadow-lg transition-transform ${THUMB_SIZE_CLASSES[size]}`}
+        className={`pointer-events-none block translate-x-0 rounded-krypton-radius-full bg-slate-100 shadow-lg transition-transform ${THUMB_SIZE_CLASSES[size]}`}
       />
     </SwitchPrimitive.Root>
   );

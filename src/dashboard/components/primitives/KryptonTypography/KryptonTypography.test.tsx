@@ -12,4 +12,13 @@ describe('KryptonTypography', () => {
     expect(markup).toContain('<h1');
     expect(markup).toContain('Security events');
   });
+
+  it('maps technical readouts to the mono tracking token', () => {
+    const markup = renderToStaticMarkup(
+      <KryptonTypography variant="mono-code">PID 4242</KryptonTypography>
+    );
+
+    expect(markup).toContain('font-mono');
+    expect(markup).toContain('tracking-krypton-mono');
+  });
 });

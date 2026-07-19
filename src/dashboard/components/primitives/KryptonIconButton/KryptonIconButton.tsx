@@ -7,7 +7,7 @@ export type KryptonIconButtonSize = 'sm' | 'md' | 'lg';
 
 export interface KryptonIconButtonProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  'children' | 'className'
+  'children' | 'className' | 'style'
 > {
   /** The Lucide icon element rendered as the control's sole visual child. */
   readonly icon: ReactElement<LucideProps>;
@@ -24,11 +24,12 @@ const BASE_CLASSES =
 
 const VARIANT_CLASSES: Readonly<Record<KryptonButtonVariant, string>> = {
   primary:
-    'border border-krypton-accent-cyan bg-krypton-accent-cyan text-slate-950 hover:bg-cyan-300',
+    'border border-krypton-accent-cyan bg-krypton-accent-cyan text-krypton-bg-main hover:bg-krypton-accent-cyan/90',
   secondary:
-    'border border-krypton-border-muted bg-krypton-bg-surface text-slate-300 hover:bg-slate-800 hover:text-white',
-  destructive: 'border border-krypton-alert-rose/40 bg-rose-600 text-white hover:bg-rose-500',
-  link: 'text-krypton-accent-cyan hover:bg-cyan-400/10 hover:text-cyan-200',
+    'border border-krypton-border-muted bg-krypton-bg-surface text-slate-300 hover:border-krypton-accent-cyan/50 hover:text-white',
+  destructive:
+    'border border-krypton-alert-rose bg-krypton-alert-rose text-krypton-bg-main hover:bg-krypton-alert-rose/90',
+  link: 'text-krypton-accent-cyan hover:bg-krypton-accent-cyan/10 hover:text-krypton-accent-cyan/80',
 };
 
 const SIZE_CLASSES: Readonly<Record<KryptonIconButtonSize, string>> = {

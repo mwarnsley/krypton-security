@@ -19,6 +19,8 @@ const BREAKOUT_ALERT: SecurityAlert = {
   enforcementStatus: 'INTERCEPTED',
   id: 'breakout-1',
   origin_attribution: 'scripts/agent.ts',
+  processName: 'node',
+  severity: 'high',
   targetProcessId: 4242,
   timestamp: '2026-07-14T12:00:05.000Z',
   triggerSignature: 'NATIVE_FS_WATCH',

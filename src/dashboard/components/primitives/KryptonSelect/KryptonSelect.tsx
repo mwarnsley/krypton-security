@@ -10,7 +10,7 @@ export interface KryptonSelectOption {
 
 export interface KryptonSelectProps extends Omit<
   SelectHTMLAttributes<HTMLSelectElement>,
-  'children' | 'className' | 'size'
+  'children' | 'className' | 'size' | 'style'
 > {
   /** The closed list of values presented by the selector. */
   readonly options: readonly KryptonSelectOption[];

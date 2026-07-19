@@ -29,7 +29,7 @@ vi.mock('node:net', () => ({
   createConnection: netMocks.createConnection,
 }));
 
-import { dispatchNativeCommand } from './ipc';
+import { dispatchNativeCommand, isNativeDaemonReachable } from './ipc';
 
 beforeEach(() => {
   netMocks.handlers.clear();
@@ -55,5 +55,27 @@ describe('dispatchNativeCommand', () => {
 
     expect(netMocks.socket.end).toHaveBeenCalledWith('TOGGLE_AUDIT_MODE:true', 'utf8');
     expect(receipt).toBe('SUCCESS: AUDIT_MODE_UPDATED');
+  });
+});
+
+describe('isNativeDaemonReachable', () => {
+  it('recognizes the exact native health receipt', async () => {
+    netMocks.socket.end.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        netMocks.handlers.get('data')?.('SUCCESS: DAEMON_READY\n');
+        netMocks.handlers.get('end')?.();
+      });
+    });
+
+    await expect(isNativeDaemonReachable()).resolves.toBe(true);
+  });
+
+  it('fails closed when the daemon connection emits an error', async () => {
+    netMocks.createConnection.mockImplementationOnce(() => {
+      queueMicrotask(() => netMocks.handlers.get('error')?.(new Error('connection refused')));
+      return netMocks.socket;
+    });
+
+    await expect(isNativeDaemonReachable()).resolves.toBe(false);
   });
 });

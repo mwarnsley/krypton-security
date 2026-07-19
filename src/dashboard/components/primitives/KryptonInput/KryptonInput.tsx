@@ -2,7 +2,7 @@ import { forwardRef, type InputHTMLAttributes } from 'react';
 
 export interface KryptonInputProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
-  'className' | 'size'
+  'className' | 'size' | 'style'
 > {
   /** Controls the fixed form-control height. @default "md" */
   readonly size?: 'sm' | 'md' | 'lg';

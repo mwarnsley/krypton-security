@@ -11,6 +11,7 @@ import {
   formatEnforcementStatus,
   type EnforcementStatus,
   type SecurityAlert,
+  type TelemetrySeverity,
   InfoTooltip,
   StatusCard,
   type SystemStatus,
@@ -97,12 +98,47 @@ function normalizeEnforcementStatus(record: TelemetryRecord): EnforcementStatus 
   if (
     enforcementStatus === 'AUTOMATED_QUARANTINE' ||
     enforcementStatus === 'INTERCEPTED' ||
+    enforcementStatus === 'OBSERVED' ||
     enforcementStatus === 'QUARANTINED'
   ) {
     return enforcementStatus;
   }
 
   return record.action === 'process_quarantined' ? 'QUARANTINED' : 'INTERCEPTED';
+}
+
+/**
+ * Maps current telemetry risk labels or enforcement states to a supported severity.
+ *
+ * @param {TelemetryRecord} record - The raw telemetry record to normalize.
+ * @param {EnforcementStatus} enforcementStatus - The already normalized enforcement state.
+ * @returns {TelemetrySeverity} A stable table-compatible severity tier.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * normalizeTelemetrySeverity({ severity: 'high' }, 'INTERCEPTED');
+ * // => 'high'
+ */
+function normalizeTelemetrySeverity(
+  record: TelemetryRecord,
+  enforcementStatus: EnforcementStatus
+): TelemetrySeverity {
+  const severity = record.severity;
+
+  if (
+    severity === 'critical' ||
+    severity === 'high' ||
+    severity === 'info' ||
+    severity === 'low' ||
+    severity === 'medium'
+  ) {
+    return severity;
+  }
+
+  if (enforcementStatus === 'OBSERVED') {
+    return 'info';
+  }
+
+  return enforcementStatus === 'INTERCEPTED' ? 'high' : 'critical';
 }
 
 /**
@@ -142,14 +178,19 @@ function normalizeAlert(value: unknown, alertIndex: number): SecurityAlert | und
 
   const recordId = readString(value, 'id');
   const originAttribution = readString(value, 'origin_attribution') ?? 'Ephemeral Shell Task';
+  const processName = readString(value, 'processName') ?? originAttribution;
+  const enforcementStatus = normalizeEnforcementStatus(value);
+  const severity = normalizeTelemetrySeverity(value, enforcementStatus);
   const triggerSignature = readString(value, 'triggerSignature') ?? 'PATH_BOUNDARY_ESCAPE';
 
   return {
     attemptedAction,
     attemptedPath,
-    enforcementStatus: normalizeEnforcementStatus(value),
+    enforcementStatus,
     id: recordId ?? `${timestamp}:${targetProcessId}:${attemptedPath}:${alertIndex}`,
     origin_attribution: originAttribution,
+    processName,
+    severity,
     targetProcessId,
     timestamp,
     triggerSignature,

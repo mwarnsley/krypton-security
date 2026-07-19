@@ -12,4 +12,5 @@ export type {
   EnforcementStatus,
   IsolationExecutionStatus,
   SecurityAlert,
+  TelemetrySeverity,
 } from './AlertTable';

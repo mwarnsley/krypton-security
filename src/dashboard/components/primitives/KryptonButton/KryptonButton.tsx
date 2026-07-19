@@ -6,7 +6,7 @@ export type KryptonButtonSize = 'sm' | 'md' | 'lg';
 
 export interface KryptonButtonProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  'className'
+  'className' | 'style'
 > {
   /** Renders a single child element while preserving the Krypton button treatment. */
   readonly asChild?: boolean;
@@ -29,12 +29,12 @@ const BASE_CLASSES =
 
 const VARIANT_CLASSES: Readonly<Record<KryptonButtonVariant, string>> = {
   primary:
-    'border border-krypton-accent-cyan bg-krypton-accent-cyan text-slate-950 shadow-sm shadow-cyan-950/40 hover:bg-cyan-300',
+    'border border-krypton-accent-cyan bg-krypton-accent-cyan text-krypton-bg-main shadow-sm shadow-krypton-accent-cyan/20 hover:bg-krypton-accent-cyan/90',
   secondary:
-    'border border-krypton-border-muted bg-krypton-bg-surface text-slate-200 hover:border-slate-600 hover:bg-slate-800 hover:text-white',
+    'border border-krypton-border-muted bg-krypton-bg-surface text-slate-200 hover:border-krypton-accent-cyan/50 hover:text-white',
   destructive:
-    'border border-krypton-alert-rose/40 bg-rose-600 text-white shadow-sm shadow-rose-950/40 hover:bg-rose-500',
-  link: 'text-krypton-accent-cyan underline-offset-4 hover:text-cyan-200 hover:underline',
+    'border border-krypton-alert-rose bg-krypton-alert-rose text-krypton-bg-main shadow-sm shadow-krypton-alert-rose/20 hover:bg-krypton-alert-rose/90',
+  link: 'text-krypton-accent-cyan underline-offset-4 hover:text-krypton-accent-cyan/80 hover:underline',
 };
 
 const SIZE_CLASSES: Readonly<Record<KryptonButtonSize, string>> = {

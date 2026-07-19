@@ -8,5 +8,6 @@ describe('KryptonInput', () => {
     const markup = renderToStaticMarkup(<KryptonInput aria-label="Filter alerts" />);
 
     expect(markup).toContain('focus-visible:border-krypton-accent-cyan');
+    expect(markup).toContain('rounded-krypton-radius-control');
   });
 });

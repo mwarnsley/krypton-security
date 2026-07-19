@@ -11,5 +11,6 @@ describe('KryptonToggle', () => {
 
     expect(markup).toContain('role="switch"');
     expect(markup).toContain('data-[state=checked]:bg-krypton-warning-amber');
+    expect(markup).toContain('border-krypton-border-muted');
   });
 });

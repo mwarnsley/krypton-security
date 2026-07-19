@@ -9,12 +9,16 @@ const attestMocks = vi.hoisted(() => ({
   attestProcessOrigin: vi.fn(),
   deriveFallbackOriginAttribution: vi.fn(() => 'Ephemeral Shell Task'),
 }));
+const ipcMocks = vi.hoisted(() => ({
+  isNativeDaemonReachable: vi.fn(() => Promise.resolve(true)),
+}));
 
 vi.mock('../../../../core/processIsolation.cjs', () => registryMocks);
 vi.mock('./attest', () => ({
   attestProcessOrigin: attestMocks.attestProcessOrigin,
   deriveFallbackOriginAttribution: attestMocks.deriveFallbackOriginAttribution,
 }));
+vi.mock('./ipc', () => ipcMocks);
 
 import { GET } from './route';
 
@@ -23,6 +27,7 @@ const ALERTS_LEDGER_PATH = path.resolve(process.cwd(), 'alerts.json');
 beforeEach(() => {
   registryMocks.getActiveWorkspaceProcessCount.mockReturnValue(3);
   attestMocks.attestProcessOrigin.mockResolvedValue('Ephemeral Shell Task');
+  ipcMocks.isNativeDaemonReachable.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -178,7 +183,7 @@ describe('telemetry route', () => {
     expect(response.status).toBe(200);
   });
 
-  it('returns empty alerts when the ledger does not exist', async () => {
+  it('returns mock alerts when the ledger does not exist', async () => {
     const missingLedgerError = Object.assign(new Error('missing ledger'), {
       code: 'ENOENT',
     });
@@ -187,51 +192,79 @@ describe('telemetry route', () => {
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual({ activeProcessCount: 3, alerts: [] });
+    expect(body).toEqual(
+      expect.objectContaining({
+        activeProcessCount: 0,
+        nativeDaemonReachable: true,
+        source: 'mock',
+      })
+    );
+    expect((body as { alerts: unknown[] }).alerts).not.toHaveLength(0);
   });
 
-  it('fails closed when the ledger contains malformed JSON', async () => {
+  it('returns status 200 when the ledger contains malformed JSON', async () => {
     vi.spyOn(fs.promises, 'readFile').mockResolvedValue('not-json');
 
     const response = await GET();
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(200);
   });
 
-  it('returns empty alerts for malformed ledger data', async () => {
+  it('returns mock alerts for malformed ledger data', async () => {
     vi.spyOn(fs.promises, 'readFile').mockResolvedValue('not-json');
 
     const response = await GET();
     const body: unknown = await response.json();
 
-    expect(body).toEqual({ activeProcessCount: 3, alerts: [] });
+    expect(body).toEqual(expect.objectContaining({ source: 'mock' }));
+    expect((body as { alerts: unknown[] }).alerts).not.toHaveLength(0);
   });
 
-  it('fails closed when a newline-delimited record is not an object', async () => {
+  it('falls back when a newline-delimited record is not an object', async () => {
     vi.spyOn(fs.promises, 'readFile').mockResolvedValue('{"timestamp":"valid"}\n42');
 
     const response = await GET();
+    const body: unknown = await response.json();
 
-    expect(response.status).toBe(500);
+    expect(body).toEqual(expect.objectContaining({ source: 'mock' }));
   });
 
-  it('fails closed for a non-filesystem read rejection', async () => {
+  it('falls back for a non-filesystem read rejection', async () => {
     vi.spyOn(fs.promises, 'readFile').mockRejectedValue('read failure');
 
     const response = await GET();
+    const body: unknown = await response.json();
 
-    expect(response.status).toBe(500);
+    expect(body).toEqual(expect.objectContaining({ source: 'mock' }));
   });
 
-  it('fails closed for filesystem errors other than ENOENT', async () => {
+  it('falls back for filesystem errors other than ENOENT', async () => {
     const permissionError = Object.assign(new Error('permission denied'), {
       code: 'EACCES',
     });
     vi.spyOn(fs.promises, 'readFile').mockRejectedValue(permissionError);
 
     const response = await GET();
+    const body: unknown = await response.json();
 
-    expect(response.status).toBe(500);
+    expect(body).toEqual(expect.objectContaining({ source: 'mock' }));
+  });
+
+  it('uses mock telemetry without reading the ledger when the daemon is unreachable', async () => {
+    const readFileSpy = vi.spyOn(fs.promises, 'readFile');
+    ipcMocks.isNativeDaemonReachable.mockResolvedValue(false);
+
+    const response = await GET();
+    const body: unknown = await response.json();
+
+    expect(readFileSpy).not.toHaveBeenCalled();
+    expect(body).toEqual(
+      expect.objectContaining({
+        activeProcessCount: 0,
+        nativeDaemonReachable: false,
+        source: 'mock',
+      })
+    );
   });
 
   it('reads the active process count from the core registry', async () => {

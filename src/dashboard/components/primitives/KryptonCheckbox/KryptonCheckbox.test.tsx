@@ -9,5 +9,6 @@ describe('KryptonCheckbox', () => {
 
     expect(markup).toContain('type="checkbox"');
     expect(markup).toContain('Select alert');
+    expect(markup).toContain('rounded-krypton-radius-control');
   });
 });

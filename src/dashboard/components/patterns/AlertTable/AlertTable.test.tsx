@@ -18,6 +18,8 @@ const ALERT: SecurityAlert = {
   enforcementStatus: 'QUARANTINED',
   id: 'alert-1',
   origin_attribution: '@scope/dependency-name',
+  processName: 'node',
+  severity: 'high',
   targetProcessId: 4242,
   timestamp: '2026-07-14T12:00:00.000Z',
   triggerSignature: 'PATH_BOUNDARY_ESCAPE',
@@ -52,9 +54,11 @@ afterEach(() => {
 describe('AlertTable', () => {
   test.each([
     'Timestamp',
-    'Target Process ID',
-    'Attempted Action',
-    'Enforcement Status',
+    'Process ID',
+    'Process Name',
+    'Targeted Directory',
+    'Severity',
+    'Attestation Tag',
     'Actions',
   ])('renders the %s column', (columnLabel) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
@@ -62,14 +66,17 @@ describe('AlertTable', () => {
     expect(markup).toContain(columnLabel);
   });
 
-  test.each([String(ALERT.targetProcessId), 'Read File', ALERT.attemptedPath, 'Quarantined'])(
-    'renders alert field %s',
-    (fieldValue) => {
-      const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+  test.each([
+    String(ALERT.targetProcessId),
+    ALERT.processName,
+    ALERT.attemptedPath,
+    ALERT.severity,
+    ALERT.origin_attribution,
+  ])('renders alert field %s', (fieldValue) => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
-      expect(markup).toContain(fieldValue);
-    }
-  );
+    expect(markup).toContain(fieldValue);
+  });
 
   it('renders the captured timestamp in the local device timezone', () => {
     const originalTimezone = process.env.TZ;
@@ -88,12 +95,12 @@ describe('AlertTable', () => {
     }
   });
 
-  it('renders process origin attribution below the process ID', () => {
+  it('renders process origin attribution as a bounded attestation tag', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
     expect(markup).toContain('@scope/dependency-name');
     expect(markup).toContain(
-      'text-[10px] font-mono tracking-tight font-semibold bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded mt-1 block max-w-max'
+      'rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface'
     );
   });
 
@@ -242,14 +249,18 @@ describe('AlertTable', () => {
     expect(resolveAlertPageSize(selection, totalAlerts)).toBe(expectedPageSize);
   });
 
-  test.each(['Target Process ID', 'Attempted Action', 'Enforcement Status', 'Actions'])(
-    'renders a separate info control for %s',
-    (columnLabel) => {
-      const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
+  test.each([
+    'Process ID',
+    'Process Name',
+    'Targeted Directory',
+    'Severity',
+    'Attestation Tag',
+    'Actions',
+  ])('renders a separate info control for %s', (columnLabel) => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
 
-      expect(markup).toContain(`aria-label="Info for ${columnLabel}"`);
-    }
-  );
+    expect(markup).toContain(`aria-label="Info for ${columnLabel}"`);
+  });
 
   it('keeps Timestamp free of an info control', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
@@ -263,7 +274,7 @@ describe('AlertTable', () => {
       /flex w-full items-center justify-between gap-krypton-space-3 primitive-header-wrapper/g
     );
 
-    expect(headerWrappers).toHaveLength(5);
+    expect(headerWrappers).toHaveLength(7);
   });
 
   it('keeps sortable header labels from wrapping into adjacent controls', () => {
@@ -283,9 +294,9 @@ describe('AlertTable', () => {
 
   it('keeps the help trigger outside the sortable header button', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
-    const sortButtonStart = markup.indexOf('aria-label="Sort by Target Process ID"');
+    const sortButtonStart = markup.indexOf('aria-label="Sort by Process ID"');
     const sortButtonEnd = markup.indexOf('</button>', sortButtonStart);
-    const helpButtonStart = markup.indexOf('aria-label="Info for Target Process ID"');
+    const helpButtonStart = markup.indexOf('aria-label="Info for Process ID"');
 
     expect(sortButtonStart).toBeGreaterThan(-1);
     expect(helpButtonStart).toBeGreaterThan(sortButtonEnd);
@@ -380,10 +391,10 @@ describe('AlertTable', () => {
     );
   });
 
-  it('renders quarantined alerts with the crimson treatment', () => {
+  it('renders high-severity alerts with the warning token treatment', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
-    expect(markup).toContain('bg-rose-500/10');
+    expect(markup).toContain('bg-krypton-warning-amber/10');
   });
 
   it('does not emit inline styles', () => {

@@ -17,5 +17,6 @@ describe('KryptonSelect', () => {
     );
 
     expect(markup.match(/<option/g)).toHaveLength(2);
+    expect(markup).toContain('border-krypton-border-muted');
   });
 });

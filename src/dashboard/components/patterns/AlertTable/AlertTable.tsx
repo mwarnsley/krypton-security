@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+import type { EnforcementStatus, SecurityAlert, TelemetrySeverity } from '../../../types';
 import { downloadExploitSignature } from '../../../utils/exploitSignature';
 import { KryptonButton, KryptonDataTable, KryptonIconButton } from '../../primitives';
 import {
@@ -29,7 +30,7 @@ import {
 } from '../../ui';
 import { InfoTooltip } from '../InfoTooltip';
 
-export type EnforcementStatus = 'AUTOMATED_QUARANTINE' | 'INTERCEPTED' | 'QUARANTINED';
+export type { EnforcementStatus, SecurityAlert, TelemetrySeverity } from '../../../types';
 
 const DEFAULT_ALERTS_PER_PAGE = 25;
 const ALERT_PAGE_SIZE_OPTIONS = [10, 25, 50, 75, 100] as const;
@@ -41,33 +42,16 @@ const ATTEMPTED_ACTION_LABELS: Readonly<Record<string, string>> = {
 const ENFORCEMENT_STATUS_LABELS: Readonly<Record<string, string>> = {
   AUTOMATED_QUARANTINE: 'Auto-Quarantined (Rate Limit)',
   INTERCEPTED: 'Blocked & Isolated',
+  OBSERVED: 'Observed',
 };
 
-export interface SecurityAlert {
-  /** The denied operation the agent attempted to execute. */
-  readonly attemptedAction: string;
-
-  /** The normalized filesystem path associated with the attempted operation. */
-  readonly attemptedPath: string;
-
-  /** The final containment state assigned by the Krypton engine. */
-  readonly enforcementStatus: EnforcementStatus;
-
-  /** The stable unique identifier used to preserve table-row identity. */
-  readonly id: string;
-
-  /** The dependency package or local script attributed to the process. */
-  readonly origin_attribution: string;
-
-  /** The operating-system process identifier associated with the alert. */
-  readonly targetProcessId: number;
-
-  /** The ISO-8601 timestamp recorded when the security event occurred. */
-  readonly timestamp: string;
-
-  /** The deterministic policy signature that triggered enforcement. */
-  readonly triggerSignature: string;
-}
+const SEVERITY_CLASSES: Readonly<Record<TelemetrySeverity, string>> = {
+  critical: 'border-krypton-alert-rose bg-krypton-alert-rose/10 text-krypton-alert-rose',
+  high: 'border-krypton-warning-amber bg-krypton-warning-amber/10 text-krypton-warning-amber',
+  info: 'border-krypton-accent-cyan/40 bg-krypton-accent-cyan/10 text-krypton-accent-cyan',
+  low: 'border-krypton-border-muted bg-krypton-bg-surface text-slate-300',
+  medium: 'border-krypton-warning-amber/50 bg-krypton-warning-amber/10 text-amber-200',
+};
 
 export interface AlertTableProps {
   /** The immutable, newest-first security alerts displayed in the data grid. */
@@ -392,63 +376,83 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           <SortableColumnHeader
             column={column}
             helperText="PID means Process ID: the operating-system number assigned to the agent process involved in this event."
-            label="Target Process ID"
+            label="Process ID"
           />
         ),
-        cell: ({ getValue, row }) => (
-          <div>
-            <code className="font-mono font-semibold text-cyan-300">{getValue<number>()}</code>
-            <span className="text-[10px] font-mono tracking-tight font-semibold bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded mt-1 block max-w-max">
-              {row.original.origin_attribution}
-            </span>
-          </div>
+        cell: ({ getValue }) => (
+          <code className="font-mono font-semibold tracking-krypton-mono text-krypton-accent-cyan">
+            {getValue<number>()}
+          </code>
         ),
       },
       {
-        accessorKey: 'attemptedAction',
+        accessorKey: 'processName',
         header: ({ column }) => (
           <SortableColumnHeader
             column={column}
-            helperText="A workspace boundary escape is an attempt to access files outside the agent's approved working folder."
-            label="Attempted Action"
+            helperText="Process Name identifies the executable or developer tool responsible for the telemetry event."
+            label="Process Name"
           />
         ),
-        cell: ({ row }) => (
-          <div className="min-w-64 space-y-1">
-            <span className="block font-semibold text-slate-100">
-              {formatAttemptedAction(row.original.attemptedAction)}
-            </span>
-            <code className="block break-all font-mono text-xs text-slate-400">
-              {row.original.attemptedPath}
-            </code>
-          </div>
+        cell: ({ getValue }) => (
+          <span className="whitespace-nowrap font-semibold text-slate-100">
+            {getValue<string>()}
+          </span>
         ),
       },
       {
-        accessorKey: 'enforcementStatus',
+        accessorKey: 'attemptedPath',
         header: ({ column }) => (
           <SortableColumnHeader
             column={column}
-            helperText="Enforcement Status shows whether Krypton intercepted the action or quarantined the associated process."
-            label="Enforcement Status"
+            helperText="Targeted Directory is the normalized filesystem or network location involved in the event."
+            label="Targeted Directory"
+          />
+        ),
+        cell: ({ getValue }) => (
+          <code className="block min-w-64 break-all font-mono text-xs text-slate-400">
+            {getValue<string>()}
+          </code>
+        ),
+      },
+      {
+        accessorKey: 'severity',
+        header: ({ column }) => (
+          <SortableColumnHeader
+            column={column}
+            helperText="Severity is the normalized risk tier assigned to the observed or blocked behavior."
+            label="Severity"
           />
         ),
         cell: ({ getValue }) => {
-          const enforcementStatus = getValue<EnforcementStatus>();
+          const severity = getValue<TelemetrySeverity>();
 
           return (
             <strong
               className={clsx(
-                'inline-flex rounded-krypton-radius-full border px-2.5 py-krypton-space-1 text-[11px] font-bold tracking-[0.12em]',
-                enforcementStatus === 'QUARANTINED' || enforcementStatus === 'AUTOMATED_QUARANTINE'
-                  ? 'border-rose-500/40 bg-rose-500/10 text-rose-300'
-                  : 'border-amber-400/40 bg-amber-400/10 text-amber-200'
+                'inline-flex rounded-krypton-radius-full border px-2.5 py-krypton-space-1 text-[11px] font-bold uppercase tracking-[0.12em]',
+                SEVERITY_CLASSES[severity]
               )}
             >
-              {formatEnforcementStatus(enforcementStatus)}
+              {severity}
             </strong>
           );
         },
+      },
+      {
+        accessorKey: 'origin_attribution',
+        header: ({ column }) => (
+          <SortableColumnHeader
+            column={column}
+            helperText="Attestation Tag identifies the package, task, or local script attributed to the process."
+            label="Attestation Tag"
+          />
+        ),
+        cell: ({ getValue }) => (
+          <span className="inline-flex max-w-56 rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-[10px] font-semibold tracking-krypton-mono text-slate-300">
+            {getValue<string>()}
+          </span>
+        ),
       },
       {
         id: 'actions',

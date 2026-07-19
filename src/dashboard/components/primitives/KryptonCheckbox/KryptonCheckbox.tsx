@@ -3,7 +3,7 @@ import { forwardRef, type InputHTMLAttributes } from 'react';
 
 export interface KryptonCheckboxProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
-  'className' | 'size' | 'type'
+  'className' | 'size' | 'style' | 'type'
 > {
   /** The visible text paired with the native checkbox. */
   readonly label: string;
