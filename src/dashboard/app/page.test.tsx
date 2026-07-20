@@ -14,6 +14,7 @@ import DashboardPage, {
   scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
+  showSimulatedThreatEventToast,
   TelemetrySourceBanner,
   waitForStaticTelemetryFallback,
 } from './page';
@@ -327,6 +328,20 @@ describe('DashboardPage', () => {
         'PID 4242 triggered: Unauthorized Workspace Escape Attempt. Status: Blocked & Isolated.',
       duration: 8_000,
     });
+  });
+
+  it('displays the critical static-demo toast with the attempted destination', () => {
+    const toastErrorSpy = vi.spyOn(toast, 'error').mockReturnValue('toast-static-demo');
+    const simulatedAlert = createSimulatedThreatEvent(new Date('2026-07-20T12:00:00.000Z'));
+
+    showSimulatedThreatEventToast(simulatedAlert);
+
+    expect(toastErrorSpy).toHaveBeenCalledWith(
+      'CRITICAL: Blocked out-of-bounds access attempt by npm install.',
+      {
+        description: 'Target destination: https://registry.npmjs.org/unvetted-postinstall',
+      }
+    );
   });
 
   it('displays an amber learning-loop warning during Audit-Only Mode', () => {

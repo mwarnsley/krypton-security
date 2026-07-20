@@ -90,6 +90,22 @@ export function createSimulatedThreatEvent(occurredAt = new Date()): SecurityAle
 }
 
 /**
+ * Displays the critical notice associated with a visitor-triggered demonstration event.
+ *
+ * @param {SecurityAlert} simulatedAlert - The simulated event added to the activity log.
+ * @returns {string | number} The Sonner-generated toast identifier.
+ * @complexity O(L) time and space for an attempted location of length L.
+ * @example
+ * showSimulatedThreatEventToast(createSimulatedThreatEvent());
+ * // => a Sonner error toast identifier
+ */
+export function showSimulatedThreatEventToast(simulatedAlert: SecurityAlert): string | number {
+  return toast.error('CRITICAL: Blocked out-of-bounds access attempt by npm install.', {
+    description: `Target destination: ${simulatedAlert.attemptedPath}`,
+  });
+}
+
+/**
  * Creates the explicit demonstration snapshot used when a static deployment has no API route.
  *
  * @param {Date} generatedAt - The time assigned to the simulated breakout occurrence.
@@ -727,6 +743,7 @@ export default function DashboardPage(): React.JSX.Element {
       nativeDaemonReachable: false,
       source: 'mock',
     }));
+    showSimulatedThreatEventToast(simulatedAlert);
     setSystemStatus('offline');
   }, []);
 
