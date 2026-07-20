@@ -111,18 +111,19 @@ launch this process, or leave this sandbox.
 
 The enforcement decision therefore ignores the probabilistic text string and
 asks whether the resolved operation is inside the authority assigned to the
-agent. Absolute paths are checked against the sandbox boundary, high-risk
-targets are denied, and an unauthorized child process is quarantined. The
-control is tied to what the agent attempts to do, not to whether a model can
-correctly interpret the attacker's wording.
+agent. Explicit policy calls can deny an unsafe path, while the protected
+launcher can isolate an exact registered child generation. Portable watcher
+events provide post-event evidence only and do not identify or quarantine an
+actor by themselves.
 
 ### 2. The Performance Bottleneck
 
 **Question:** How does a Node.js runtime monitor heavy agent activity without
 placing noticeable latency in the execution path?
 
-**Answer:** The hot policy tables use native primitive `Set` membership, which
-provides average-case O(1) lookup for blocked targets and tracked process IDs.
+**Answer:** The hot policy tables use native primitive `Set` and `Map`
+membership, which provides average-case O(1) lookup for blocked targets and
+tracked process identities.
 The design avoids nested scans, structural matrices, synchronous network calls,
 and model inference inside the enforcement loop. Security events flow through
 asynchronous, non-blocking telemetry streams so disk logging does not stall the
@@ -140,18 +141,16 @@ the variable latency of a remote classifier or a second model call.
 Service primitive that kills vital workstation processes?
 
 **Answer:** The production boundary follows strict least privilege at two
-layers. At the application layer, Krypton registers only child processes it
-explicitly spawns and stores those PIDs in a native `Set`. A quarantine request
-must match that ownership registry; unknown, stale, zero, negative, or otherwise
-unowned PIDs fail closed and are never signaled. Removing a PID when its child
-exits prevents PID-reuse confusion.
+layers. At the application layer, the protected launcher registers only child
+processes it explicitly spawns and the daemon stores PID, start time,
+executable, and parent identity in a native `HashMap`. A quarantine request must
+match that exact live generation; unknown, stale, zero, mismatched, or otherwise
+unowned identities fail closed and are never signaled.
 
-At the operating-system layer, the daemon runs under a dedicated unprivileged
-identity or equivalent process sandbox. It receives no authority to signal
-unrelated privileged or cross-user processes. This kernel-enforced restriction
-is critical: an in-memory PID allowlist improves application safety, but it is
-not by itself a security boundary if the daemon's OS identity can signal other
-processes.
+At the operating-system layer, the daemon currently runs as the invoking user.
+Dedicated service identities and stronger process sandboxing remain roadmap
+work. The compound registry restricts application behavior, but a same-user or
+root attacker can still bypass local controls.
 
 Together, these controls constrain native `SIGKILL` use to Krypton's explicitly
 owned agent children and prevent cross-process escalation. The kill mechanism
@@ -178,19 +177,17 @@ process action under a developer's identity. A workflow can pass code review,
 use an approved model, and call an approved tool while still allowing a poisoned
 document to steer that tool outside its intended workspace.
 
-Krypton makes that transfer point explicit. It resolves the requested path,
-checks the canonical target against the authorized workspace, verifies process
-ownership, and records the enforcement result. This gives platform teams a
-control surface for the action the agent is about to perform, not merely the
-content that preceded it. The investment thesis is that agent security becomes
-a runtime infrastructure category because conventional review layers cannot
-reliably infer or constrain this new delegation boundary.
+Krypton makes that transfer point explicit in integrations that call its policy
+or protected-launcher seam. It resolves paths, validates exact registered
+process generations, and records enforcement results. Portable filesystem
+notifications are post-event telemetry and are never described as pre-access
+denial or reliable process attribution.
 
 ### Q: How does Krypton de-risk execution vectors without becoming another high-latency policy service?
 
 **A:** The enforcement path is deliberately local and deterministic. Canonical
 path evaluation is bounded by path length, blocked-target and PID ownership
-checks use constant-time average hash-set membership, and telemetry persistence
+checks use constant-time average hash-map membership, and telemetry persistence
 is decoupled through bounded asynchronous queues. There is no remote model call,
 cloud round trip, or open-ended signature scan inside the decision loop.
 
@@ -201,24 +198,15 @@ closed. Krypton therefore reduces both security risk and operational variance;
 its control-plane latency is governed by local system work rather than an
 external service's availability or inference tail latency.
 
-### Q: Why does the synchronous loopback receipt on port 9000 matter, and how is an unauthenticated loopback caller contained?
+### Q: How is the native local-control channel authenticated and bounded?
 
-**A:** Loopback is a transport boundary, not an authentication guarantee. Any
-local process may attempt to connect, so Krypton does not treat possession of a
-localhost socket as authority. The listener accepts a deliberately narrow,
-bounded command grammar, enforces payload and read-time limits, parses only a
-positive PID, and then validates that PID against the daemon's thread-safe
-owned-child registry. An unknown PID receives a deterministic rejection receipt
-and never reaches native signal delivery.
-
-The synchronous receipt closes an important control-plane ambiguity. A caller
-does not interpret a successful TCP write as successful containment; it waits
-for an explicit `SUCCESS: PID_ISOLATED` or fail-closed error response. That
-transaction semantics supports reliable dashboard behavior, audit correlation,
-and future authenticated transport upgrades. The current loopback protocol is a
-local control mechanism, while cryptographic caller authentication and stronger
-OS-level IPC identity binding remain natural hardening layers as deployment
-scope expands.
+**A:** Each workspace receives a private Unix-domain socket, endpoint record,
+and per-daemon capability. Requests use bounded, versioned JSON Lines with a
+request ID and narrow command union. The daemon checks the peer user where the
+platform exposes credentials, validates the capability in constant time, and
+re-reads the full PID/start-time/executable/parent identity before isolation.
+Four workers consume a bounded connection queue, and every read/write has a
+timeout and size limit.
 
 ### Q: How is Krypton strategically differentiated from reactive, signature-based enterprise security products?
 
@@ -231,8 +219,9 @@ cross its workspace or process boundary.
 
 That makes Krypton complementary to EDR, SIEM, DLP, and model-layer guardrails,
 but earlier in the causal chain. Those systems can enrich detection and
-investigation; Krypton can deny the unauthorized local action before a novel
-payload needs a signature. The platform opportunity is a model-agnostic runtime
+investigation; Krypton's explicit policy and protected-launcher seams can deny
+an unauthorized local action without a content signature. The platform
+opportunity is a model-agnostic runtime
 policy and evidence layer that enterprises can apply consistently across hosted
 models, local models, coding agents, and future autonomous tooling.
 

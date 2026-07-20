@@ -18,9 +18,9 @@ const ELEMENTS: Readonly<Record<KryptonTypographyVariant, 'h1' | 'h2' | 'p' | 'c
 };
 
 const VARIANT_CLASSES: Readonly<Record<KryptonTypographyVariant, string>> = {
-  h1: 'text-3xl font-bold tracking-tight text-slate-50 sm:text-4xl',
-  h2: 'text-xl font-bold tracking-tight text-slate-100 sm:text-2xl',
-  body: 'text-sm leading-6 text-slate-300',
+  h1: 'text-3xl font-bold tracking-tight text-krypton-fg-primary sm:text-4xl',
+  h2: 'text-xl font-bold tracking-tight text-krypton-fg-primary sm:text-2xl',
+  body: 'text-sm leading-6 text-krypton-fg-secondary',
   'mono-code': 'font-mono text-xs leading-5 tracking-krypton-mono text-krypton-accent-cyan',
 };
 

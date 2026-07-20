@@ -1,12 +1,20 @@
 const fs = require("node:fs");
+const childProcess = require("node:child_process");
+const net = require("node:net");
 const path = require("node:path");
+const util = require("node:util");
 
 const PROJECT_ROOT = process.cwd();
 const ALERTS_LEDGER_PATH = path.resolve(
   /* turbopackIgnore: true */ PROJECT_ROOT,
   "alerts.json",
 );
-const monitoredProcessIds = new Set();
+const RUNTIME_RECORD_PATH = path.resolve(PROJECT_ROOT, ".krypton/runtime/daemon.json");
+const NATIVE_PROTOCOL_VERSION = 1;
+const NATIVE_RESPONSE_MAX_BYTES = 16 * 1024;
+const NATIVE_TIMEOUT_MS = 2_000;
+const monitoredProcesses = new Map();
+const executeFile = util.promisify(childProcess.execFile);
 let alertStream;
 
 /**
@@ -80,7 +88,12 @@ function resolveIsolationPath(targetPath) {
  */
 function registerWorkspaceProcess(pid) {
   assertValidProcessId(pid);
-  monitoredProcessIds.add(pid);
+  monitoredProcesses.set(pid, {
+    executablePath: "local-reference-registry",
+    parentPid: null,
+    pid,
+    startTime: 0,
+  });
 }
 
 /**
@@ -95,7 +108,7 @@ function registerWorkspaceProcess(pid) {
  */
 function unregisterWorkspaceProcess(pid) {
   assertValidProcessId(pid);
-  monitoredProcessIds.delete(pid);
+  monitoredProcesses.delete(pid);
 }
 
 /**
@@ -108,7 +121,7 @@ function unregisterWorkspaceProcess(pid) {
  * // => 2
  */
 function getActiveWorkspaceProcessCount() {
-  return monitoredProcessIds.size;
+  return monitoredProcesses.size;
 }
 
 /**
@@ -125,7 +138,7 @@ function getActiveWorkspaceProcessCount() {
 function quarantineProcess(pid, illegalPath) {
   assertValidProcessId(pid);
 
-  if (!monitoredProcessIds.delete(pid)) {
+  if (!monitoredProcesses.delete(pid)) {
     throw new Error("The process ID is not registered to this workspace.");
   }
 
@@ -155,7 +168,7 @@ function quarantineProcess(pid, illegalPath) {
  * // => undefined; each registered child is signaled at most once
  */
 function quarantineRegisteredProcesses(illegalPath) {
-  for (const pid of monitoredProcessIds) {
+  for (const pid of monitoredProcesses.keys()) {
     try {
       quarantineProcess(pid, illegalPath);
     } catch {
@@ -164,10 +177,182 @@ function quarantineRegisteredProcesses(illegalPath) {
   }
 }
 
+/**
+ * Reads one exact live process generation from the local operating system.
+ *
+ * @param {number} pid - The newly spawned owned child process identifier.
+ * @returns {Promise<{pid:number,startTime:number,executablePath:string,parentPid:number|null}>} The compound identity accepted by native control.
+ * @complexity O(L) time and space for bounded operating-system process output length L.
+ * @example
+ * await inspectProcessIdentity(child.pid);
+ * // => { pid: 4242, startTime: 1784500000, executablePath: "/bin/sh", parentPid: 4200 }
+ */
+async function inspectProcessIdentity(pid) {
+  assertValidProcessId(pid);
+  const { stdout } = await executeFile("ps", [
+    "-p",
+    String(pid),
+    "-o",
+    "lstart=",
+    "-o",
+    "ppid=",
+    "-o",
+    "comm=",
+  ], { maxBuffer: 4096, timeout: NATIVE_TIMEOUT_MS });
+  const match = stdout.trim().match(/^(.{24})\s+(\d+)\s+(.+)$/);
+  if (match === null) {
+    throw new Error("The owned child process identity could not be inspected.");
+  }
+  const startTime = Math.floor(Date.parse(match[1]) / 1000);
+  const parentPid = Number(match[2]);
+  const reportedExecutable = match[3].trim();
+  const executableCandidate = reportedExecutable.includes(path.sep)
+    ? reportedExecutable
+    : (await executeFile("which", [reportedExecutable], {
+        maxBuffer: 4096,
+        timeout: NATIVE_TIMEOUT_MS,
+      })).stdout.trim();
+  const executablePath = await fs.promises.realpath(executableCandidate);
+  if (!Number.isSafeInteger(startTime) || startTime <= 0 || !Number.isSafeInteger(parentPid)) {
+    throw new Error("The owned child process identity is invalid.");
+  }
+  return { executablePath, parentPid, pid, startTime };
+}
+
+/**
+ * Dispatches one authenticated, versioned command to the workspace daemon.
+ *
+ * @param {Record<string, unknown>} command - The narrow native command payload.
+ * @returns {Promise<Record<string, unknown>>} The validated bounded native response object.
+ * @complexity O(L) time and space for bounded request and response length L.
+ * @example
+ * await dispatchNativeControl({ type: "health" });
+ * // => { ok: true, code: "ready" }
+ */
+async function dispatchNativeControl(command) {
+  const endpoint = JSON.parse(await fs.promises.readFile(RUNTIME_RECORD_PATH, "utf8"));
+  if (
+    endpoint === null ||
+    typeof endpoint !== "object" ||
+    endpoint.protocolVersion !== NATIVE_PROTOCOL_VERSION ||
+    typeof endpoint.endpoint !== "string" ||
+    typeof endpoint.capabilityFile !== "string"
+  ) {
+    throw new Error("The native endpoint discovery record is invalid.");
+  }
+  const capability = (await fs.promises.readFile(endpoint.capabilityFile, "utf8")).trim();
+  const requestId = `launcher-${process.pid}-${Date.now().toString(36)}`;
+  const request = JSON.stringify({
+    capability,
+    command,
+    protocolVersion: NATIVE_PROTOCOL_VERSION,
+    requestId,
+  });
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(endpoint.endpoint);
+    let responseText = "";
+    let settled = false;
+    const complete = (error) => {
+      if (settled) return;
+      settled = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      if (error !== undefined) {
+        reject(error);
+        return;
+      }
+      try {
+        const response = JSON.parse(responseText.trim());
+        if (response.requestId !== requestId || response.protocolVersion !== NATIVE_PROTOCOL_VERSION) {
+          throw new Error("The native response does not match the request.");
+        }
+        resolve(response);
+      } catch (parseError) {
+        reject(parseError);
+      }
+    };
+    socket.setEncoding("utf8");
+    socket.setTimeout(NATIVE_TIMEOUT_MS);
+    socket.once("connect", () => socket.end(`${request}\n`, "utf8"));
+    socket.on("data", (chunk) => {
+      responseText += chunk;
+      if (Buffer.byteLength(responseText, "utf8") > NATIVE_RESPONSE_MAX_BYTES) {
+        complete(new Error("The native response is oversized."));
+      }
+    });
+    socket.once("end", () => complete());
+    socket.once("timeout", () => complete(new Error("The native request timed out.")));
+    socket.once("error", complete);
+  });
+}
+
+/**
+ * Spawns, registers, monitors, and exactly unregisters one protected child.
+ *
+ * @param {string} command - The executable to launch inside the protected lifecycle.
+ * @param {readonly string[]} args - The bounded executable arguments.
+ * @param {import("node:child_process").SpawnOptions & {maxRuntimeMs?: number}} options - Native spawn options and optional timeout.
+ * @param {{spawn?: Function, inspect?: Function, dispatch?: Function}} dependencies - Optional injected test boundaries.
+ * @returns {Promise<import("node:child_process").ChildProcess>} The registered owned child process.
+ * @complexity O(A + L) setup time and space for A arguments and process identity length L.
+ * @example
+ * await spawnProtectedProcess("node", ["agent.js"], { cwd: "sandbox_workspace" });
+ * // => registered ChildProcess
+ */
+async function spawnProtectedProcess(command, args = [], options = {}, dependencies = {}) {
+  const { maxRuntimeMs, ...spawnOptions } = options;
+  const spawn = dependencies.spawn ?? childProcess.spawn;
+  const inspect = dependencies.inspect ?? inspectProcessIdentity;
+  const dispatch = dependencies.dispatch ?? dispatchNativeControl;
+  const child = spawn(command, [...args], spawnOptions);
+  const pid = child.pid;
+  if (pid === undefined) {
+    throw new Error("The protected child process did not expose a PID.");
+  }
+  let identity;
+  try {
+    identity = await inspect(pid);
+    const registration = await dispatch({ process: identity, type: "register_process" });
+    if (registration.ok !== true || registration.code !== "process_registered") {
+      throw new Error("The native daemon rejected child-process registration.");
+    }
+    monitoredProcesses.set(pid, identity);
+  } catch (error) {
+    child.kill("SIGKILL");
+    throw error;
+  }
+  let cleaned = false;
+  let timeout;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    monitoredProcesses.delete(pid);
+    if (timeout !== undefined) clearTimeout(timeout);
+    try {
+      await dispatch({ process: identity, type: "unregister_process" });
+    } catch {
+      // The child is already gone; a stale daemon record is rejected on any later isolate request.
+    }
+  };
+  child.once("exit", () => void cleanup());
+  child.once("error", () => void cleanup());
+  if (Number.isSafeInteger(maxRuntimeMs) && maxRuntimeMs > 0) {
+    timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      void cleanup();
+    }, maxRuntimeMs);
+    timeout.unref();
+  }
+  return child;
+}
+
 module.exports = {
+  dispatchNativeControl,
   getActiveWorkspaceProcessCount,
+  inspectProcessIdentity,
   quarantineProcess,
   quarantineRegisteredProcesses,
   registerWorkspaceProcess,
+  spawnProtectedProcess,
   unregisterWorkspaceProcess,
 };

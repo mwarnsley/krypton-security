@@ -1,5 +1,13 @@
 {
-  "sandbox_path": "sandbox_workspace",
-  "rate_limit_window_seconds": 5,
-  "rate_limit_max_breakouts": 3
+  "projectRoot": ".",
+  "protectedWorkspaceRoot": "sandbox_workspace",
+  "telemetryPath": ".krypton/telemetry/alerts.jsonl",
+  "runtimeDirectory": ".krypton/runtime",
+  "ignoredPaths": [".git", "node_modules", ".next", "coverage", "target"],
+  "observedRoots": [],
+  "sensitivePaths": [".ssh", ".aws", ".env"],
+  "telemetryMaxEvents": 10000,
+  "telemetryMaxBytes": 8388608,
+  "rateLimitWindowSeconds": 5,
+  "rateLimitMaxBreakouts": 3
 }

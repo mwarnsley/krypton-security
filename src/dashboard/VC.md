@@ -1,5 +1,9 @@
 # Vulnerability & Contribution Security Matrix
 
+> Repository controls such as SHA-pinned workflows and CODEOWNERS are present.
+> Signed-commit enforcement, required reviews, secret scanning, and rulesets are
+> owner-managed GitHub settings and are not enforced by files alone.
+
 Krypton treats every contribution as untrusted until its identity, provenance,
 review path, and execution behavior are verified. This defense-in-depth model is
 designed to contain AI bots, automated poisoning scripts, and rogue malicious

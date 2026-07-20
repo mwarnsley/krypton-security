@@ -17,17 +17,34 @@ import {
   type SystemStatus,
 } from '../components/patterns';
 import { KryptonButton, KryptonIconButton, KryptonToggle } from '../components/primitives';
+import type { TelemetryFallbackReason, TelemetrySource } from '../types';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
 const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
 const BACK_TO_TOP_VISIBILITY_THRESHOLD_PX = 300;
+const MAX_CLIENT_RETAINED_ALERTS = 500;
 
 interface TelemetryState {
   /** The number of owned child processes currently monitored by Krypton. */
   readonly activeProcessCount: number;
 
   /** The newest-first security events returned by the telemetry endpoint. */
-  readonly alerts: readonly SecurityAlert[];
+  readonly alerts: SecurityAlert[];
+
+  /** Why demonstration events replaced native telemetry. */
+  readonly fallbackReason?: TelemetryFallbackReason;
+
+  /** The server generation timestamp used for stale-response rejection. */
+  readonly generatedAt: string;
+
+  /** The highest native event sequence received by the client. */
+  readonly nextAfter?: number;
+
+  /** Whether authenticated native daemon health completed. */
+  readonly nativeDaemonReachable: boolean;
+
+  /** Whether rows are native evidence or demonstration events. */
+  readonly source: TelemetrySource | null;
 }
 
 type TelemetryRecord = Record<string, unknown>;
@@ -35,6 +52,9 @@ type TelemetryRecord = Record<string, unknown>;
 const EMPTY_TELEMETRY: TelemetryState = {
   activeProcessCount: 0,
   alerts: [],
+  generatedAt: '',
+  nativeDaemonReachable: false,
+  source: null,
 };
 
 /**
@@ -182,13 +202,34 @@ function normalizeAlert(value: unknown, alertIndex: number): SecurityAlert | und
   const enforcementStatus = normalizeEnforcementStatus(value);
   const severity = normalizeTelemetrySeverity(value, enforcementStatus);
   const triggerSignature = readString(value, 'triggerSignature') ?? 'PATH_BOUNDARY_ESCAPE';
+  const rawProcess = isTelemetryRecord(value.process) ? value.process : undefined;
+  const processIdentity =
+    rawProcess !== undefined &&
+    typeof rawProcess.pid === 'number' &&
+    Number.isSafeInteger(rawProcess.pid) &&
+    rawProcess.pid > 0 &&
+    typeof rawProcess.startTime === 'number' &&
+    Number.isSafeInteger(rawProcess.startTime) &&
+    rawProcess.startTime > 0 &&
+    typeof rawProcess.executablePath === 'string' &&
+    (rawProcess.parentPid === null ||
+      (typeof rawProcess.parentPid === 'number' && Number.isSafeInteger(rawProcess.parentPid)))
+      ? {
+          executablePath: rawProcess.executablePath,
+          parentPid: rawProcess.parentPid,
+          pid: rawProcess.pid,
+          startTime: rawProcess.startTime,
+        }
+      : undefined;
 
   return {
     attemptedAction,
     attemptedPath,
+    attribution: value.attribution === 'process' ? 'process' : 'unattributed',
     enforcementStatus,
     id: recordId ?? `${timestamp}:${targetProcessId}:${attemptedPath}:${alertIndex}`,
     origin_attribution: originAttribution,
+    ...(processIdentity === undefined ? {} : { process: processIdentity }),
     processName,
     severity,
     targetProcessId,
@@ -225,7 +266,91 @@ function normalizeTelemetryPayload(payload: unknown): TelemetryState {
       ? reportedProcessCount
       : 0;
 
-  return { activeProcessCount, alerts };
+  const source = payloadRecord?.source;
+  const fallbackReason = payloadRecord?.fallbackReason;
+  const generatedAt = payloadRecord?.generatedAt;
+  const nextAfter = payloadRecord?.nextAfter;
+  const normalizedFallbackReason =
+    fallbackReason === 'attestation_failed' ||
+    fallbackReason === 'daemon_unreachable' ||
+    fallbackReason === 'ledger_invalid' ||
+    fallbackReason === 'ledger_unavailable' ||
+    fallbackReason === 'native_degraded'
+      ? fallbackReason
+      : undefined;
+
+  return {
+    activeProcessCount,
+    alerts,
+    generatedAt: typeof generatedAt === 'string' ? generatedAt : new Date(0).toISOString(),
+    nativeDaemonReachable: payloadRecord?.nativeDaemonReachable === true,
+    source: source === 'native' || source === 'mock' ? source : null,
+    ...(normalizedFallbackReason === undefined ? {} : { fallbackReason: normalizedFallbackReason }),
+    ...(typeof nextAfter === 'number' && Number.isSafeInteger(nextAfter) && nextAfter >= 0
+      ? { nextAfter }
+      : {}),
+  };
+}
+
+/**
+ * Merges incremental telemetry through stable event keys and enforces the client memory bound.
+ *
+ * @param {readonly SecurityAlert[]} current - Events already retained by the dashboard.
+ * @param {readonly SecurityAlert[]} incoming - Newly fetched cursor events.
+ * @param {number} maximum - Maximum rows retained in client memory.
+ * @returns {SecurityAlert[]} Newest-first deduplicated bounded events.
+ * @complexity O(C + I + R log R) time and O(R) space for retained rows R.
+ * @example
+ * mergeTelemetryAlerts([alert], [alert], 500);
+ * // => [alert]
+ */
+export function mergeTelemetryAlerts(
+  current: readonly SecurityAlert[],
+  incoming: readonly SecurityAlert[],
+  maximum = MAX_CLIENT_RETAINED_ALERTS
+): SecurityAlert[] {
+  const alertsByKey = new Map<string, SecurityAlert>();
+  for (const alert of [...current, ...incoming]) {
+    alertsByKey.set(
+      alert.sequence === undefined ? alert.id : `sequence:${String(alert.sequence)}`,
+      alert
+    );
+  }
+  return [...alertsByKey.values()]
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .slice(0, maximum);
+}
+
+interface TelemetrySourceBannerProps {
+  /** Whether authenticated native health succeeded before fallback. */
+  readonly nativeDaemonReachable: boolean;
+
+  /** Whether the current event rows are native evidence or demonstrations. */
+  readonly source: TelemetrySource | null;
+}
+
+/**
+ * Makes demonstration telemetry unmistakable without presenting it as native evidence.
+ *
+ * @param {TelemetrySourceBannerProps} props - Current source and daemon reachability metadata.
+ * @returns {React.JSX.Element | null} A persistent accessible fallback banner or no content.
+ * @example
+ * <TelemetrySourceBanner source="mock" nativeDaemonReachable={false} />
+ * // => renders the demonstration-mode warning
+ */
+export function TelemetrySourceBanner(props: TelemetrySourceBannerProps): React.JSX.Element | null {
+  if (props.source !== 'mock') return null;
+  return (
+    <div
+      aria-live="polite"
+      className="rounded-krypton-radius-card border border-krypton-warning-amber bg-krypton-warning-amber/10 px-krypton-space-4 py-krypton-space-3 text-sm font-semibold text-krypton-warning-amber"
+      role="alert"
+    >
+      {props.nativeDaemonReachable
+        ? 'Native daemon detected, but live telemetry could not be validated. Demonstration data is being shown.'
+        : 'Demonstration mode — native telemetry is unavailable. Events shown below are simulated.'}
+    </div>
+  );
 }
 
 /**
@@ -382,11 +507,14 @@ export default function DashboardPage(): React.JSX.Element {
   const [telemetry, setTelemetry] = useState<TelemetryState>(EMPTY_TELEMETRY);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>('degraded');
   const notifiedBreakoutIds = useRef(new Set<string>());
+  const requestGeneration = useRef(0);
+  const latestCursor = useRef<number | undefined>(undefined);
 
   /**
    * Fetches, validates, publishes, and notifies on one telemetry snapshot.
    *
    * @param {AbortSignal} signal - The lifecycle signal used to cancel an obsolete request.
+   * @param {number} generation - Monotonic request generation used to reject stale responses.
    * @returns {Promise<void>} Resolves after the dashboard state reflects the response.
    * @complexity O(A * L) time and O(A) space for A returned alerts of field length L.
    * @example
@@ -394,8 +522,12 @@ export default function DashboardPage(): React.JSX.Element {
    * // => updates telemetry state after a successful local response
    */
   const refreshTelemetry = useCallback(
-    async (signal: AbortSignal): Promise<void> => {
-      const response = await fetch('/api/telemetry', {
+    async (signal: AbortSignal, generation: number): Promise<void> => {
+      const cursorQuery =
+        latestCursor.current === undefined
+          ? ''
+          : `?after=${String(latestCursor.current)}&limit=100`;
+      const response = await fetch(`/api/telemetry${cursorQuery}`, {
         cache: 'no-store',
         headers: { Accept: 'application/json' },
         signal,
@@ -407,6 +539,7 @@ export default function DashboardPage(): React.JSX.Element {
 
       const payload: unknown = await response.json();
       const nextTelemetry = normalizeTelemetryPayload(payload);
+      if (generation !== requestGeneration.current || signal.aborted) return;
       const freshBreakouts = selectFreshBreakoutAlerts(
         nextTelemetry.alerts,
         Date.now(),
@@ -417,8 +550,25 @@ export default function DashboardPage(): React.JSX.Element {
         showContainmentBreakoutToast(breakout, auditOnly);
       }
 
-      setTelemetry(nextTelemetry);
-      setSystemStatus('operational');
+      latestCursor.current =
+        nextTelemetry.source === 'native' ? nextTelemetry.nextAfter : undefined;
+      setTelemetry((current) => ({
+        ...nextTelemetry,
+        alerts:
+          nextTelemetry.source === 'native'
+            ? mergeTelemetryAlerts(
+                current.source === 'native' ? current.alerts : [],
+                nextTelemetry.alerts
+              )
+            : nextTelemetry.alerts.slice(0, MAX_CLIENT_RETAINED_ALERTS),
+      }));
+      setSystemStatus(
+        nextTelemetry.source === 'native'
+          ? 'operational'
+          : nextTelemetry.nativeDaemonReachable
+            ? 'degraded'
+            : 'offline'
+      );
     },
     [auditOnly]
   );
@@ -459,8 +609,10 @@ export default function DashboardPage(): React.JSX.Element {
    * // Mounted DashboardPage instances poll immediately and every five seconds.
    */
   useEffect(() => {
-    const abortController = new AbortController();
+    let activeController: AbortController | undefined;
+    let timerId: number | undefined;
     let requestInFlight = false;
+    let disposed = false;
 
     /**
      * Executes one guarded poll without allowing overlapping requests.
@@ -472,29 +624,50 @@ export default function DashboardPage(): React.JSX.Element {
      * // => refreshes once when no prior request is active
      */
     const pollTelemetry = async (): Promise<void> => {
-      if (requestInFlight) {
+      if (requestInFlight || document.visibilityState !== 'visible' || disposed) {
         return;
       }
 
       requestInFlight = true;
+      activeController = new AbortController();
+      const generation = requestGeneration.current + 1;
+      requestGeneration.current = generation;
 
       try {
-        await refreshTelemetry(abortController.signal);
+        await refreshTelemetry(activeController.signal, generation);
       } catch {
-        if (!abortController.signal.aborted) {
+        if (!activeController.signal.aborted) {
           setSystemStatus('degraded');
         }
       } finally {
         requestInFlight = false;
+        activeController = undefined;
+        if (!disposed && document.visibilityState === 'visible') {
+          timerId = window.setTimeout(() => void pollTelemetry(), TELEMETRY_POLL_INTERVAL_MS);
+        }
       }
     };
 
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState !== 'visible') {
+        if (timerId !== undefined) window.clearTimeout(timerId);
+        activeController?.abort();
+        requestGeneration.current += 1;
+        return;
+      }
+      if (timerId !== undefined) window.clearTimeout(timerId);
+      void pollTelemetry();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     void pollTelemetry();
-    const pollInterval = window.setInterval(() => void pollTelemetry(), TELEMETRY_POLL_INTERVAL_MS);
 
     return () => {
-      window.clearInterval(pollInterval);
-      abortController.abort();
+      disposed = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+      activeController?.abort();
+      requestGeneration.current += 1;
     };
   }, [refreshTelemetry]);
 
@@ -639,6 +812,10 @@ export default function DashboardPage(): React.JSX.Element {
               Clear Alerts
             </KryptonButton>
           </header>
+          <TelemetrySourceBanner
+            nativeDaemonReachable={telemetry.nativeDaemonReachable}
+            source={telemetry.source}
+          />
           <AlertTable alerts={telemetry.alerts} />
         </section>
       </div>

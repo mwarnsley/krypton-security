@@ -26,11 +26,18 @@ unauthorized_breakout_test.*
 # Runtime sandbox data
 sandbox_workspace/*
 !sandbox_workspace/.gitkeep
+.krypton/runtime/
+.krypton/telemetry/
 
 # Logs
 *.log
 npm-debug.log*
 alerts.json
+alerts.jsonl
+
+# Release archives and operating-system archive metadata
+krypton-security.zip
+__MACOSX/
 
 # Tooling and operating system files
 .cache/

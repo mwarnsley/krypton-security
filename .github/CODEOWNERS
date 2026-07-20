@@ -1,0 +1,9 @@
+/.github/workflows/ @mwarnsley
+/src/core-native/ @mwarnsley
+/src/core/ @mwarnsley
+/src/dashboard/app/api/ @mwarnsley
+/src/dashboard/components/primitives/ @mwarnsley
+/tailwind.config.js @mwarnsley
+/src/dashboard/tailwind.config.js @mwarnsley
+/package.json @mwarnsley
+/package-lock.json @mwarnsley

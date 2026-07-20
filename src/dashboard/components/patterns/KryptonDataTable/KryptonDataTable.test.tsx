@@ -16,13 +16,12 @@ describe('KryptonDataTable', () => {
     const markup = renderToStaticMarkup(
       <KryptonDataTable
         caption="Protected assets"
-        columns={COLUMNS}
+        columns={[...COLUMNS]}
         data={[{ id: 'asset-1', name: 'Sandbox' }]}
         emptyMessage="No assets."
         getRowId={(asset) => asset.id}
         itemLabel="asset"
         pagination={{
-          includeAllOption: true,
           onChange: vi.fn(),
           onPageSizeSelectionChange: vi.fn(),
           pageSizeSelection: '25',
@@ -36,7 +35,7 @@ describe('KryptonDataTable', () => {
     expect(markup).toContain('aria-label="Pagination"');
   });
 
-  it('resolves the all-rows selector safely for an empty collection', () => {
-    expect(resolveKryptonPageSize('ALL', 0)).toBe(1);
+  it('rejects the removed all-rows selector', () => {
+    expect(resolveKryptonPageSize('ALL', 500)).toBe(10);
   });
 });

@@ -6,14 +6,17 @@ import type { SecurityAlert } from '../components/patterns';
 import DashboardPage, {
   clearAlertToasts,
   dispatchAuditModeUpdate,
+  mergeTelemetryAlerts,
   scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
+  TelemetrySourceBanner,
 } from './page';
 
 const CURRENT_TIME_MS = Date.parse('2026-07-14T12:00:10.000Z');
 
 const BREAKOUT_ALERT: SecurityAlert = {
+  attribution: 'process',
   attemptedAction: 'filesystem_boundary_breakout',
   attemptedPath: '/project/private.txt',
   enforcementStatus: 'INTERCEPTED',
@@ -99,6 +102,42 @@ describe('DashboardPage', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 
     expect(markup).toContain('Security alert telemetry');
+  });
+
+  it('renders the explicit unreachable-daemon demonstration banner', () => {
+    const markup = renderToStaticMarkup(
+      <TelemetrySourceBanner nativeDaemonReachable={false} source="mock" />
+    );
+    expect(markup).toContain(
+      'Demonstration mode — native telemetry is unavailable. Events shown below are simulated.'
+    );
+  });
+
+  it('renders the distinct degraded-native demonstration banner', () => {
+    const markup = renderToStaticMarkup(
+      <TelemetrySourceBanner nativeDaemonReachable source="mock" />
+    );
+    expect(markup).toContain(
+      'Native daemon detected, but live telemetry could not be validated. Demonstration data is being shown.'
+    );
+  });
+
+  it('does not render a demonstration banner for native evidence', () => {
+    expect(
+      renderToStaticMarkup(<TelemetrySourceBanner nativeDaemonReachable source="native" />)
+    ).toBe('');
+  });
+
+  it('deduplicates cursor events and retains the newest bounded window', () => {
+    const incoming = Array.from({ length: 4 }, (_, index) => ({
+      ...BREAKOUT_ALERT,
+      id: `alert-${String(index)}`,
+      sequence: index + 1,
+      timestamp: new Date(CURRENT_TIME_MS + index).toISOString(),
+    }));
+    const merged = mergeTelemetryAlerts([incoming[0]!], incoming, 2);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((alert) => alert.sequence)).toEqual([4, 3]);
   });
 
   it('renders an initially hidden and unfocusable Back to Top control', () => {

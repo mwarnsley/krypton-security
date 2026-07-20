@@ -18,9 +18,15 @@ import {
 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import type { EnforcementStatus, SecurityAlert, TelemetrySeverity } from '../../../types';
+import type {
+  EnforcementStatus,
+  ProcessIdentityPayload,
+  SecurityAlert,
+  TelemetrySeverity,
+} from '../../../types';
 import { downloadExploitSignature } from '../../../utils/exploitSignature';
-import { KryptonButton, KryptonDataTable, KryptonIconButton } from '../../primitives';
+import { KryptonButton, KryptonIconButton } from '../../primitives';
+import { KryptonDataTable } from '../KryptonDataTable';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +61,7 @@ const SEVERITY_CLASSES: Readonly<Record<TelemetrySeverity, string>> = {
 
 export interface AlertTableProps {
   /** The immutable, newest-first security alerts displayed in the data grid. */
-  readonly alerts: readonly SecurityAlert[];
+  readonly alerts: SecurityAlert[];
 }
 
 export interface IsolationExecutionStatus {
@@ -150,18 +156,13 @@ export function formatAlertTimestamp(timestamp: string): string {
  * Resolves a row-count selector value into a safe TanStack page size.
  *
  * @param {string} selection - A supported numeric option or the `ALL` sentinel.
- * @param {number} totalAlertCount - The current total number of alert rows.
  * @returns {number} A positive page size, defaulting to 25 for invalid input.
  * @complexity O(P) time for the fixed option count P and O(1) space.
  * @example
  * resolveAlertPageSize('ALL', 4970);
  * // => 4970
  */
-export function resolveAlertPageSize(selection: string, totalAlertCount: number): number {
-  if (selection === 'ALL') {
-    return Math.max(1, totalAlertCount);
-  }
-
+export function resolveAlertPageSize(selection: string): number {
   const numericSelection = Number(selection);
 
   return ALERT_PAGE_SIZE_OPTIONS.some((pageSize) => pageSize === numericSelection)
@@ -253,18 +254,18 @@ function isIsolationResponseBody(value: unknown): value is IsolationResponseBody
 /**
  * Dispatches a manual containment request for one target process.
  *
- * @param {number} targetProcessId - The registered workspace PID to isolate.
+ * @param {ProcessIdentityPayload} processIdentity - The exact registered process generation.
  * @returns {Promise<IsolationExecutionStatus>} The explicit native execution outcome.
  * @complexity O(1) client work and O(1) auxiliary space, excluding network latency.
  * @example
- * await requestProcessIsolation(4242);
+ * await requestProcessIsolation({ pid: 4242, startTime: 1, executablePath: '/bin/node', parentPid: 1 });
  * // => { tone: "success", message: "Target child process successfully verified and isolated." }
  */
 export async function requestProcessIsolation(
-  targetProcessId: number
+  processIdentity: ProcessIdentityPayload
 ): Promise<IsolationExecutionStatus> {
   const response = await fetch('/api/telemetry/terminate', {
-    body: JSON.stringify({ targetProcessId }),
+    body: JSON.stringify({ process: processIdentity }),
     cache: 'no-store',
     credentials: 'same-origin',
     headers: {
@@ -324,7 +325,8 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
     ReadonlyMap<number, IsolationExecutionStatus>
   >(new Map());
 
-  const forceIsolate = useCallback(async (targetProcessId: number) => {
+  const forceIsolate = useCallback(async (processIdentity: ProcessIdentityPayload) => {
+    const targetProcessId = processIdentity.pid;
     if (inFlightProcessIds.current.has(targetProcessId)) {
       return;
     }
@@ -338,7 +340,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
     });
 
     try {
-      const executionStatus = await requestProcessIsolation(targetProcessId);
+      const executionStatus = await requestProcessIsolation(processIdentity);
       setIsolationStatuses((currentStatuses) =>
         new Map(currentStatuses).set(targetProcessId, executionStatus)
       );
@@ -464,8 +466,12 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         ),
         cell: ({ row }) => {
           const targetProcessId = row.original.targetProcessId;
-          const isIsolating = isolatingProcessIds.has(targetProcessId);
-          const isolationStatus = isolationStatuses.get(targetProcessId);
+          const processIdentity = row.original.process;
+          const isActionable = targetProcessId !== null && processIdentity !== undefined;
+          const isIsolating =
+            targetProcessId === null ? false : isolatingProcessIds.has(targetProcessId);
+          const isolationStatus =
+            targetProcessId === null ? undefined : isolationStatuses.get(targetProcessId);
 
           return (
             <div className="flex min-w-10 flex-col items-start gap-1.5">
@@ -473,8 +479,12 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                 <DropdownMenuTrigger asChild>
                   <KryptonIconButton
                     aria-busy={isIsolating}
-                    aria-label={`Open actions for process ${targetProcessId}`}
-                    disabled={isIsolating}
+                    aria-label={
+                      isActionable
+                        ? `Open actions for process ${String(targetProcessId)}`
+                        : 'Process isolation unavailable for unattributed event'
+                    }
+                    disabled={!isActionable || isIsolating}
                     icon={<MoreVertical />}
                     size="md"
                     variant="link"
@@ -483,8 +493,10 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
                     className="text-rose-300 focus:bg-rose-500/10 focus:text-rose-200"
-                    disabled={isIsolating}
-                    onSelect={() => void forceIsolate(targetProcessId)}
+                    disabled={!isActionable || isIsolating}
+                    onSelect={() => {
+                      if (processIdentity !== undefined) void forceIsolate(processIdentity);
+                    }}
                   >
                     <SquareTerminal aria-hidden="true" className="h-4 w-4" />
                     {isIsolating ? 'Isolating…' : 'Force Isolate'}
@@ -496,7 +508,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                       downloadExploitSignature({
                         mitigationStatus: formatEnforcementStatus(row.original.enforcementStatus),
                         securityEvent: formatAttemptedAction(row.original.attemptedAction),
-                        targetProcessId,
+                        targetProcessId: targetProcessId ?? 0,
                         timestamp: row.original.timestamp,
                         violatedContainmentPath: row.original.attemptedPath,
                       })
@@ -527,11 +539,6 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
     [forceIsolate, isolatingProcessIds, isolationStatuses]
   );
 
-  const tablePagination =
-    pageSizeSelection === 'ALL'
-      ? { pageIndex: 0, pageSize: resolveAlertPageSize('ALL', alerts.length) }
-      : pagination;
-
   return (
     <KryptonDataTable
       caption="Security alert telemetry"
@@ -544,12 +551,11 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
       getRowId={(alert) => alert.id}
       itemLabel="alert"
       pagination={{
-        includeAllOption: true,
         onChange: setPagination,
         onPageSizeSelectionChange: setPageSizeSelection,
         pageSizeOptions: ALERT_PAGE_SIZE_OPTIONS,
         pageSizeSelection,
-        state: tablePagination,
+        state: pagination,
       }}
       sorting={{ onChange: setSorting, state: sorting }}
     />

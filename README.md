@@ -1,313 +1,228 @@
-# Krypton: High-Performance Runtime Security & Workspace Telemetry Engine
+# Krypton
 
-Krypton is an open-source, developer-first runtime protection agent for local
-workspaces. It is designed to stop supply-chain attacks at the execution
-boundary—for example, a zero-day package or malicious lifecycle script escaping
-`node_modules` to inspect credentials, modify files outside the repository, or
-launch unauthorized background activity.
+Krypton is an experimental local runtime boundary for explicitly registered
+child processes. It combines a Rust filesystem telemetry daemon, an authenticated
+local control channel, a TypeScript launcher seam, and a Next.js dashboard.
 
-The system bridges a native Rust security daemon with a tokenized Next.js
-management dashboard. The daemon consumes low-latency, kernel-backed filesystem
-notifications, applies deterministic workspace and process-ownership policies,
-and publishes local telemetry without placing model inference or external
-network calls inside the enforcement path. The dashboard converts those events
-into sortable, paginated security records with process attestation, severity,
-target context, and controlled isolation actions.
+Krypton does not claim that a portable filesystem notification identifies the
+process that caused it. The `notify` watcher reports paths and event kinds. Those
+events are stored as `unattributed`; process isolation is permitted only when a
+caller supplies an exact child-process identity that the daemon previously
+validated and registered.
 
-> Krypton is a local runtime boundary, not a malware classifier. It evaluates
-> what a process attempts to do and whether that action remains inside its
-> delegated workspace authority.
+## Supported platforms
+
+- macOS and Linux: native daemon, Unix-domain socket control, live process
+  identity validation, and Unix signal isolation.
+- Windows: dashboard-only demonstration mode. Native control is intentionally
+  unsupported until a restrictive named-pipe ACL and process-generation adapter
+  are implemented.
+
+Required versions are pinned in `.node-version` and `rust-toolchain.toml`:
+
+- Node.js 20.19.4
+- Rust 1.97.0
 
 ## Architecture
 
 ```text
-[Local Developer Workspace Processes]
-                  │
-                  │  Low-latency kernel-backed monitoring
-                  ▼
-[Native Rust Security Daemon]
-                  │
-                  │  Telemetry event stream + bounded loopback IPC
-                  ▼
-[Next.js API Layer Route]
-                  │
-                  │  Automatic high-fidelity mock stream fallback
-                  │  Semantic telemetry normalization
-                  ▼
-[Krypton UI Primitives & Patterns Dashboard]
-                  │
-                  └─ Tokenized controls, sorting, pagination,
-                     severity, attestation, and isolation receipts
+[Protected launcher]
+      │ spawn → inspect PID/start/executable/parent → authenticated register
+      ▼
+[Rust daemon process registry] ◄──── authenticated Unix socket ──── [Next API]
+      │ exact-generation revalidation                                 │
+      └─ isolate only registered identity                             ▼
+                                                               [Dashboard]
+
+[OS filesystem notifications]
+      │ paths and event kinds only; no fabricated PID
+      ▼
+[Component-aware workspace policy] → [bounded JSONL telemetry ledger]
 ```
 
-### Runtime components
+The project root contains Krypton configuration and the dashboard. The protected
+workspace root is a narrower directory in which a protected child is authorized
+to mutate files. They are not interchangeable.
 
-| Component                   | Location                               | Responsibility                                                                                                                     |
-| --------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| TypeScript reference engine | `src/core/`                            | Workspace policy evaluation, owned-process registration, quarantine orchestration, and asynchronous telemetry.                     |
-| Native Rust daemon          | `src/core-native/`                     | Canonical path enforcement, kernel-backed filesystem observation, bounded telemetry persistence, rate limiting, and local IPC.     |
-| Telemetry API               | `src/dashboard/app/api/telemetry/`     | Native daemon health checks, ledger parsing, process attestation, response normalization, and resilient mock fallback.             |
-| Dashboard primitives        | `src/dashboard/components/primitives/` | Closed, token-backed buttons, inputs, selectors, toggles, tooltips, typography, loading states, and TanStack table infrastructure. |
-| Dashboard patterns          | `src/dashboard/components/patterns/`   | Operator-facing telemetry tables, security cards, help surfaces, and containment actions.                                          |
-
-## Quickstart
-
-### Requirements
-
-- Node.js 20.19 or newer
-- npm
-- Rust and Cargo only when running the native daemon
-
-### 1. Clone and install
+## Clean setup
 
 ```sh
 git clone https://github.com/mwarnsley/krypton-security.git
 cd krypton-security
-npm install
+npm ci
+npm run dev:full
 ```
 
-### 2. Start the dashboard
+`dev:full` starts the native daemon and dashboard together. Open
+`http://localhost:3000`.
+
+Dashboard-only mode:
 
 ```sh
-npm run dev
+npm run dev:dashboard
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-If the native Rust daemon has not been compiled or started on first boot, the
-Next.js telemetry API detects that the local IPC endpoint is unavailable,
-flags the response as `source: "mock"`, and automatically switches to a
-high-fidelity mock event stream. This lets developers immediately experience
-the complete interactive dashboard, including sorting, pagination, process
-names, severity tiers, targeted paths, and attestation tracking.
-
-The fallback includes realistic hostile and healthy activity:
-
-- A high-severity attempt to read `~/.aws/credentials` from an
-  `Ephemeral Shell Task`.
-- A critical background network-boundary bypass during an unvetted
-  `npm install` lifecycle.
-- Benign ESLint and Next.js build activity for healthy-workspace contrast.
-
-## Run with the native daemon
-
-Install Rust with [rustup](https://rustup.rs/), then build and start the daemon
-from the repository root:
+Native-only mode:
 
 ```sh
-cargo build --manifest-path src/core-native/Cargo.toml
-cargo run --manifest-path src/core-native/Cargo.toml
+npm run dev:daemon
 ```
 
-In a second terminal, start the dashboard:
-
-```sh
-npm run dev
-```
-
-The dashboard probes the daemon through the fixed loopback endpoint at
-`127.0.0.1:9000` using a bounded `HEALTH` transaction. Native telemetry remains
-local; the enforcement filter does not call external APIs or remote models.
-
-## Security model
-
-Krypton applies defense in depth at the local execution boundary:
-
-- **Canonical workspace boundaries:** Paths are resolved before policy
-  evaluation to prevent traversal and filesystem-alias bypasses.
-- **Sensitive-target denial:** Credentials and configuration targets such as
-  `.ssh`, `.aws`, `.env`, and `.env.*` are denied.
-- **Fail-closed decisions:** Invalid paths, indeterminate states, and ownership
-  failures do not silently permit execution.
-- **Least-privilege quarantine:** Krypton signals only explicitly registered,
-  runtime-owned child processes. Arbitrary PIDs are rejected.
-- **Local-only enforcement:** Core filters do not depend on remote APIs, model
-  inference, or cloud availability.
-- **Non-blocking evidence:** Native telemetry uses a bounded queue and dedicated
-  writer path so persistence does not block filesystem monitoring.
-- **Bounded IPC:** Health, audit-mode, and isolation commands use a strict local
-  grammar, fixed receipt sizes, and timeouts.
-
-### Enforcement modes
-
-- **Audit-Only Mode** records boundary violations without terminating the
-  registered process. This is the default training and policy-baselining mode.
-- **Active Enforcement** can quarantine an owned child process after verified
-  policy or rate-limit conditions.
-
-Krypton never infers an attacker PID from a filesystem event. Kernel-backed
-event streams provide paths and event kinds, so process isolation remains gated
-by Krypton's explicit owned-child registry.
-
-## Telemetry contract
-
-The dashboard consumes one shared `SecurityAlert` schema:
-
-| Field                | Meaning                                                              |
-| -------------------- | -------------------------------------------------------------------- |
-| `timestamp`          | ISO-8601 event time.                                                 |
-| `targetProcessId`    | Positive operating-system process identifier.                        |
-| `processName`        | Executable or developer tool associated with the event.              |
-| `attemptedPath`      | Normalized filesystem or network target.                             |
-| `severity`           | `critical`, `high`, `medium`, `low`, or `info`.                      |
-| `origin_attribution` | Dependency, task, script, or ephemeral-shell attestation tag.        |
-| `attemptedAction`    | Machine-readable observed or denied action.                          |
-| `enforcementStatus`  | `OBSERVED`, `INTERCEPTED`, `QUARANTINED`, or `AUTOMATED_QUARANTINE`. |
-| `triggerSignature`   | Deterministic policy signature responsible for the event.            |
-| `id`                 | Stable table-row identity.                                           |
-
-The `AlertTable` pattern maps the contract into sortable Timestamp, Process ID,
-Process Name, Targeted Directory, Severity, and Attestation Tag columns. The
-table supports page sizes of 10, 25, 50, 75, 100, or all available rows.
-
-### Telemetry API behavior
-
-`GET /api/telemetry` follows this order:
-
-1. Send a bounded health probe to the native daemon.
-2. If reachable, asynchronously read and normalize the local telemetry ledger.
-3. Attest distinct PID/path pairs and return native events newest first.
-4. If the daemon, ledger, parser, registry, or attestation layer is unavailable,
-   return HTTP 200 with a non-empty high-fidelity mock stream.
-
-Fallback responses include:
-
-```json
-{
-  "activeProcessCount": 0,
-  "alerts": [
-    {
-      "id": "mock-zero-day-aws-credentials",
-      "timestamp": "2026-07-19T12:00:00.000Z",
-      "targetProcessId": 48217,
-      "processName": "bash",
-      "attemptedPath": "~/.aws/credentials",
-      "severity": "high",
-      "origin_attribution": "Ephemeral Shell Task",
-      "attemptedAction": "credential_access_attempt",
-      "enforcementStatus": "INTERCEPTED",
-      "triggerSignature": "SENSITIVE_CREDENTIAL_PATH"
-    }
-  ],
-  "nativeDaemonReachable": false,
-  "source": "mock"
-}
-```
+When native control is unavailable, the dashboard displays this persistent
+warning: “Demonstration mode — native telemetry is unavailable. Events shown
+below are simulated.” If the daemon is reachable but its ledger is degraded or
+invalid, the banner explicitly says that native telemetry could not be
+validated.
 
 ## Runtime configuration
 
-The native daemon reads `krypton.config.json` from the repository root:
+`krypton.config.json` separates the relevant roots and bounds:
 
 ```json
 {
-  "sandbox_path": "sandbox_workspace",
-  "rate_limit_window_seconds": 5,
-  "rate_limit_max_breakouts": 3
+  "projectRoot": ".",
+  "protectedWorkspaceRoot": "sandbox_workspace",
+  "telemetryPath": ".krypton/telemetry/alerts.jsonl",
+  "runtimeDirectory": ".krypton/runtime",
+  "ignoredPaths": [".git", "node_modules", ".next", "coverage", "target"],
+  "observedRoots": [],
+  "sensitivePaths": [".ssh", ".aws", ".env"],
+  "telemetryMaxEvents": 10000,
+  "telemetryMaxBytes": 8388608,
+  "rateLimitWindowSeconds": 5,
+  "rateLimitMaxBreakouts": 3
 }
 ```
 
-| Setting                     | Description                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `sandbox_path`              | Repository-relative workspace authorized for monitored agent activity. Absolute, empty, and parent-traversing values are rejected. |
-| `rate_limit_window_seconds` | Sliding window used to track repeated breakout activity.                                                                           |
-| `rate_limit_max_breakouts`  | Maximum breakout count before an owned process becomes eligible for automated quarantine.                                          |
+All roots must be relative and traversal-free. `protectedWorkspaceRoot` cannot
+equal `projectRoot`; Krypton never defaults the protected boundary to a home
+directory or filesystem root. `ignoredPaths` matches exact path components, not
+substrings.
 
-## Design system
+The daemon creates a workspace-specific socket, endpoint record, and capability
+file under `.krypton/runtime/`. Directory mode is `0700`; socket, endpoint, and
+capability files are `0600`. The raw capability is never returned by a dashboard
+route or written to logs.
 
-The dashboard uses a semantic Tailwind token matrix defined in
-`src/dashboard/tailwind.config.js`. Krypton primitives consume named background,
-surface, border, accent, alert, warning, radius, spacing, and technical-mono
-tokens. Public primitive APIs deliberately omit raw `className` and inline
-`style` overrides; layout code selects typed variants and sizes instead.
+## Protected child lifecycle
 
-Core primitives include:
+Use `spawnProtectedProcess` from `src/core/processIsolation.cjs` for the native
+lifecycle:
 
-- `KryptonButton` and `KryptonIconButton`
-- `KryptonInput`, `KryptonSelect`, `KryptonToggle`, and `KryptonCheckbox`
-- `KryptonTypography` and `KryptonTooltip`
-- `KryptonLoadingSpinner`
-- `KryptonDataTable`
+```js
+const { spawnProtectedProcess } = require('./src/core/processIsolation.cjs');
 
-## Development and verification
+const child = await spawnProtectedProcess('node', ['agent.js'], {
+  cwd: 'sandbox_workspace',
+  maxRuntimeMs: 60_000,
+});
+```
+
+The launcher spawns the child, reads its PID/start time/executable/parent,
+registers that exact generation, and unregisters it on exit, error, signal, or
+timeout. If registration fails, it kills only the child it just spawned. Manual
+dashboard isolation also requires the compound identity; PID-only requests are
+rejected.
+
+## Telemetry and health
+
+`GET /api/telemetry?after=<sequence>&limit=<count>` returns one envelope for
+native and demonstration states. `limit` defaults to 100 and is clamped to 250.
+The ledger retains at most 10,000 events or 8 MiB, and the client retains at most
+500 rows. Cursor polling reads a bounded tail window instead of parsing an
+unbounded history on every poll.
+
+With the dashboard running, inspect source and health:
 
 ```sh
-# JavaScript, React, API, and component tests
-npm run test
+curl --fail --silent http://localhost:3000/api/telemetry
+```
 
-# Safe mock attack simulation
-npm run test:sim
+Relevant fields are `source`, `nativeDaemonReachable`, `fallbackReason`,
+`health`, `generatedAt`, `nextAfter`, and `hasMore`. Only `source: "native"`
+events are native evidence.
 
-# Lint and TypeScript verification
+## Security boundary
+
+- Native control is versioned JSON Lines over a workspace-specific Unix socket.
+- Every command includes a request ID and per-daemon capability.
+- Peer credentials must match the daemon user where supported.
+- Requests, responses, queued connections, workers, telemetry queues, API pages,
+  ledger bytes/events, and client rows are bounded.
+- Registration and isolation re-read live process identity to reject PID reuse.
+- Deleted paths resolve through the nearest existing canonical ancestor.
+- Escaping symlinks, parent traversal, and sibling-prefix confusion fail closed.
+- Portable watcher events never increment a process counter or quarantine a
+  process because `notify` provides no reliable actor PID.
+- Ledger write failures degrade daemon health.
+
+See `THREAT_MODEL.md` for trust assumptions and limitations.
+
+## Verification
+
+```sh
+npm run verify
+npm run test:coverage
+npm run security:audit
+npm run benchmark:telemetry
+```
+
+Individual gates:
+
+```sh
 npm run lint
-npx tsc --noEmit
-npx tsc --noEmit --project src/dashboard/tsconfig.json
-
-# Formatting verification
-npm run format:check
-cargo fmt --manifest-path src/core-native/Cargo.toml --check
-
-# Native tests and static analysis
-npm run test:rust
-cargo clippy --manifest-path src/core-native/Cargo.toml \
-  --all-targets --all-features -- -D warnings
-
-# Production dashboard build
-npx next build src/dashboard
+npm run typecheck
+npm test -- --run
+npm run build
+npm run design-system:check
+npm run rust:fmt
+npm run rust:clippy
+npm run rust:test
 ```
 
-The attack simulation uses a disposable registered child process and controlled
-fixtures. Do not test process quarantine against an unrelated shell or arbitrary
-PID.
+The benchmark reports serialization, cursor filtering, six polling cycles, a
+100-event burst merge, bounded table projection, retained counts, and heap
+growth for 100, 1,000, and 10,000 deterministic events.
 
-## Repository layout
+## Troubleshooting
 
-```text
-krypton-security/
-├── **tests**/                         # Mirrored TypeScript unit tests
-├── sandbox_workspace/                # Authorized local agent workspace
-├── src/
-│   ├── config/                        # Security policy configuration
-│   ├── core/                          # TypeScript reference enforcement engine
-│   ├── core-native/                   # Native Rust daemon
-│   ├── dashboard/
-│   │   ├── app/api/telemetry/         # Health, telemetry, audit, and isolation routes
-│   │   ├── components/primitives/     # Token-bound UI primitives
-│   │   ├── components/patterns/       # Composed dashboard security patterns
-│   │   ├── types/                     # Shared telemetry contracts
-│   │   ├── ROADMAP.md                 # Dashboard DevSecOps roadmap
-│   │   └── VC.md                      # Contribution security matrix
-│   └── utils/                         # Non-blocking telemetry utilities
-├── tests_simulation/                  # Controlled integration simulations
-├── AGENTS.md                          # Engineering and security invariants
-├── FEATURES.md                        # Capability and milestone ledger
-├── krypton.config.json                # Native runtime profile
-└── README.md
+- `source: "mock"`, daemon unreachable: start `npm run dev:daemon` and confirm
+  `.krypton/runtime/daemon.json` exists.
+- `source: "mock"`, daemon reachable: inspect `fallbackReason`; ledger failures
+  are not hidden as normal demonstration mode.
+- `npm ci` lock mismatch: run `npm install`, review the lockfile change, then
+  repeat `npm ci` from a clean dependency state.
+- stale socket: stop old daemon processes. Startup removes a socket only after a
+  connection check proves it is stale.
+- Windows: use dashboard demonstration mode; native isolation is not supported.
+
+## Release archive
+
+After committing the verified tree:
+
+```sh
+npm run release:preflight
+npm run release:archive
 ```
 
-## Contribution and supply-chain guardrails
+The preflight requires a clean tree, rejects tracked generated/secret-like
+files, and runs the full verification suite. `git archive` packages tracked
+files only; the generated ZIP is ignored and must not be committed.
 
-| Reference                                                                                                                           | Status          | Coverage                                                                                      |
-| ----------------------------------------------------------------------------------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------------- |
-| [Contribution Security Matrix](src/dashboard/VC.md)                                                                                 | Required policy | Signed contributor identity, hermetic CI, immutable Actions, and split-domain ownership.      |
-| [Phase 5: Ironclad DevSecOps & Supply Chain Hardening](src/dashboard/ROADMAP.md#phase-5-ironclad-devsecops--supply-chain-hardening) | Planned         | Signed commits, path-based CODEOWNERS, CodeQL, SHA-pinned dependencies, and isolated runners. |
+## Current limitations
 
-Security-sensitive changes to `src/core-native/` and `src/utils/` should receive
-explicit human review. Automated contributors may propose changes but should
-not self-approve or bypass protected-path ownership.
-
-## Current scope and limitations
-
-- The native daemon currently uses the Rust `notify` abstraction and supported
-  operating-system event backends. It is not a custom kernel extension.
-- Process enforcement is implemented for supported Unix signal semantics;
-  cross-platform termination abstraction remains roadmap work.
-- The loopback IPC channel is local and bounded but does not yet implement the
-  planned rotating cryptographic handshake.
-- The high-fidelity fallback is demonstration data. Consumers integrating the
-  API should inspect `source` and `nativeDaemonReachable` before treating events
-  as production evidence.
+- The portable watcher is post-event OS-backed telemetry, not pre-access kernel
+  enforcement and not process attribution.
+- No eBPF, Endpoint Security, fanotify permission, or Windows ETW adapter is
+  implemented.
+- A root/admin attacker or the same user with sufficient debugger/filesystem
+  access can bypass local controls.
+- TOCTOU remains possible between identity/path revalidation and operating-system
+  action.
+- Release signing, branch rules, secret scanning, and repository rulesets require
+  repository-owner configuration.
 
 ## License
 
-Krypton is currently declared under the ISC license in `package.json`. Add a
-standalone license file before publishing a formal release artifact.
+The package metadata currently declares ISC. A standalone license file remains a
+publication requirement.

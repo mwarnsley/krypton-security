@@ -1,9 +1,8 @@
-import { dispatchNativeCommand } from '../ipc';
+import { dispatchNativeCommand } from '../../../../server/telemetry/nativeClient';
 
 export const runtime = 'nodejs';
 
 const REQUIRED_AUDIT_KEY = 'auditOnly';
-const IPC_SUCCESS_RECEIPT = 'SUCCESS: AUDIT_MODE_UPDATED';
 const ROUTE_LOG_PREFIX = '[API /api/telemetry/audit-mode]';
 
 type RequestBody = Record<string, unknown>;
@@ -57,10 +56,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const auditOnly = payload[REQUIRED_AUDIT_KEY];
-  let executionReceipt: string;
+  let executionReceipt;
 
   try {
-    executionReceipt = await dispatchNativeCommand(`TOGGLE_AUDIT_MODE:${String(auditOnly)}`);
+    executionReceipt = await dispatchNativeCommand({ enabled: auditOnly, type: 'set_audit_mode' });
   } catch (error: unknown) {
     console.error(`${ROUTE_LOG_PREFIX} Native IPC mode update failed.`, error);
     return Response.json(
@@ -69,9 +68,9 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  if (executionReceipt !== IPC_SUCCESS_RECEIPT) {
+  if (!executionReceipt.ok || executionReceipt.code !== 'audit_mode_updated') {
     console.error(
-      `${ROUTE_LOG_PREFIX} Native IPC returned an unexpected receipt: ${executionReceipt || '<empty>'}.`
+      `${ROUTE_LOG_PREFIX} Native IPC returned an unexpected receipt code: ${executionReceipt.code}.`
     );
     return Response.json(
       { success: false, error: 'The native vanguard core did not confirm the mode update.' },

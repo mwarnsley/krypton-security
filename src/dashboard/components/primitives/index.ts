@@ -1,6 +1,5 @@
 export * from './KryptonButton';
 export * from './KryptonCheckbox';
-export * from './KryptonDataTable';
 export * from './KryptonIconButton';
 export * from './KryptonInput';
 export * from './KryptonLoadingSpinner';

@@ -13,36 +13,48 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Configure Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           cache: npm
-          node-version: 22
-      - name: Install dependencies
+          node-version-file: .node-version
+      - name: Install dependencies reproducibly
         run: npm ci
       - name: Check formatting
         run: npm run format:check
       - name: Lint source
         run: npm run lint
-      - name: Type-check core
-        run: npx tsc --noEmit
-      - name: Type-check dashboard
-        run: npx tsc --noEmit --project src/dashboard/tsconfig.json
-      - name: Run tests
-        run: npm run test
+      - name: Type-check all TypeScript
+        run: npm run typecheck
+      - name: Check primitive token compliance
+        run: npm run design-system:check
+      - name: Run unit tests with coverage
+        run: npm run test:coverage -- --run
+      - name: Build production dashboard
+        run: npm run build
+      - name: Enforce high-severity npm audit policy
+        run: npm run security:audit
+      - name: Generate npm CycloneDX SBOM
+        run: npm sbom --sbom-format cyclonedx > npm-sbom.cdx.json
 
   rust:
     name: Native Rust core
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Install Rust quality components
-        run: rustup component add clippy rustfmt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Check formatting
-        run: cargo fmt --manifest-path src/core-native/Cargo.toml --check
+        run: npm run rust:fmt
       - name: Lint native core
-        run: cargo clippy --manifest-path src/core-native/Cargo.toml --all-targets --all-features -- -D warnings
+        run: npm run rust:clippy
       - name: Test native core
-        run: cargo test --manifest-path src/core-native/Cargo.toml
+        run: npm run rust:test
+      - name: Install pinned Rust policy tools
+        run: cargo install cargo-audit --locked --version 0.21.2 && cargo install cargo-deny --locked --version 0.18.5 && cargo install cargo-cyclonedx --locked --version 0.5.7
+      - name: Audit Rust dependencies
+        run: cargo audit --file src/core-native/Cargo.lock
+      - name: Validate Rust advisories, bans, sources, and licenses
+        run: cargo deny --manifest-path src/core-native/Cargo.toml check
+      - name: Generate Rust CycloneDX SBOM
+        run: cargo cyclonedx --manifest-path src/core-native/Cargo.toml

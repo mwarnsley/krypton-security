@@ -12,7 +12,7 @@
   }
 
   body {
-    @apply min-h-screen bg-krypton-bg-main text-slate-100 antialiased;
+    @apply min-h-screen bg-krypton-bg-main text-krypton-fg-primary antialiased;
   }
 
   button,

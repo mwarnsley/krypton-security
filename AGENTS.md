@@ -76,7 +76,8 @@ imperceptible.
 - `/tests_simulation/`: End-to-end scripts that mimic prompt injection vectors
   and process quarantine behavior.
 - `/sandbox_workspace/`: Quarantined operating zone for local AI agent code.
-- `/alerts.json`: High-performance local threat-event ledger (`.gitignored`).
+- `/.krypton/telemetry/alerts.jsonl`: Bounded local native threat-event ledger (`.gitignored`).
+- `/.krypton/runtime/`: Private per-workspace socket discovery and capability files (`.gitignored`).
 
 ## 🧪 Testing and File Organization Rules
 

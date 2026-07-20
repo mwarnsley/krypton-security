@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      npm-security-and-runtime:
+        patterns: ['*']
+  - package-ecosystem: cargo
+    directory: /src/core-native
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      rust-security-and-runtime:
+        patterns: ['*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      immutable-actions:
+        patterns: ['*']

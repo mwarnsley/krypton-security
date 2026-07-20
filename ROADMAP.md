@@ -1,62 +1,62 @@
-# Krypton Product Roadmap
+# Krypton product roadmap
 
-This backlog records strategic product work that remains intentionally outside
-the current hardened runtime and dashboard scope.
+Status labels distinguish repository implementation from owner-managed or
+platform-specific work.
 
-## Storage and telemetry durability
+## Implemented
 
-- [ ] Transition the local flat-file storage layer (`alerts.json`) to a highly
-      performant embedded secure database such as SQLite or RocksDB, or to a
-      centralized secure logging endpoint with authenticated transport, retention,
-      and integrity controls.
+- [x] Explicit project/protected-workspace configuration and safe path handling.
+- [x] Compound process identity plus authenticated Unix-domain socket control.
+- [x] Bounded JSONL retention, cursor API reads, deterministic mock rotation, and
+      bounded client rendering.
+- [x] Strict dashboard TypeScript, primitive token compliance, SHA-pinned Actions,
+      CODEOWNERS, Dependabot, CodeQL, audit, license, and SBOM workflow definitions.
 
-## Privilege containment
+## Partially implemented
 
-- [ ] Refine system privilege containment boundaries so native monitoring,
-      policy evaluation, telemetry persistence, and process isolation operate with
-      separately minimized operating-system capabilities.
+- [ ] Process attribution: explicit launcher registration is implemented;
+      portable `notify` events remain unattributed.
+- [ ] Cross-platform monitoring: `notify` observation is portable, but native
+      authenticated control and isolation currently require Unix.
+- [ ] Release provenance: clean tracked-file archives are implemented; signed
+      releases and checksum publication are not.
 
-## Runtime policy configuration
+## Planned engineering work
 
-- [ ] Build granular runtime policy rule configurations for workspace scopes,
-      sensitive targets, process permissions, enforcement actions, and auditable
-      per-agent exceptions.
+- [ ] Add macOS Endpoint Security and Linux eBPF/fanotify permission adapters for
+      reliable process attribution or pre-access decisions where supported.
+- [ ] Add Windows named-pipe control with restrictive ACLs and a Windows process
+      generation/isolation adapter.
+- [ ] Separate daemon privileges further and add sandboxed packaging/service
+      installation.
+- [ ] Add integrity authentication for persisted telemetry and optional encrypted
+      local storage.
+- [ ] Add load tests against real daemon sockets and browser profiling to the
+      deterministic telemetry benchmark.
+- [ ] Publish a standalone ISC license file and a signed release policy after
+      signing credentials are provisioned.
 
-## HackerNoon / Public Release Roadmap
+## External repository configuration required
 
-- [ ] Cross-Platform Watchdog Core: Abstract the file monitoring loop using a
-      cross-platform engine (like the Rust `notify` crate) and replace
-      platform-specific kill signals with unified abstraction layers supporting
-      Windows (`taskkill`) and Linux systems.
-- [ ] Dynamic Multi-Tenant Sandbox Profiling: Design and implement a
-      `krypton.config.json` ingestion pipeline so users can declare distinct
-      security boundaries, custom exclusion rules, and unique rate-limiting
-      parameters without hardcoding project directories.
-- [ ] Application Compilation & Desktop Packaging: Integrate Tauri to bundle the
-      Next.js frontend dashboard and the native Rust daemon background service
-      into a single, high-performance, lightweight installer executable.
-- [ ] Secure Loopback Handshake Hardening: Strengthen the synchronous IPC
-      transaction on port 9000 by implementing a rotating, pre-shared
-      cryptographic handshake token to guarantee that only the official
-      dashboard server can dispatch isolation commands.
-- [ ] Kernel-Level Telemetry Evolution: Research and architect optional platform
-      extensions transitioning user-space watchers to low-level kernel auditing
-      systems (e.g., eBPF on Linux or the Endpoint Security framework on macOS)
-      for deep process monitoring.
+- [ ] Enable GitHub rulesets/branch protection and require CODEOWNERS approval.
+- [ ] Require signed commits for protected branches.
+- [ ] Enable GitHub secret scanning, push protection, and Dependabot alerts.
+- [ ] Protect release environments and configure signing credentials.
 
-## Advanced Developer Operations & Attestation
+## 🤖 Advanced AI Runtime Security Roadmap (Next Horizons)
 
-- [ ] "One-Click Exploit Reproduction" (Timeline Rewind): Add a "Download
-      Exploit Signature" action button next to intercepted alert rows to package
-      the exact sequence of unauthorized directory traversals into a clean,
-      shareable Markdown or JSON exploit report.
-- [ ] The "Dry-Run" (Audit Only) Mode: Implement a global dashboard toggle
-      switch that switches the native Rust daemon between Enforcement Mode
-      (active SIGKILL/termination) and Audit Mode (telemetry logging and
-      high-priority warning toasts only), allowing safe profiling of complex
-      local codebases.
-- [ ] Automated Dependency Attestation: Build a reverse-lookup utility to trace
-      a target process ID back to its originating node module or local script
-      execution path, dynamically rendering a clear UI badge—for example,
-      `Spawning Dependency: minimist@1.2.5`—to eliminate malicious package
-      guesswork.
+### 1. Autonomous AI Agent Protection (MCP / STDIO Firewall)
+
+- [ ] **Model Context Protocol (MCP) Adaptive Telemetry:** Implement native hooks mapping stdin/stdout execution loops for LLM command-line agents (Cursor, Claude Code, Windsurf) to catch prompt-injection-driven background breakout scripts before local OS execution completes.
+
+### 2. Insecure Ephemeral Code Sandboxing
+
+- [ ] **AI-Scaffolded Execution Monitoring:** Enforce deterministic local sandbox tracking boundaries for transient, AI-generated micro-scripts to prevent un-vetted code blocks from running localized variable or PII harvesting sweeps.
+
+### 3. Shadow AI Exfiltration Prevention (Clipboard Guard)
+
+- [ ] **Native OS Clipboard Sentinel:** Extend the local Rust background daemon to monitor the clipboard buffer pipeline, automatically intercepting massive data strings matching restricted corporate records or database schemas before data exfiltration occurs via web AI portals.
+
+### 4. Zero-Config IDE Integration
+
+- [ ] **Krypton VS Code Extension Sidebar Companion:** Bundle the native high-performance Rust binary as a zero-config extensions marketplace sidebar companion, exposing our tokenized React tables and real-time status card indicators natively within the active editor window.

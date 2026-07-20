@@ -20,13 +20,13 @@ export interface KryptonIconButtonProps extends Omit<
 }
 
 const BASE_CLASSES =
-  'inline-flex shrink-0 touch-manipulation items-center justify-center rounded-krypton-radius-control transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-krypton-bg-main disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex shrink-0 touch-manipulation items-center justify-center rounded-krypton-radius-control transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-krypton-bg-main disabled:pointer-events-none disabled:opacity-50';
 
 const VARIANT_CLASSES: Readonly<Record<KryptonButtonVariant, string>> = {
   primary:
     'border border-krypton-accent-cyan bg-krypton-accent-cyan text-krypton-bg-main hover:bg-krypton-accent-cyan/90',
   secondary:
-    'border border-krypton-border-muted bg-krypton-bg-surface text-slate-300 hover:border-krypton-accent-cyan/50 hover:text-white',
+    'border border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary hover:border-krypton-focus-ring hover:text-krypton-fg-primary',
   destructive:
     'border border-krypton-alert-rose bg-krypton-alert-rose text-krypton-bg-main hover:bg-krypton-alert-rose/90',
   link: 'text-krypton-accent-cyan hover:bg-krypton-accent-cyan/10 hover:text-krypton-accent-cyan/80',

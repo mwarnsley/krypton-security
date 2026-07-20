@@ -12,13 +12,22 @@ import {
   type SecurityAlert,
 } from './AlertTable';
 
+const PROCESS_IDENTITY = {
+  executablePath: '/usr/bin/node',
+  parentPid: 4000,
+  pid: 4242,
+  startTime: 1_784_500_000,
+} as const;
+
 const ALERT: SecurityAlert = {
+  attribution: 'process',
   attemptedAction: 'READ_FILE',
   attemptedPath: '/project/.ssh/id_rsa',
   enforcementStatus: 'QUARANTINED',
   id: 'alert-1',
   origin_attribution: '@scope/dependency-name',
   processName: 'node',
+  process: PROCESS_IDENTITY,
   severity: 'high',
   targetProcessId: 4242,
   timestamp: '2026-07-14T12:00:00.000Z',
@@ -224,29 +233,28 @@ describe('AlertTable', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
     expect(markup).toContain('aria-label="Rows per page"');
-    expect(markup.match(/<option/g)).toHaveLength(6);
+    expect(markup.match(/<option/g)).toHaveLength(5);
     expect(markup).toContain('<option value="25" selected="">25</option>');
-    expect(markup).toContain('<option value="ALL">ALL</option>');
+    expect(markup).not.toContain('<option value="ALL">ALL</option>');
   });
 
   it('styles the rows-per-page selector with the compact dark treatment', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
     expect(markup).toContain(
-      'border border-krypton-border-muted bg-krypton-bg-surface text-slate-200'
+      'border border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary'
     );
   });
 
   test.each([
-    ['10', 4970, 10],
-    ['25', 4970, 25],
-    ['50', 4970, 50],
-    ['75', 4970, 75],
-    ['100', 4970, 100],
-    ['ALL', 4970, 4970],
-    ['ALL', 0, 1],
-  ])('resolves page-size selection %s', (selection, totalAlerts, expectedPageSize) => {
-    expect(resolveAlertPageSize(selection, totalAlerts)).toBe(expectedPageSize);
+    ['10', 10],
+    ['25', 25],
+    ['50', 50],
+    ['75', 75],
+    ['100', 100],
+    ['ALL', 25],
+  ])('resolves page-size selection %s', (selection, expectedPageSize) => {
+    expect(resolveAlertPageSize(selection)).toBe(expectedPageSize);
   });
 
   test.each([
@@ -353,7 +361,7 @@ describe('AlertTable', () => {
       message: 'Target child process successfully verified and isolated.',
     });
 
-    const status = await requestProcessIsolation(4242);
+    const status = await requestProcessIsolation(PROCESS_IDENTITY);
 
     expect(status).toEqual({
       message: 'Target child process successfully verified and isolated.',
@@ -367,7 +375,7 @@ describe('AlertTable', () => {
       message: 'Isolation rejected: target process is not an authorized Krypton workspace child.',
     });
 
-    const status = await requestProcessIsolation(4242);
+    const status = await requestProcessIsolation(PROCESS_IDENTITY);
 
     expect(status).toEqual({
       message: 'Isolation rejected: target process is not an authorized Krypton workspace child.',
@@ -381,12 +389,12 @@ describe('AlertTable', () => {
       message: 'Target child process successfully verified and isolated.',
     });
 
-    await requestProcessIsolation(4242);
+    await requestProcessIsolation(PROCESS_IDENTITY);
 
     expect(fetch).toHaveBeenCalledWith(
       '/api/telemetry/terminate',
       expect.objectContaining({
-        body: JSON.stringify({ targetProcessId: 4242 }),
+        body: JSON.stringify({ process: PROCESS_IDENTITY }),
       })
     );
   });

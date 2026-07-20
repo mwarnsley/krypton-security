@@ -9,7 +9,7 @@ export interface KryptonLoadingSpinnerProps {
 const SIZE_CLASSES: Readonly<Record<NonNullable<KryptonLoadingSpinnerProps['size']>, string>> = {
   sm: 'h-4 w-4 border-2',
   md: 'h-6 w-6 border-2 sm:h-7 sm:w-7',
-  lg: 'h-9 w-9 border-[3px] sm:h-10 sm:w-10',
+  lg: 'h-9 w-9 border-4 sm:h-10 sm:w-10',
 };
 
 /**
@@ -28,7 +28,7 @@ export function KryptonLoadingSpinner(props: KryptonLoadingSpinnerProps): React.
     <span aria-label={label} className="inline-flex items-center justify-center" role="status">
       <span
         aria-hidden="true"
-        className={`animate-spin rounded-krypton-radius-full border-krypton-border-muted border-t-krypton-accent-cyan motion-reduce:animate-pulse ${SIZE_CLASSES[size]}`}
+        className={`animate-spin rounded-krypton-radius-full border-krypton-spinner-track border-t-krypton-spinner-foreground motion-reduce:animate-pulse ${SIZE_CLASSES[size]}`}
       />
       <span className="sr-only">{label}</span>
     </span>

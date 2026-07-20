@@ -7,7 +7,7 @@ describe('KryptonInput', () => {
   it('renders token-driven focus styling', () => {
     const markup = renderToStaticMarkup(<KryptonInput aria-label="Filter alerts" />);
 
-    expect(markup).toContain('focus-visible:border-krypton-accent-cyan');
+    expect(markup).toContain('focus-visible:border-krypton-focus-ring');
     expect(markup).toContain('rounded-krypton-radius-control');
   });
 });

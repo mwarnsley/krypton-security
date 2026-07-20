@@ -15,17 +15,17 @@ import {
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { useId, useMemo } from 'react';
 
-import { KryptonButton } from '../KryptonButton';
-import { KryptonIconButton } from '../KryptonIconButton';
-import { KryptonSelect, type KryptonSelectOption } from '../KryptonSelect';
-import { KryptonTypography } from '../KryptonTypography';
+import {
+  KryptonButton,
+  KryptonIconButton,
+  KryptonSelect,
+  type KryptonSelectOption,
+  KryptonTypography,
+} from '../../primitives';
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 75, 100] as const;
 
 export interface KryptonDataTablePagination {
-  /** Enables an `ALL` option that resolves to the complete data length. @default false */
-  readonly includeAllOption?: boolean;
-
   /** Receives TanStack pagination updates from navigation and page-size controls. */
   readonly onChange: OnChangeFn<PaginationState>;
 
@@ -55,10 +55,10 @@ export interface KryptonDataTableProps<TData extends RowData> {
   readonly caption: string;
 
   /** The typed TanStack column definitions rendered by the shared grid. */
-  readonly columns: readonly ColumnDef<TData>[];
+  readonly columns: ColumnDef<TData>[];
 
   /** The immutable row collection supplied to TanStack. */
-  readonly data: readonly TData[];
+  readonly data: TData[];
 
   /** The message shown when the current row model is empty. */
   readonly emptyMessage: string;
@@ -94,13 +94,9 @@ export interface KryptonDataTableProps<TData extends RowData> {
  */
 export function resolveKryptonPageSize(
   selection: string,
-  totalRowCount: number,
+  _totalRowCount: number,
   pageSizeOptions: readonly number[] = DEFAULT_PAGE_SIZE_OPTIONS
 ): number {
-  if (selection === 'ALL') {
-    return Math.max(1, totalRowCount);
-  }
-
   const numericSelection = Number(selection);
   const fallback = pageSizeOptions[0] ?? 25;
 
@@ -171,19 +167,17 @@ export function KryptonDataTable<TData extends RowData>(
     sorting,
   } = props;
   const pageSizeSelectId = useId();
-  const tableData = useMemo<TData[]>(() => [...data], [data]);
-  const tableColumns = useMemo<ColumnDef<TData>[]>(() => [...columns], [columns]);
   // TanStack Table intentionally returns mutable callbacks that React Compiler cannot memoize safely.
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
-    columns: tableColumns,
-    data: tableData,
+    columns,
+    data,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    getRowId,
     getSortedRowModel: getSortedRowModel(),
     onPaginationChange: pagination.onChange,
-    onSortingChange: sorting?.onChange,
+    ...(getRowId === undefined ? {} : { getRowId }),
+    ...(sorting === undefined ? {} : { onSortingChange: sorting.onChange }),
     state: {
       pagination: pagination.state,
       sorting: sorting?.state ?? [],
@@ -197,9 +191,8 @@ export function KryptonDataTable<TData extends RowData>(
   const selectOptions = useMemo<KryptonSelectOption[]>(
     () => [
       ...pageSizeOptions.map((pageSize) => ({ label: String(pageSize), value: String(pageSize) })),
-      ...(pagination.includeAllOption ? [{ label: 'ALL', value: 'ALL' }] : []),
     ],
-    [pageSizeOptions, pagination.includeAllOption]
+    [pageSizeOptions]
   );
   const totalRowCount = table.getPrePaginationRowModel().rows.length;
   const countLabel = totalRowCount === 1 ? itemLabel : `${itemLabel}s`;
@@ -273,11 +266,7 @@ export function KryptonDataTable<TData extends RowData>(
                 pagination.onPageSizeSelectionChange(nextSelection);
                 pagination.onChange({
                   pageIndex: 0,
-                  pageSize: resolveKryptonPageSize(
-                    nextSelection,
-                    tableData.length,
-                    pageSizeOptions
-                  ),
+                  pageSize: resolveKryptonPageSize(nextSelection, data.length, pageSizeOptions),
                 });
               }}
               options={selectOptions}

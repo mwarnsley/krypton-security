@@ -43,7 +43,7 @@ export function KryptonTooltip(props: KryptonTooltipProps): React.JSX.Element {
         <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
         <TooltipPrimitive.Portal>
           <TooltipPrimitive.Content
-            className={`z-50 rounded-krypton-radius-card border border-krypton-accent-cyan/30 bg-krypton-bg-main/90 text-left text-xs font-medium leading-5 text-slate-100 shadow-2xl shadow-black/60 backdrop-blur-md ${SIZE_CLASSES[size]}`}
+            className={`z-50 rounded-krypton-radius-card border border-krypton-accent-cyan/30 bg-krypton-bg-main/90 text-left text-xs font-medium leading-5 text-krypton-fg-primary shadow-2xl shadow-krypton-shadow backdrop-blur-md ${SIZE_CLASSES[size]}`}
             side={side}
             sideOffset={8}
           >

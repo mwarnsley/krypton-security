@@ -37,7 +37,7 @@ export const KryptonSelect = forwardRef<HTMLSelectElement, KryptonSelectProps>(
   function KryptonSelect({ options, size = 'sm', ...selectProps }, ref): React.JSX.Element {
     return (
       <select
-        className={`cursor-pointer appearance-auto rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface text-slate-200 focus-visible:border-krypton-accent-cyan focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-accent-cyan/30 disabled:cursor-not-allowed disabled:opacity-50 ${SIZE_CLASSES[size]}`}
+        className={`cursor-pointer appearance-auto rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary focus-visible:border-krypton-focus-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${SIZE_CLASSES[size]}`}
         ref={ref}
         {...selectProps}
       >
