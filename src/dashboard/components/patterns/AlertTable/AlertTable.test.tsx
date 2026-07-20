@@ -64,10 +64,10 @@ describe('AlertTable', () => {
   test.each([
     'Timestamp',
     'Process ID',
-    'Process Name',
-    'Targeted Directory',
+    'Application / Tool',
+    'Attempted Access Location',
     'Severity',
-    'Attestation Tag',
+    'Verified Signature',
     'Actions',
   ])('renders the %s column', (columnLabel) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
@@ -259,10 +259,10 @@ describe('AlertTable', () => {
 
   test.each([
     'Process ID',
-    'Process Name',
-    'Targeted Directory',
+    'Application / Tool',
+    'Attempted Access Location',
     'Severity',
-    'Attestation Tag',
+    'Verified Signature',
     'Actions',
   ])('renders a separate info control for %s', (columnLabel) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);

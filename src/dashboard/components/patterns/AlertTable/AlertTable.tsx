@@ -392,8 +392,8 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         header: ({ column }) => (
           <SortableColumnHeader
             column={column}
-            helperText="Process Name identifies the executable or developer tool responsible for the telemetry event."
-            label="Process Name"
+            helperText="Application / Tool identifies the automated application or developer tool associated with the security event."
+            label="Application / Tool"
           />
         ),
         cell: ({ getValue }) => (
@@ -407,8 +407,8 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         header: ({ column }) => (
           <SortableColumnHeader
             column={column}
-            helperText="Targeted Directory is the normalized filesystem or network location involved in the event."
-            label="Targeted Directory"
+            helperText="Attempted Access Location is the file system or network location involved in the security event."
+            label="Attempted Access Location"
           />
         ),
         cell: ({ getValue }) => (
@@ -446,8 +446,8 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         header: ({ column }) => (
           <SortableColumnHeader
             column={column}
-            helperText="Attestation Tag identifies the package, task, or local script attributed to the process."
-            label="Attestation Tag"
+            helperText="Verified Signature identifies the package, task, or local script associated with the application."
+            label="Verified Signature"
           />
         ),
         cell: ({ getValue }) => (

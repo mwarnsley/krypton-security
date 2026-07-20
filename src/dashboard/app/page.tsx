@@ -942,14 +942,14 @@ export default function DashboardPage(): React.JSX.Element {
           <div className="relative flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-400">
-                Runtime boundary telemetry
+                ACTIVE SECURITY WORKSPACE
               </p>
               <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
                 AegisAgent Security Command
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                Live containment visibility for monitored agent processes and filesystem enforcement
-                events.
+                Real-time monitoring and threat isolation for automated applications and file
+                systems.
               </p>
             </div>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
@@ -1027,7 +1027,7 @@ export default function DashboardPage(): React.JSX.Element {
           <header className="flex flex-col items-start justify-between gap-4 px-1 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                Enforcement ledger
+                SECURITY ACTIVITY LOG
               </p>
               <h2 className="mt-1 text-xl font-bold text-white" id="threat-telemetry-title">
                 Intercepted security alerts
