@@ -1,14 +1,52 @@
 # Krypton
 
-Krypton is an experimental local runtime boundary for explicitly registered
-child processes. It combines a Rust filesystem telemetry daemon, an authenticated
-local control channel, a TypeScript launcher seam, and a Next.js dashboard.
+Krypton is a local security workspace for untrusted package scripts, AI coding
+agents, automated developer tools, and the child processes they launch through
+Krypton. It combines an explicit workspace policy, a protected child-process
+launcher, OS-backed filesystem telemetry, authenticated native control, and a
+dashboard without claiming that portable filesystem notifications can identify
+or stop the actor that caused an event.
 
-Krypton does not claim that a portable filesystem notification identifies the
-process that caused it. The `notify` watcher reports paths and event kinds. Those
-events are stored as `unattributed`; process isolation is permitted only when a
-caller supplies an exact child-process identity that the daemon previously
-validated and registered.
+## Why Krypton exists
+
+A malicious package lifecycle script or an AI-generated shell command can try
+to leave its assigned project directory and read local credentials such as
+`.aws`, `.ssh`, or environment files. The developer may trust the tool while the
+tool is acting on untrusted package content, generated code, or prompt-injected
+instructions. Krypton makes the intended workspace and owned-process boundary
+explicit so integrations can make local, deterministic policy decisions and
+operators can see bounded evidence when filesystem activity occurs.
+
+Krypton does not guarantee prevention of credential theft. Its portable watcher
+records post-event filesystem telemetry; stronger OS-specific attribution and
+permission adapters remain future work.
+
+## What Krypton does today
+
+- Defines a protected workspace boundary inside an explicit project root.
+- Launches protected tools and registers the exact PID, start time, executable,
+  and parent identity of each owned child-process generation.
+- Records bounded, OS-backed filesystem telemetry without inventing an actor PID.
+- Exposes clearly labeled native and demonstration states in a Next.js dashboard.
+- Allows isolation only for a process identity previously registered by Krypton
+  and revalidated against live operating-system state.
+
+## What Krypton does not do
+
+Krypton is not antivirus, a malware classifier, a complete VM or container, or
+a root/admin security boundary. It does not provide universal pre-access kernel
+enforcement, reliably attribute portable `notify`/FSEvents/inotify events to a
+process, or automatically protect actions performed by applications that never
+integrate with its policy or protected launcher.
+
+## Quick example
+
+1. Krypton launches an AI tool inside `sandbox_workspace`.
+2. The launcher registers the exact child-process identity with the Rust daemon.
+3. A filesystem event occurs outside the configured protected workspace.
+4. The current portable watcher records that post-event telemetry as
+   `unattributed` unless a future OS-specific adapter can identify the actor.
+5. Only a process identity previously registered by Krypton can be isolated.
 
 ## Supported platforms
 
@@ -17,11 +55,6 @@ validated and registered.
 - Windows: dashboard-only demonstration mode. Native control is intentionally
   unsupported until a restrictive named-pipe ACL and process-generation adapter
   are implemented.
-
-Required versions are pinned in `.node-version` and `rust-toolchain.toml`:
-
-- Node.js 20.19.4
-- Rust 1.97.0
 
 ## Architecture
 
@@ -44,7 +77,30 @@ The project root contains Krypton configuration and the dashboard. The protected
 workspace root is a narrower directory in which a protected child is authorized
 to mutate files. They are not interchangeable.
 
-## Clean setup
+## Prerequisites
+
+Confirm the toolchain before setup:
+
+```sh
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
+- Node.js 20.19.4 is pinned by `.node-version`; use the matching npm shipped
+  with that runtime.
+- Rust 1.97.0 is pinned by `rust-toolchain.toml`. Install Rust through
+  [rustup](https://rustup.rs/) so the repository toolchain is selected correctly.
+- macOS native builds require Apple command-line developer tools.
+- Linux native builds require a working C compiler and linker appropriate to the
+  distribution.
+- Windows does not currently support native mode and does not require Rust for
+  dashboard-only demonstration mode.
+
+## Setup
+
+### macOS and Linux native mode
 
 ```sh
 git clone https://github.com/mwarnsley/krypton-security.git
@@ -53,26 +109,32 @@ npm ci
 npm run dev:full
 ```
 
-`dev:full` starts the native daemon and dashboard together. Open
+`dev:full` starts both the Rust daemon and Next.js dashboard. Open
 `http://localhost:3000`.
 
-Dashboard-only mode:
+### Dashboard-only demonstration mode
+
+This is the supported Windows onboarding path. It is also useful on macOS or
+Linux when Rust is unavailable.
 
 ```sh
+git clone https://github.com/mwarnsley/krypton-security.git
+cd krypton-security
+npm ci
 npm run dev:dashboard
 ```
 
-Native-only mode:
+Demonstration mode uses simulated telemetry, not native security evidence. The
+dashboard displays: “Demonstration mode — native telemetry is unavailable.
+Events shown below are simulated.” If the daemon is reachable but its ledger is
+degraded or invalid, the banner instead says that native telemetry could not be
+validated.
+
+To run only the native daemon on macOS or Linux:
 
 ```sh
 npm run dev:daemon
 ```
-
-When native control is unavailable, the dashboard displays this persistent
-warning: “Demonstration mode — native telemetry is unavailable. Events shown
-below are simulated.” If the daemon is reachable but its ledger is degraded or
-invalid, the banner explicitly says that native telemetry could not be
-validated.
 
 ## Runtime configuration
 
@@ -154,9 +216,13 @@ events are native evidence.
 - Escaping symlinks, parent traversal, and sibling-prefix confusion fail closed.
 - Portable watcher events never increment a process counter or quarantine a
   process because `notify` provides no reliable actor PID.
+- Pre-action denial applies only when an application explicitly asks Krypton's
+  policy layer before performing an action. The portable filesystem watcher does
+  not block arbitrary OS access before it occurs; OS-specific permission and
+  endpoint-security adapters remain future work.
 - Ledger write failures degrade daemon health.
 
-See `THREAT_MODEL.md` for trust assumptions and limitations.
+See [THREAT_MODEL.md](THREAT_MODEL.md) for trust assumptions and limitations.
 
 ## Verification
 
@@ -186,28 +252,55 @@ growth for 100, 1,000, and 10,000 deterministic events.
 
 ## Troubleshooting
 
-- `source: "mock"`, daemon unreachable: start `npm run dev:daemon` and confirm
-  `.krypton/runtime/daemon.json` exists.
-- `source: "mock"`, daemon reachable: inspect `fallbackReason`; ledger failures
-  are not hidden as normal demonstration mode.
-- `npm ci` lock mismatch: run `npm install`, review the lockfile change, then
-  repeat `npm ci` from a clean dependency state.
-- stale socket: stop old daemon processes. Startup removes a socket only after a
-  connection check proves it is stale.
-- Windows: use dashboard demonstration mode; native isolation is not supported.
+- **`cargo` or `rustc` not found:** install Rust through `rustup`, restart the
+  shell if needed, and rerun the four prerequisite version checks.
+- **C compiler or linker unavailable:** install the platform development
+  toolchain. macOS requires Apple command-line developer tools; Linux requires
+  the compiler and linker supported by that distribution.
+- **Unsupported Windows native mode:** use `npm run dev:dashboard`. Windows
+  native isolation is intentionally unavailable today.
+- **Port 3000 already in use:** stop the process using the port or start the
+  demonstration dashboard with `npm run dev:dashboard -- -p 3001`.
+- **Stale Unix socket:** stop old daemon processes. Startup removes a socket only
+  after a connection check proves it is stale; never delete a socket belonging
+  to a running daemon.
+- **Daemon endpoint missing:** start `npm run dev:daemon` and confirm
+  `.krypton/runtime/daemon.json` is created with private permissions.
+- **Mock mode versus degraded native mode:** `source: "mock"` with an unreachable
+  daemon is demonstration mode. If the daemon is reachable, inspect
+  `fallbackReason`; an invalid or unavailable native ledger is a degraded native
+  state, not normal demonstration evidence.
+- **`npm ci` lock mismatch:** release users should not normally encounter this.
+  Use `npm ci` for clean setup. `npm install` is a maintainer recovery step: run
+  it only to regenerate an intentionally changed lockfile, review the dependency
+  diff, remove `node_modules`, and confirm `npm ci` succeeds afterward.
+
+## Documentation
+
+- [THREAT_MODEL.md](THREAT_MODEL.md) — trust boundaries and technical limitations.
+- [SECURITY.md](SECURITY.md) — private vulnerability reporting and release integrity.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contributor workflow and verification rules.
+- [docs/CONTRIBUTION_SECURITY.md](docs/CONTRIBUTION_SECURITY.md) — contribution threat matrix and merge controls.
+- [ROADMAP.md](ROADMAP.md) — planned engineering and research objectives.
+- [VC.md](VC.md) — venture and product strategy material.
 
 ## Release archive
+
+**Do not manually compress the repository folder. Use
+`npm run release:package` and distribute only the generated archive.**
 
 After committing the verified tree:
 
 ```sh
-npm run release:preflight
-npm run release:archive
+npm run release:package
 ```
 
-The preflight requires a clean tree, rejects tracked generated/secret-like
-files, and runs the full verification suite. `git archive` packages tracked
-files only; the generated ZIP is ignored and must not be committed.
+The command runs preflight before archive generation, creates
+`krypton-security.zip` with `git archive`, and inspects every ZIP entry for
+forbidden paths. `git archive` intentionally contains only tracked files, so
+ignored and untracked local dependencies, build output, telemetry, secrets, and
+test residue are excluded. The generated ZIP is ignored and must not be
+committed.
 
 ## Current limitations
 
@@ -224,5 +317,4 @@ files only; the generated ZIP is ignored and must not be committed.
 
 ## License
 
-The package metadata currently declares ISC. A standalone license file remains a
-publication requirement.
+Krypton is distributed under the [ISC License](LICENSE).

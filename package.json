@@ -2,6 +2,10 @@
   "name": "krypton-security",
   "version": "1.0.0",
   "description": "",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": "20.19.4"
+  },
   "main": "index.js",
   "scripts": {
     "dev": "npm run dev:dashboard",
@@ -26,8 +30,10 @@
     "rust:test": "cargo test --manifest-path src/core-native/Cargo.toml --all-targets --all-features",
     "design-system:check": "node scripts/check-design-system.cjs",
     "security:audit": "npm audit --audit-level=high",
-    "release:archive": "git archive --format=zip --output=krypton-security.zip HEAD",
     "release:preflight": "node scripts/release-preflight.cjs",
+    "release:archive": "git archive --format=zip --output=krypton-security.zip HEAD",
+    "release:inspect": "node scripts/inspect-release-archive.cjs krypton-security.zip",
+    "release:package": "npm run release:preflight && npm run release:archive && npm run release:inspect",
     "benchmark:telemetry": "node scripts/benchmark-telemetry.cjs",
     "verify": "npm run lint && npm run typecheck && npm test -- --run && npm run build && npm run design-system:check && npm run rust:fmt && npm run rust:clippy && npm run rust:test"
   },
@@ -49,7 +55,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.5.3",
-    "concurrently": "^10.0.3",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.10",
     "eslint-config-prettier": "^10.1.8",

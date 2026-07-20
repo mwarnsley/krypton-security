@@ -51,8 +51,11 @@ signal alone. OS-specific attribution adapters are not implemented.
 
 Portable events are post-event telemetry. Krypton does not claim pre-access
 kernel denial, complete credential-exfiltration prevention, or reliable actor
-identity from FSEvents/inotify alone. Explicit policy integration and protected
-launcher control can deny actions before the integrated caller proceeds.
+identity from FSEvents/inotify alone. Pre-action denial applies only when an
+application explicitly asks Krypton's policy layer before performing the action.
+The portable filesystem watcher does not block arbitrary operating-system access
+before it occurs. OS-specific permission and endpoint-security adapters remain
+future work.
 
 ## Paths, symlinks, renames, and TOCTOU
 

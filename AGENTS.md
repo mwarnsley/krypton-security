@@ -72,7 +72,7 @@ imperceptible.
 - `/src/utils/`: High-performance internal utilities such as non-blocking
   logging streams.
 - `/src/index.ts`: Main entry point for the command-line interface.
-- `/**tests**/`: Unit test root mirroring the exact subfolder layout of `/src/`.
+- `/tests/`: Unit test root mirroring the exact subfolder layout of `/src/`.
 - `/tests_simulation/`: End-to-end scripts that mimic prompt injection vectors
   and process quarantine behavior.
 - `/sandbox_workspace/`: Quarantined operating zone for local AI agent code.
@@ -88,7 +88,7 @@ imperceptible.
    defined below.
 2. **Mirrored Unit Testing:** Every operational file created in `/src/core/` or
    `/src/utils/` must immediately receive a corresponding `.test.ts` file in the
-   mirrored pathway under `/**tests**/`.
+   mirrored pathway under `/tests/`.
 3. **Pure Function Separation:** Keep computational helpers separate from
    operating-system process handling so tests remain fast and deterministic.
 
@@ -127,7 +127,7 @@ documentation to maximize IDE IntelliSense clarity.
 
 1. **Co-located Specs:** While integration simulation scripts live in
    `/tests_simulation/`, every core utility or process filtering asset inside
-   `/src/` must be paired with an isolated unit test file inside `/**tests**/`.
+   `/src/` must be paired with an isolated unit test file inside `/tests/`.
 2. **Target 100% Coverage:** Aim for maximum line, branch, and functional branch
    coverage where practical.
 3. **Atomic `it` Blocks:** Prefer many small, highly specific `it` or `test`

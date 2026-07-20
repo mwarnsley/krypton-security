@@ -55,10 +55,16 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
 - Moves the composite data table into patterns and enforces semantic primitive
   tokens with a static compliance gate.
 - Pins Node and Rust versions, exposes one `verify` command, SHA-pins GitHub
-  Actions, and adds CODEOWNERS, Dependabot, CodeQL, audit, license, and SBOM
-  workflows.
-- Adds clean archive/preflight scripts plus repository ignore and line-ending
-  policy.
+  Actions, and adds CODEOWNERS, Dependabot, CodeQL, dependency license-policy
+  checks, and SBOM workflows.
+- Publishes the actual ISC software license separately from dependency-policy
+  checks and future signed-release provenance.
+- Provides a clean-install lockfile for the pinned Node runtime and records the
+  exact npm version used to produce it.
+- Uses conventional `tests/` and `docs/CONTRIBUTION_SECURITY.md` paths so first
+  contact with the repository is unambiguous.
+- Packages tracked files only, runs release preflight before archive generation,
+  and rejects forbidden or traversal-capable ZIP entries before distribution.
 
 ## How to verify
 

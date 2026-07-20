@@ -15,7 +15,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['**/*.cjs', '**tests__/**/*.ts', '**tests**/**/*.ts', 'tests_simulation/**/*.ts'],
+    files: ['**/*.cjs', 'tests/**/*.ts', 'tests_simulation/**/*.ts'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
     },

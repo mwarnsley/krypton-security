@@ -29,10 +29,10 @@ workflow itself delivers the payload to an agent that can act with local
 authority.
 
 Krypton's commercial proposition is not “use less AI.” It is “keep the velocity
-while containing the blast radius.” Krypton places a deterministic local
-execution boundary around agent activity so companies can permit useful local
-automation without granting every agent implicit access to the rest of the
-workstation.
+while containing the blast radius.” Krypton provides deterministic local policy
+and protected-launcher seams around integrated agent activity so companies can
+delegate a narrower workspace and process boundary. Portable watcher telemetry
+does not independently enforce that boundary.
 
 ### Commercial counter-arguments
 
@@ -42,9 +42,10 @@ workstation.
 filesystem boundary. It does not stop an approved agent from accidentally
 reading a poisoned ticket, nor does it stop an unsanctioned agent already
 running on an employee's machine. Training and policy remain useful governance
-tools; they are not runtime controls. Krypton converts a written least-privilege
-expectation into an enforceable local boundary without asking employees to give
-up the tools that make them faster.
+tools; they are not runtime controls. Applications that explicitly consult
+Krypton's policy before acting can convert a written least-privilege expectation
+into a local decision without asking employees to give up the tools that make
+them faster.
 
 #### Objection: “Why not just look at the logs tomorrow morning?”
 
@@ -52,9 +53,10 @@ up the tools that make them faster.
 modification, credential access, or data transfer. Retrospective logs can help
 explain an incident, but they cannot reverse it. Some harmful actions are
 entirely local, and outbound activity can resemble ordinary approved HTTPS
-traffic. Krypton moves the control from post-incident investigation to the
-moment of execution: deny the boundary crossing, terminate the rogue child
-process, and then preserve a local event for the existing security workflow.
+traffic. An integrated caller can ask Krypton's policy layer before acting, and
+the protected launcher can isolate an exact registered child identity. Portable
+filesystem watching remains post-event evidence and does not provide universal
+pre-access denial.
 
 ---
 
@@ -115,6 +117,11 @@ agent. Explicit policy calls can deny an unsafe path, while the protected
 launcher can isolate an exact registered child generation. Portable watcher
 events provide post-event evidence only and do not identify or quarantine an
 actor by themselves.
+
+Pre-action denial applies only when an application explicitly asks Krypton's
+policy layer before performing an action. The portable filesystem watcher cannot
+block arbitrary operating-system access before it occurs; OS-specific permission
+and endpoint-security adapters remain future work.
 
 ### 2. The Performance Bottleneck
 
@@ -191,12 +198,14 @@ checks use constant-time average hash-map membership, and telemetry persistence
 is decoupled through bounded asynchronous queues. There is no remote model call,
 cloud round trip, or open-ended signature scan inside the decision loop.
 
-This architecture gives buyers a measurable failure boundary: an operation is
-inside the delegated workspace and process authority, or it is denied. When
-state is unavailable or canonicalization is indeterminate, enforcement fails
-closed. Krypton therefore reduces both security risk and operational variance;
-its control-plane latency is governed by local system work rather than an
-external service's availability or inference tail latency.
+For explicitly integrated actions, this architecture gives buyers a measurable
+failure boundary: an operation is inside the delegated workspace and process
+authority, or it is denied. When required policy state is unavailable or
+canonicalization is indeterminate, that integration fails closed. Krypton
+therefore reduces both security risk and operational variance without treating
+post-event watcher telemetry as universal enforcement; its control-plane latency
+is governed by local system work rather than an external service's availability
+or inference tail latency.
 
 ### Q: How is the native local-control channel authenticated and bounded?
 

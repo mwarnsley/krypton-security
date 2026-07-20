@@ -1,6 +1,16 @@
 # Contributing to Krypton
 
-Use Node 20.19.4 and Rust 1.97.0. Start from a reproducible install:
+Use Node 20.19.4 and Rust 1.97.0, as pinned by `.node-version` and
+`rust-toolchain.toml`. Install Rust through `rustup`, then confirm the toolchain:
+
+```sh
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
+Start from a reproducible install:
 
 ```sh
 npm ci
@@ -8,9 +18,10 @@ npm ci
 
 Keep changes narrow, preserve fail-closed behavior, and never fabricate process
 attribution from a portable filesystem event. New core utilities require
-mirrored focused tests; reusable dashboard components require colocated tests
-and directory barrels. Next.js `page.tsx`, `layout.tsx`, and `route.ts` files are
-framework entry points and must not be re-exported through barrels.
+mirrored focused tests under `tests/`; reusable dashboard components require
+colocated tests and directory barrels. Next.js `page.tsx`, `layout.tsx`, and
+`route.ts` files are framework entry points and must not be re-exported through
+barrels.
 
 Before requesting review:
 

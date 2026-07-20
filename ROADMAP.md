@@ -10,7 +10,9 @@ platform-specific work.
 - [x] Bounded JSONL retention, cursor API reads, deterministic mock rotation, and
       bounded client rendering.
 - [x] Strict dashboard TypeScript, primitive token compliance, SHA-pinned Actions,
-      CODEOWNERS, Dependabot, CodeQL, audit, license, and SBOM workflow definitions.
+      CODEOWNERS, Dependabot, CodeQL, dependency license-policy checks, and SBOM
+      workflow definitions.
+- [x] Root ISC software license covering Krypton source distribution.
 
 ## Partially implemented
 
@@ -33,8 +35,9 @@ platform-specific work.
       local storage.
 - [ ] Add load tests against real daemon sockets and browser profiling to the
       deterministic telemetry benchmark.
-- [ ] Publish a standalone ISC license file and a signed release policy after
-      signing credentials are provisioned.
+- [ ] Publish a signed release policy and release checksums after signing
+      credentials are provisioned. Release signing establishes artifact
+      provenance; it is separate from the implemented ISC software license.
 
 ## External repository configuration required
 
@@ -47,16 +50,33 @@ platform-specific work.
 
 ### 1. Autonomous AI Agent Protection (MCP / STDIO Firewall)
 
-- [ ] **Model Context Protocol (MCP) Adaptive Telemetry:** Implement native hooks mapping stdin/stdout execution loops for LLM command-line agents (Cursor, Claude Code, Windsurf) to catch prompt-injection-driven background breakout scripts before local OS execution completes.
+- [ ] **Model Context Protocol (MCP) Adaptive Telemetry:** Investigate mediation
+      points in MCP and STDIO agent hosts, including policy checks before tool
+      dispatch where a host integration supports them. Evaluate correlation
+      among agent requests, protected child processes, and native telemetry.
+      Host-independent pre-execution interception is not implemented and is a
+      research objective, not a guaranteed outcome.
 
 ### 2. Insecure Ephemeral Code Sandboxing
 
-- [ ] **AI-Scaffolded Execution Monitoring:** Enforce deterministic local sandbox tracking boundaries for transient, AI-generated micro-scripts to prevent un-vetted code blocks from running localized variable or PII harvesting sweeps.
+- [ ] **AI-Scaffolded Execution Monitoring:** Launch transient, AI-generated
+      scripts through the protected launcher, enforce defined workspace and
+      process boundaries, and record short-lived process lineage. This objective
+      targets explicitly launched unvetted code; it does not imply automatic
+      capture of every generated script on a machine.
 
 ### 3. Shadow AI Exfiltration Prevention (Clipboard Guard)
 
-- [ ] **Native OS Clipboard Sentinel:** Extend the local Rust background daemon to monitor the clipboard buffer pipeline, automatically intercepting massive data strings matching restricted corporate records or database schemas before data exfiltration occurs via web AI portals.
+- [ ] **Native OS Clipboard Sentinel:** Explore privacy-sensitive clipboard
+      protections with explicit user opt-in, local-only policy evaluation, and
+      platform API and permission constraints. Prefer redacted findings over raw
+      clipboard retention, complete accessibility and privacy review, and never
+      silently collect clipboard contents. Universal automatic interception is
+      not an assumed outcome.
 
-### 4. Zero-Config IDE Integration
+### 4. Guided-install IDE integration
 
-- [ ] **Krypton VS Code Extension Sidebar Companion:** Bundle the native high-performance Rust binary as a zero-config extensions marketplace sidebar companion, exposing our tokenized React tables and real-time status card indicators natively within the active editor window.
+- [ ] **Guided-install VS Code Companion:** Deliver a staged sidebar integration
+      with clear native-binary installation, permissions, updates, and platform
+      status. Zero-configuration onboarding remains a long-term aspiration after
+      signed binaries and multi-platform packaging are complete.
