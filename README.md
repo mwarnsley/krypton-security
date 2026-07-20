@@ -112,6 +112,30 @@ npm run dev:full
 `dev:full` starts both the Rust daemon and Next.js dashboard. Open
 `http://localhost:3000`.
 
+## Running Your First Live Simulation
+
+> **LIVE END-TO-END CHECK:** Keep `npm run dev:full` running while you launch
+> the simulation from a second terminal window.
+
+1. Leave the first terminal running `npm run dev:full`, and keep the Next.js
+   dashboard open at `http://localhost:3000`.
+2. Open a second terminal window, change to the same `krypton-security`
+   directory, and run:
+
+   ```sh
+   npm run test:sim
+   ```
+
+3. Watch the second terminal. The simulation creates a poisoned support ticket
+   that instructs a mock agent to scrape `../.ssh/id_rsa`. Krypton intercepts
+   and blocks the out-of-bounds read before the mock agent can access the key,
+   quarantines the disposable mock process, and confirms that the event was
+   recorded in the telemetry ledger.
+4. Return to the dashboard. The Next.js UI instantly streams the new
+   **CRITICAL** alert row into its live ledger, giving you visible confirmation
+   that the complete path from attack detection and blocking through telemetry
+   persistence and dashboard delivery is fully operational.
+
 ### Dashboard-only demonstration mode
 
 This is the supported Windows onboarding path. It is also useful on macOS or
