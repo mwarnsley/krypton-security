@@ -1,8 +1,8 @@
 'use client';
 
 import clsx from 'clsx';
-import { ArrowUp } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowUp, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -20,6 +20,7 @@ import { KryptonButton, KryptonIconButton, KryptonToggle } from '../components/p
 import type { TelemetryFallbackReason, TelemetrySource } from '../types';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
+const STATIC_TELEMETRY_FALLBACK_DELAY_MS = 2_000;
 const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
 const BACK_TO_TOP_VISIBILITY_THRESHOLD_PX = 300;
 const MAX_CLIENT_RETAINED_ALERTS = 500;
@@ -56,6 +57,151 @@ const EMPTY_TELEMETRY: TelemetryState = {
   nativeDaemonReachable: false,
   source: null,
 };
+
+/**
+ * Creates one explicitly simulated npm-install boundary breakout occurrence.
+ *
+ * The ISO timestamp preserves the exact click time while the ledger formatter
+ * presents it in the visitor's local timezone.
+ *
+ * @param {Date} occurredAt - The exact time the visitor triggered the simulation.
+ * @returns {SecurityAlert} A complete mock-only critical threat occurrence.
+ * @complexity O(1) time and O(1) space for one bounded demonstration event.
+ * @example
+ * createSimulatedThreatEvent(new Date('2026-07-20T12:00:00.000Z'));
+ * // => a critical npm install breakout targeting the unvetted package URL
+ */
+export function createSimulatedThreatEvent(occurredAt = new Date()): SecurityAlert {
+  const timestamp = occurredAt.toISOString();
+
+  return {
+    attemptedAction: 'filesystem_boundary_breakout',
+    attemptedPath: 'https://registry.npmjs.org/unvetted-postinstall',
+    attribution: 'unattributed',
+    enforcementStatus: 'QUARANTINED',
+    id: `simulated-npm-install-breakout-${timestamp}`,
+    origin_attribution: 'unvetted-postinstall-1.0.3',
+    processName: 'npm install',
+    severity: 'critical',
+    targetProcessId: 45_600,
+    timestamp,
+    triggerSignature: 'UNVETTED_INSTALL_EGRESS',
+  };
+}
+
+/**
+ * Creates the explicit demonstration snapshot used when a static deployment has no API route.
+ *
+ * @param {Date} generatedAt - The time assigned to the simulated breakout occurrence.
+ * @returns {TelemetryState} A mock-only critical npm-install breakout snapshot.
+ * @complexity O(1) time and O(1) space for one bounded demonstration event.
+ * @example
+ * createStaticTelemetryFallback(new Date('2026-07-20T12:00:00.000Z'));
+ * // => a mock telemetry snapshot containing one critical npm install breakout
+ */
+export function createStaticTelemetryFallback(generatedAt = new Date()): TelemetryState {
+  const timestamp = generatedAt.toISOString();
+  const baselineAlert = createSimulatedThreatEvent(generatedAt);
+
+  return {
+    activeProcessCount: 0,
+    alerts: [
+      {
+        ...baselineAlert,
+        id: 'static-demo-npm-install-breakout',
+      },
+    ],
+    fallbackReason: 'daemon_unreachable',
+    generatedAt: timestamp,
+    nativeDaemonReachable: false,
+    source: 'mock',
+  };
+}
+
+/**
+ * Waits before revealing static demonstration telemetry and cancels with the polling lifecycle.
+ *
+ * @param {AbortSignal} signal - The active telemetry request lifecycle signal.
+ * @returns {Promise<boolean>} `true` after two seconds or `false` when polling was cancelled.
+ * @complexity O(1) time and O(1) space for one bounded timer and abort listener.
+ * @example
+ * await waitForStaticTelemetryFallback(new AbortController().signal);
+ * // => true after two seconds
+ */
+export function waitForStaticTelemetryFallback(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const handleTimeout = (): void => {
+      signal.removeEventListener('abort', handleAbort);
+      resolve(true);
+    };
+    const timeoutId = globalThis.setTimeout(handleTimeout, STATIC_TELEMETRY_FALLBACK_DELAY_MS);
+    const handleAbort = (): void => {
+      globalThis.clearTimeout(timeoutId);
+      signal.removeEventListener('abort', handleAbort);
+      resolve(false);
+    };
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+  });
+}
+
+/**
+ * Detects the standalone browser environments allowed to expose demo controls.
+ *
+ * @param {Pick<Location, 'hostname' | 'port'>} location - The current browser location fields.
+ * @returns {boolean} Whether GitHub Pages or the dedicated port-3001 sandbox is active.
+ * @complexity O(H) time in hostname length and O(1) auxiliary space.
+ * @example
+ * isStandaloneDemoLocation({ hostname: 'example.github.io', port: '' });
+ * // => true
+ */
+export function isStandaloneDemoLocation(location: Pick<Location, 'hostname' | 'port'>): boolean {
+  return location.hostname.includes('github.io') || location.port === '3001';
+}
+
+/**
+ * Supplies the stable no-op subscription required for location snapshot hydration.
+ *
+ * The deployment hostname and port do not change without a document navigation,
+ * so no live browser event subscription is necessary.
+ *
+ * @returns {() => void} A no-op cleanup callback.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * subscribeToDemoEnvironment()();
+ * // => performs no work
+ */
+function subscribeToDemoEnvironment(): () => void {
+  return () => {};
+}
+
+/**
+ * Reads whether the hydrated browser is an approved standalone demo environment.
+ *
+ * @returns {boolean} Whether the current browser location enables demo controls.
+ * @complexity O(H) time in hostname length and O(1) auxiliary space.
+ * @example
+ * getDemoEnvironmentSnapshot();
+ * // => true on GitHub Pages or port 3001
+ */
+function getDemoEnvironmentSnapshot(): boolean {
+  return typeof window !== 'undefined' && isStandaloneDemoLocation(window.location);
+}
+
+/**
+ * Keeps environment-only controls hidden in the server-rendered static snapshot.
+ *
+ * @returns {boolean} Always `false` before browser hydration.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * getServerDemoEnvironmentSnapshot();
+ * // => false
+ */
+function getServerDemoEnvironmentSnapshot(): boolean {
+  return false;
+}
 
 /**
  * Determines whether an unknown telemetry payload is a non-array record.
@@ -329,6 +475,52 @@ interface TelemetrySourceBannerProps {
   readonly source: TelemetrySource | null;
 }
 
+interface EnforcementLedgerActionsProps {
+  /** Whether the standalone web sandbox may expose simulated threat controls. */
+  readonly isDemoMode: boolean;
+
+  /** Clears all currently visible desktop alert notifications. */
+  readonly onClearAlerts: () => void;
+
+  /** Inserts one visitor-triggered demonstration event into the active ledger. */
+  readonly onSimulateThreatEvent: () => void;
+}
+
+/**
+ * Renders the environment-aware actions displayed above the enforcement ledger.
+ *
+ * @param {EnforcementLedgerActionsProps} props - Demo visibility and toolbar action callbacks.
+ * @returns {React.JSX.Element} The responsive enforcement-ledger action group.
+ * @example
+ * <EnforcementLedgerActions isDemoMode onClearAlerts={() => {}} onSimulateThreatEvent={() => {}} />
+ * // => renders Simulate Threat Event before Clear Alerts
+ */
+export function EnforcementLedgerActions(props: EnforcementLedgerActionsProps): React.JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-krypton-space-3">
+      {props.isDemoMode ? (
+        <KryptonButton
+          aria-label="Simulate threat event"
+          onClick={props.onSimulateThreatEvent}
+          size="sm"
+          startIcon={<ShieldAlert className="h-3.5 w-3.5" />}
+          variant="primary"
+        >
+          Simulate Threat Event
+        </KryptonButton>
+      ) : null}
+      <KryptonButton
+        aria-label="Clear desktop alerts"
+        onClick={props.onClearAlerts}
+        size="sm"
+        variant="link"
+      >
+        Clear Alerts
+      </KryptonButton>
+    </div>
+  );
+}
+
 /**
  * Makes demonstration telemetry unmistakable without presenting it as native evidence.
  *
@@ -506,9 +698,37 @@ export default function DashboardPage(): React.JSX.Element {
   const [isVisible, setIsVisible] = useState(false);
   const [telemetry, setTelemetry] = useState<TelemetryState>(EMPTY_TELEMETRY);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>('degraded');
+  const isDemoMode = useSyncExternalStore(
+    subscribeToDemoEnvironment,
+    getDemoEnvironmentSnapshot,
+    getServerDemoEnvironmentSnapshot
+  );
   const notifiedBreakoutIds = useRef(new Set<string>());
   const requestGeneration = useRef(0);
   const latestCursor = useRef<number | undefined>(undefined);
+
+  /**
+   * Inserts one timestamped mock threat occurrence into the bounded active ledger.
+   *
+   * @returns {void} No value; React receives the updated demonstration telemetry state.
+   * @complexity O(A) time and space to prepend and bound A retained demo alerts.
+   * @example
+   * handleSimulateThreatEvent();
+   * // => prepends a critical npm install breakout occurrence
+   */
+  const handleSimulateThreatEvent = useCallback((): void => {
+    const simulatedAlert = createSimulatedThreatEvent();
+
+    setTelemetry((current) => ({
+      ...current,
+      alerts: [simulatedAlert, ...current.alerts].slice(0, MAX_CLIENT_RETAINED_ALERTS),
+      fallbackReason: 'daemon_unreachable',
+      generatedAt: simulatedAlert.timestamp,
+      nativeDaemonReachable: false,
+      source: 'mock',
+    }));
+    setSystemStatus('offline');
+  }, []);
 
   /**
    * Fetches, validates, publishes, and notifies on one telemetry snapshot.
@@ -636,8 +856,18 @@ export default function DashboardPage(): React.JSX.Element {
       try {
         await refreshTelemetry(activeController.signal, generation);
       } catch {
-        if (!activeController.signal.aborted) {
+        const failedSignal = activeController.signal;
+        if (!failedSignal.aborted) {
           setSystemStatus('degraded');
+          const fallbackReady = await waitForStaticTelemetryFallback(failedSignal);
+
+          if (fallbackReady && generation === requestGeneration.current && !disposed) {
+            latestCursor.current = undefined;
+            setTelemetry((current) =>
+              current.source === 'mock' ? current : createStaticTelemetryFallback()
+            );
+            setSystemStatus('offline');
+          }
         }
       } finally {
         requestInFlight = false;
@@ -794,7 +1024,7 @@ export default function DashboardPage(): React.JSX.Element {
         </section>
 
         <section aria-labelledby="threat-telemetry-title" className="space-y-4">
-          <header className="flex items-end justify-between gap-4 px-1">
+          <header className="flex flex-col items-start justify-between gap-4 px-1 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
                 Enforcement ledger
@@ -803,14 +1033,11 @@ export default function DashboardPage(): React.JSX.Element {
                 Intercepted security alerts
               </h2>
             </div>
-            <KryptonButton
-              aria-label="Clear desktop alerts"
-              onClick={clearAlertToasts}
-              size="sm"
-              variant="link"
-            >
-              Clear Alerts
-            </KryptonButton>
+            <EnforcementLedgerActions
+              isDemoMode={isDemoMode}
+              onClearAlerts={clearAlertToasts}
+              onSimulateThreatEvent={handleSimulateThreatEvent}
+            />
           </header>
           <TelemetrySourceBanner
             nativeDaemonReachable={telemetry.nativeDaemonReachable}

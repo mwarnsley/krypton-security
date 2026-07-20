@@ -5,12 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SecurityAlert } from '../components/patterns';
 import DashboardPage, {
   clearAlertToasts,
+  createSimulatedThreatEvent,
+  createStaticTelemetryFallback,
   dispatchAuditModeUpdate,
+  EnforcementLedgerActions,
+  isStandaloneDemoLocation,
   mergeTelemetryAlerts,
   scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
   TelemetrySourceBanner,
+  waitForStaticTelemetryFallback,
 } from './page';
 
 const CURRENT_TIME_MS = Date.parse('2026-07-14T12:00:10.000Z');
@@ -30,6 +35,7 @@ const BREAKOUT_ALERT: SecurityAlert = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -64,6 +70,41 @@ describe('DashboardPage', () => {
 
     expect(markup).toContain('Clear Alerts');
     expect(markup).toContain('aria-label="Clear desktop alerts"');
+  });
+
+  it('keeps the simulation action hidden outside standalone demo mode', () => {
+    const markup = renderToStaticMarkup(
+      <EnforcementLedgerActions
+        isDemoMode={false}
+        onClearAlerts={() => {}}
+        onSimulateThreatEvent={() => {}}
+      />
+    );
+
+    expect(markup).not.toContain('Simulate Threat Event');
+    expect(markup).toContain('Clear Alerts');
+  });
+
+  it('renders the primary simulation action before Clear Alerts in demo mode', () => {
+    const markup = renderToStaticMarkup(
+      <EnforcementLedgerActions
+        isDemoMode
+        onClearAlerts={() => {}}
+        onSimulateThreatEvent={() => {}}
+      />
+    );
+
+    expect(markup).toContain('bg-krypton-accent-cyan');
+    expect(markup.indexOf('Simulate Threat Event')).toBeLessThan(markup.indexOf('Clear Alerts'));
+  });
+
+  it.each([
+    [{ hostname: 'mwarnsley.github.io', port: '' }, true],
+    [{ hostname: 'localhost', port: '3001' }, true],
+    [{ hostname: 'localhost', port: '3000' }, false],
+    [{ hostname: 'krypton.example.com', port: '' }, false],
+  ])('detects standalone demo location %o', (location, expected) => {
+    expect(isStandaloneDemoLocation(location)).toBe(expected);
   });
 
   it('dismisses the complete Sonner toast stack', () => {
@@ -102,6 +143,60 @@ describe('DashboardPage', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 
     expect(markup).toContain('Security alert telemetry');
+  });
+
+  it('creates the critical npm install breakout used by static deployments', () => {
+    const fallback = createStaticTelemetryFallback(new Date('2026-07-20T12:00:00.000Z'));
+
+    expect(fallback.source).toBe('mock');
+    expect(fallback.alerts).toHaveLength(1);
+    expect(fallback.alerts[0]).toEqual(
+      expect.objectContaining({
+        attemptedAction: 'filesystem_boundary_breakout',
+        processName: 'npm install',
+        severity: 'critical',
+      })
+    );
+  });
+
+  it('creates the complete timestamped visitor-triggered threat event', () => {
+    const simulatedAlert = createSimulatedThreatEvent(new Date('2026-07-20T12:34:56.789Z'));
+
+    expect(simulatedAlert).toEqual(
+      expect.objectContaining({
+        attemptedPath: 'https://registry.npmjs.org/unvetted-postinstall',
+        origin_attribution: 'unvetted-postinstall-1.0.3',
+        processName: 'npm install',
+        severity: 'critical',
+        targetProcessId: 45_600,
+        timestamp: '2026-07-20T12:34:56.789Z',
+      })
+    );
+  });
+
+  it('waits two seconds before enabling static demonstration telemetry', async () => {
+    vi.useFakeTimers();
+    const fallbackReady = waitForStaticTelemetryFallback(new AbortController().signal);
+    let resolved = false;
+    void fallbackReady.then(() => {
+      resolved = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(resolved).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(fallbackReady).resolves.toBe(true);
+  });
+
+  it('cancels the delayed fallback when telemetry polling is aborted', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const fallbackReady = waitForStaticTelemetryFallback(controller.signal);
+
+    controller.abort();
+
+    await expect(fallbackReady).resolves.toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('renders the explicit unreachable-daemon demonstration banner', () => {
