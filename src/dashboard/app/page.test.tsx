@@ -332,14 +332,13 @@ describe('DashboardPage', () => {
 
   it('displays the critical static-demo toast with the attempted destination', () => {
     const toastErrorSpy = vi.spyOn(toast, 'error').mockReturnValue('toast-static-demo');
-    const simulatedAlert = createSimulatedThreatEvent(new Date('2026-07-20T12:00:00.000Z'));
 
-    showSimulatedThreatEventToast(simulatedAlert);
+    showSimulatedThreatEventToast();
 
     expect(toastErrorSpy).toHaveBeenCalledWith(
       'CRITICAL: Blocked out-of-bounds access attempt by npm install.',
       {
-        description: 'Target destination: https://registry.npmjs.org/unvetted-postinstall',
+        description: 'Attempted Destination: https://registry.npmjs.org/unvetted-postinstall',
       }
     );
   });
