@@ -50,11 +50,15 @@ integrate with its policy or protected launcher.
 
 ## Supported platforms
 
-- macOS and Linux: native daemon, Unix-domain socket control, live process
-  identity validation, and Unix signal isolation.
-- Windows: dashboard-only demonstration mode. Native control is intentionally
-  unsupported until a restrictive named-pipe ACL and process-generation adapter
-  are implemented.
+- macOS: Native Daemon Mode is actively supported and tested. It provides
+  Unix-domain socket control, live process identity validation, and Unix signal
+  isolation.
+- Linux: native support is planned and currently experimental. The native daemon
+  may build on compatible distributions, but it is not part of the actively
+  supported and tested rollout yet.
+- Windows: strictly dashboard-only demonstration mode. Native control and native
+  isolation are unsupported until a restrictive named-pipe ACL and
+  process-generation adapter are implemented.
 
 ## Architecture
 
@@ -93,14 +97,14 @@ cargo --version
 - Rust 1.97.0 is pinned by `rust-toolchain.toml`. Install Rust through
   [rustup](https://rustup.rs/) so the repository toolchain is selected correctly.
 - macOS native builds require Apple command-line developer tools.
-- Linux native builds require a working C compiler and linker appropriate to the
-  distribution.
-- Windows does not currently support native mode and does not require Rust for
-  dashboard-only demonstration mode.
+- Experimental Linux native builds require a working C compiler and linker
+  appropriate to the distribution.
+- Windows is strictly dashboard-only demonstration mode and does not require
+  Rust.
 
 ## Setup
 
-### macOS and Linux native mode
+### macOS Native Daemon Mode (actively supported and tested)
 
 ```sh
 git clone https://github.com/mwarnsley/krypton-security.git
@@ -112,10 +116,19 @@ npm run dev:full
 `dev:full` starts both the Rust daemon and Next.js dashboard. Open
 `http://localhost:3000`.
 
+Linux native support is planned and currently experimental; it is not yet part
+of the actively supported and tested Native Daemon Mode rollout. Windows must
+use the dashboard-only demonstration setup below.
+
 ## Running Your First Live Simulation
 
 > **LIVE END-TO-END CHECK:** Keep `npm run dev:full` running while you launch
 > the simulation from a second terminal window.
+
+This live simulation requires a Mac. The current macOS Native Daemon Mode is
+required to intercept the local mock agent breakout event; Linux is still
+experimental, and Windows dashboard-only demonstration mode cannot perform this
+interception.
 
 1. Leave the first terminal running `npm run dev:full`, and keep the Next.js
    dashboard open at `http://localhost:3000`.
@@ -138,8 +151,8 @@ npm run dev:full
 
 ### Dashboard-only demonstration mode
 
-This is the supported Windows onboarding path. It is also useful on macOS or
-Linux when Rust is unavailable.
+This is the only supported Windows onboarding path. It is also useful on macOS
+or experimental Linux environments when Rust or native mode is unavailable.
 
 ```sh
 git clone https://github.com/mwarnsley/krypton-security.git
@@ -154,7 +167,7 @@ Events shown below are simulated.” If the daemon is reachable but its ledger i
 degraded or invalid, the banner instead says that native telemetry could not be
 validated.
 
-To run only the native daemon on macOS or Linux:
+To run only the actively supported native daemon on macOS:
 
 ```sh
 npm run dev:daemon
@@ -279,10 +292,11 @@ growth for 100, 1,000, and 10,000 deterministic events.
 - **`cargo` or `rustc` not found:** install Rust through `rustup`, restart the
   shell if needed, and rerun the four prerequisite version checks.
 - **C compiler or linker unavailable:** install the platform development
-  toolchain. macOS requires Apple command-line developer tools; Linux requires
-  the compiler and linker supported by that distribution.
-- **Unsupported Windows native mode:** use `npm run dev:dashboard`. Windows
-  native isolation is intentionally unavailable today.
+  toolchain. macOS requires Apple command-line developer tools. Experimental
+  Linux builds require the compiler and linker supported by that distribution.
+- **Unsupported Windows native mode:** use `npm run dev:dashboard`. Windows is
+  strictly dashboard-only demonstration mode; native isolation is intentionally
+  unavailable today.
 - **Port 3000 already in use:** stop the process using the port or start the
   demonstration dashboard with `npm run dev:dashboard -- -p 3001`.
 - **Stale Unix socket:** stop old daemon processes. Startup removes a socket only
