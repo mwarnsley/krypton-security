@@ -1,3 +1,4 @@
+import { Children, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { toast } from 'sonner';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +35,23 @@ const BREAKOUT_ALERT: SecurityAlert = {
   timestamp: '2026-07-14T12:00:05.000Z',
   triggerSignature: 'NATIVE_FS_WATCH',
 };
+
+function getSimulationAction(
+  onSimulateThreatEvent: () => void
+): ReactElement<Record<string, unknown>> {
+  const actions = EnforcementLedgerActions({
+    isDemoMode: true,
+    onClearAlerts: () => {},
+    onSimulateThreatEvent,
+  });
+  const simulationAction = Children.toArray(actions.props.children)[0];
+
+  if (!isValidElement<Record<string, unknown>>(simulationAction)) {
+    throw new Error('Expected the demonstration simulation action to be a React element.');
+  }
+
+  return simulationAction;
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -97,6 +115,20 @@ describe('DashboardPage', () => {
 
     expect(markup).toContain('bg-krypton-accent-cyan');
     expect(markup.indexOf('Simulate Threat Event')).toBeLessThan(markup.indexOf('Clear Alerts'));
+  });
+
+  it('binds the simulation action to click activation', () => {
+    const handleSimulateThreatEvent = vi.fn();
+    const simulationAction = getSimulationAction(handleSimulateThreatEvent);
+
+    expect(simulationAction.props.onClick).toBe(handleSimulateThreatEvent);
+  });
+
+  it('does not bind the simulation action to hover activation', () => {
+    const simulationAction = getSimulationAction(() => {});
+
+    expect(simulationAction.props).not.toHaveProperty('onMouseEnter');
+    expect(simulationAction.props).not.toHaveProperty('onMouseOver');
   });
 
   it.each([

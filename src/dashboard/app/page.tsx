@@ -821,6 +821,11 @@ export default function DashboardPage(): React.JSX.Element {
    */
   const handleAuditModeChange = useCallback(async (nextAuditOnly: boolean): Promise<void> => {
     setAuditOnly(nextAuditOnly);
+    const isDemoMode =
+      typeof window !== 'undefined' && window.location.hostname.includes('github.io');
+
+    if (isDemoMode) return;
+
     setIsAuditModeUpdating(true);
 
     try {
