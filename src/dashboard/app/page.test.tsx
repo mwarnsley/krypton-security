@@ -117,18 +117,42 @@ describe('DashboardPage', () => {
     expect(markup.indexOf('Simulate Threat Event')).toBeLessThan(markup.indexOf('Clear Alerts'));
   });
 
-  it('binds the simulation action to click activation', () => {
-    const handleSimulateThreatEvent = vi.fn();
-    const simulationAction = getSimulationAction(handleSimulateThreatEvent);
+  it('prevents default click behavior before running the simulation handler', () => {
+    const handleSimulateEvent = vi.fn();
+    const preventDefault = vi.fn();
+    const simulationAction = getSimulationAction(handleSimulateEvent);
+    const onClick = simulationAction.props.onClick;
 
-    expect(simulationAction.props.onClick).toBe(handleSimulateThreatEvent);
+    if (typeof onClick !== 'function') {
+      throw new Error('Expected the demonstration simulation action to expose onClick.');
+    }
+
+    onClick({ preventDefault });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(handleSimulateEvent).toHaveBeenCalledOnce();
   });
 
-  it('does not bind the simulation action to hover activation', () => {
-    const simulationAction = getSimulationAction(() => {});
+  it.each(['onMouseEnter', 'onMouseOver', 'onPointerOver', 'onFocus', 'prefetch'])(
+    'does not bind the simulation action or parent to %s',
+    (forbiddenProp) => {
+      const actions = EnforcementLedgerActions({
+        isDemoMode: true,
+        onClearAlerts: () => {},
+        onSimulateThreatEvent: () => {},
+      });
+      const simulationAction = getSimulationAction(() => {});
 
-    expect(simulationAction.props).not.toHaveProperty('onMouseEnter');
-    expect(simulationAction.props).not.toHaveProperty('onMouseOver');
+      expect(actions.props).not.toHaveProperty(forbiddenProp);
+      expect(simulationAction.props).not.toHaveProperty(forbiddenProp);
+    }
+  );
+
+  it('keeps click as the simulation action only event callback', () => {
+    const simulationAction = getSimulationAction(() => {});
+    const eventProps = Object.keys(simulationAction.props).filter((prop) => prop.startsWith('on'));
+
+    expect(eventProps).toEqual(['onClick']);
   });
 
   it.each([

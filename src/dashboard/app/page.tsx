@@ -511,12 +511,17 @@ interface EnforcementLedgerActionsProps {
  * // => renders Simulate Threat Event before Clear Alerts
  */
 export function EnforcementLedgerActions(props: EnforcementLedgerActionsProps): React.JSX.Element {
+  const handleSimulateEvent = props.onSimulateThreatEvent;
+
   return (
     <div className="flex flex-wrap items-center justify-end gap-krypton-space-3">
       {props.isDemoMode ? (
         <KryptonButton
           aria-label="Simulate threat event"
-          onClick={props.onSimulateThreatEvent}
+          onClick={(e) => {
+            e.preventDefault();
+            handleSimulateEvent();
+          }}
           size="sm"
           startIcon={<ShieldAlert className="h-3.5 w-3.5" />}
           variant="primary"
@@ -728,10 +733,10 @@ export default function DashboardPage(): React.JSX.Element {
    * @returns {void} No value; React receives the updated demonstration telemetry state.
    * @complexity O(A) time and space to prepend and bound A retained demo alerts.
    * @example
-   * handleSimulateThreatEvent();
+   * handleSimulateEvent();
    * // => prepends a critical npm install breakout occurrence
    */
-  const handleSimulateThreatEvent = useCallback((): void => {
+  const handleSimulateEvent = useCallback((): void => {
     const simulatedAlert = createSimulatedThreatEvent();
 
     setTelemetry((current) => ({
@@ -810,22 +815,16 @@ export default function DashboardPage(): React.JSX.Element {
   );
 
   /**
-   * Optimistically updates the switch and synchronizes native execution state.
+   * Synchronizes an optimistic execution-mode update with the local native daemon.
    *
-   * @param {boolean} nextAuditOnly - The operator-selected switch state.
-   * @returns {Promise<void>} Resolves after success or a handled rollback.
+   * @param {boolean} nextAuditOnly - Whether native process termination should be disabled.
+   * @returns {Promise<void>} Resolves after confirmation or a handled rollback.
    * @complexity O(1) local state work plus bounded local API request time.
    * @example
-   * await handleAuditModeChange(true);
-   * // => enables audit-only operation or restores the previous switch state
+   * await synchronizeNativeAuditMode(true);
+   * // => confirms audit-only mode or restores active enforcement
    */
-  const handleAuditModeChange = useCallback(async (nextAuditOnly: boolean): Promise<void> => {
-    setAuditOnly(nextAuditOnly);
-    const isDemoMode =
-      typeof window !== 'undefined' && window.location.hostname.includes('github.io');
-
-    if (isDemoMode) return;
-
+  const synchronizeNativeAuditMode = useCallback(async (nextAuditOnly: boolean): Promise<void> => {
     setIsAuditModeUpdating(true);
 
     try {
@@ -840,6 +839,32 @@ export default function DashboardPage(): React.JSX.Element {
       setIsAuditModeUpdating(false);
     }
   }, []);
+
+  /**
+   * Applies demo mode locally or starts strict native execution-mode verification.
+   *
+   * @param {boolean} nextAuditOnly - The operator-selected switch state.
+   * @returns {void} No value; native synchronization continues asynchronously when required.
+   * @complexity O(1) local state work plus bounded local API request time outside demo mode.
+   * @example
+   * handleAuditModeChange(true);
+   * // => toggles locally on GitHub Pages or verifies the native daemon elsewhere
+   */
+  const handleAuditModeChange = useCallback(
+    (nextAuditOnly: boolean): void => {
+      const isDemoMode =
+        typeof window !== 'undefined' && window.location.hostname.includes('github.io');
+
+      if (isDemoMode) {
+        setAuditOnly(!auditOnly);
+        return;
+      }
+
+      setAuditOnly(nextAuditOnly);
+      void synchronizeNativeAuditMode(nextAuditOnly);
+    },
+    [auditOnly, synchronizeNativeAuditMode]
+  );
 
   /**
    * Starts the non-overlapping telemetry polling lifecycle and cleans it up on unmount.
@@ -989,7 +1014,7 @@ export default function DashboardPage(): React.JSX.Element {
                   checked={auditOnly}
                   disabled={isAuditModeUpdating}
                   id="audit-only-mode"
-                  onCheckedChange={(checked) => void handleAuditModeChange(checked)}
+                  onCheckedChange={handleAuditModeChange}
                   variant="warning"
                 />
                 <InfoTooltip
@@ -1057,7 +1082,7 @@ export default function DashboardPage(): React.JSX.Element {
             <EnforcementLedgerActions
               isDemoMode={isDemoMode}
               onClearAlerts={clearAlertToasts}
-              onSimulateThreatEvent={handleSimulateThreatEvent}
+              onSimulateThreatEvent={handleSimulateEvent}
             />
           </header>
           <TelemetrySourceBanner
