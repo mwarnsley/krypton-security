@@ -1,8 +1,7 @@
 /** @type {import("next").NextConfig} */
-const isGitHubPages = process.env.GITHUB_ACTIONS === 'true';
+const isGitHubPages = process.env.KRYPTON_STATIC_EXPORT === 'true';
 
 const nextConfig = {
-  output: 'export',
   images: {
     unoptimized: true,
   },
@@ -10,6 +9,7 @@ const nextConfig = {
     ? {
         assetPrefix: '/krypton-security',
         basePath: '/krypton-security',
+        output: 'export',
       }
     : {}),
 };

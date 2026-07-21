@@ -31,6 +31,8 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Build with Next.js
+        env:
+          KRYPTON_STATIC_EXPORT: 'true'
         run: |
           rm -rf src/dashboard/app/api
           npm run build
