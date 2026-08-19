@@ -19,6 +19,22 @@ describe('KryptonButton', () => {
     expect(markup).toContain('data-icon="end"');
   });
 
+  it('preserves structural icon slots when styling a child link', () => {
+    const markup = renderToStaticMarkup(
+      <KryptonButton
+        asChild
+        endIcon={<span data-icon="end" />}
+        startIcon={<span data-icon="start" />}
+      >
+        <a href="/guide">Guide</a>
+      </KryptonButton>
+    );
+
+    expect(markup).toContain('data-icon="start"');
+    expect(markup).toContain('data-icon="end"');
+    expect(markup).toContain('href="/guide"');
+  });
+
   it.each([
     ['primary', 'bg-krypton-accent-cyan'],
     ['secondary', 'border-krypton-border-muted'],

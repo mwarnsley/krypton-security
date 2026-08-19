@@ -70,6 +70,12 @@ describe('DashboardPage', () => {
     expect(markup).toContain('AegisAgent Security Command');
   });
 
+  it('renders the About and Guide drawer trigger in the command header', () => {
+    const markup = renderToStaticMarkup(<DashboardPage />);
+
+    expect(markup).toContain('About &amp; Guide');
+  });
+
   it('renders the active workspace protection summary', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 

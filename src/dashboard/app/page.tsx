@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 import {
   AlertTable,
+  ExplainerDrawer,
   formatAttemptedAction,
   formatEnforcementStatus,
   type EnforcementStatus,
@@ -1071,6 +1072,7 @@ export default function DashboardPage(): React.JSX.Element {
               </p>
             </div>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+              <ExplainerDrawer />
               <div
                 aria-busy={isAuditModeUpdating}
                 className="flex items-center gap-krypton-space-3 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"

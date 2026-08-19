@@ -3,6 +3,12 @@ const config = {
   content: ['./app/**/*.{js,ts,jsx,tsx,mdx}', './components/**/*.{js,ts,jsx,tsx,mdx}'],
   theme: {
     extend: {
+      animation: {
+        'krypton-drawer-in': 'krypton-drawer-in 240ms ease-out',
+        'krypton-drawer-out': 'krypton-drawer-out 200ms ease-in',
+        'krypton-overlay-in': 'krypton-overlay-in 200ms ease-out',
+        'krypton-overlay-out': 'krypton-overlay-out 160ms ease-in',
+      },
       borderRadius: {
         'krypton-radius-card': '12px',
         'krypton-radius-control': '6px',
@@ -55,6 +61,24 @@ const config = {
       fontSize: {
         'krypton-micro': ['0.6875rem', { lineHeight: '1rem' }],
         'krypton-nano': ['0.625rem', { lineHeight: '0.875rem' }],
+      },
+      keyframes: {
+        'krypton-drawer-in': {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' },
+        },
+        'krypton-drawer-out': {
+          from: { transform: 'translateX(0)' },
+          to: { transform: 'translateX(100%)' },
+        },
+        'krypton-overlay-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        'krypton-overlay-out': {
+          from: { opacity: '1' },
+          to: { opacity: '0' },
+        },
       },
       spacing: {
         'krypton-space-1': '4px',

@@ -1,4 +1,4 @@
-import { Slot } from '@radix-ui/react-slot';
+import { Slot, Slottable } from '@radix-ui/react-slot';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 export type KryptonButtonVariant = 'primary' | 'secondary' | 'destructive' | 'link';
@@ -54,14 +54,28 @@ export function KryptonButton(props: KryptonButtonProps): React.JSX.Element {
     variant = 'secondary',
     ...buttonProps
   } = props;
-  const Component = asChild ? Slot : 'button';
+  const classes = `${BASE_CLASSES} ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]}`;
+
+  if (asChild) {
+    return (
+      <Slot className={classes} {...buttonProps}>
+        {startIcon ? (
+          <span className="inline-flex shrink-0" aria-hidden="true">
+            {startIcon}
+          </span>
+        ) : null}
+        <Slottable>{children}</Slottable>
+        {endIcon ? (
+          <span className="inline-flex shrink-0" aria-hidden="true">
+            {endIcon}
+          </span>
+        ) : null}
+      </Slot>
+    );
+  }
 
   return (
-    <Component
-      className={`${BASE_CLASSES} ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]}`}
-      type={asChild ? undefined : type}
-      {...buttonProps}
-    >
+    <button className={classes} type={type} {...buttonProps}>
       {startIcon ? (
         <span className="inline-flex shrink-0" aria-hidden="true">
           {startIcon}
@@ -73,6 +87,6 @@ export function KryptonButton(props: KryptonButtonProps): React.JSX.Element {
           {endIcon}
         </span>
       ) : null}
-    </Component>
+    </button>
   );
 }

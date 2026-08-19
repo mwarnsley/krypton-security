@@ -55,6 +55,13 @@ fail-closed.
     from commands merely recommended. Never describe work as complete,
     verified, or deployment-ready while a required gate is skipped, failing,
     or warning.
+13. **Demo Explainer Drawer Synchronization Protocol:** Whenever new features,
+    architectural boundaries, CLI commands, or installation steps are added,
+    modified, or deprecated in Krypton, agents MUST update the corresponding
+    copy, tabs, and guides inside the ExplainerDrawer component
+    (`src/dashboard/components/patterns/ExplainerDrawer/`) in the same change.
+    The public demo explainer must always remain in 100% conceptual and
+    technical alignment with the latest Krypton release.
 
 ## 2. Mandatory Verification Contract
 
