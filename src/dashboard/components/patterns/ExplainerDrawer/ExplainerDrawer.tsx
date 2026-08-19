@@ -18,7 +18,7 @@ import { useCallback, useState, type KeyboardEvent } from 'react';
 
 import { KryptonButton, KryptonIconButton } from '../../primitives';
 
-export type ExplainerTab = 'features' | 'overview' | 'setup';
+export type ExplainerTab = 'faq' | 'features' | 'overview' | 'setup';
 
 export interface ExplainerDrawerProps {
   /** The tab selected whenever the guide first opens. @default "overview" */
@@ -44,6 +44,14 @@ interface GuideItem {
   readonly description: string;
 }
 
+interface FaqItem {
+  /** The operator-facing question displayed by the accordion trigger. */
+  readonly question: string;
+
+  /** The security-accurate answer revealed when the question is expanded. */
+  readonly answer: string;
+}
+
 const REPOSITORY_URL = 'https://github.com/mwarnsley/krypton-security';
 const NATIVE_SETUP_COMMAND =
   'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && npm run dev:full';
@@ -52,6 +60,7 @@ const TABS: readonly ExplainerTabDefinition[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'features', label: 'Core Features' },
   { id: 'setup', label: 'Install & Setup' },
+  { id: 'faq', label: 'FAQ' },
 ];
 
 const PROTECTION_CYCLE: readonly GuideItem[] = [
@@ -114,6 +123,59 @@ const SETUP_STEPS = [
   ['3. Run the native daemon and dashboard', 'npm run dev:full'],
   ['4. Run the mock attack simulation', 'npm run test:sim'],
 ] as const;
+
+const FAQ_ITEMS: readonly FaqItem[] = [
+  {
+    answer:
+      "Krypton is a lightweight local runtime boundary for developers using AI tools, package scripts, and automated commands. Integrations that use Krypton's policy and protected launcher can keep approved file mutations within the configured workspace; actions outside those integration points are not automatically contained.",
+    question: 'What is Krypton in simple terms?',
+  },
+  {
+    answer:
+      'No. Antivirus software typically scans files for known or suspicious malware. Krypton makes deterministic path-policy and registered-process decisions. Portable filesystem notifications remain post-event telemetry and do not identify or automatically stop the actor that caused them.',
+    question: 'Is Krypton an antivirus program?',
+  },
+  {
+    answer:
+      'Krypton is designed for bounded, low-overhead local checks rather than full-disk indexing. Repeated policy membership uses native Set or Map lookups with average O(1) cost, while path normalization remains O(L) in path length. Telemetry persistence is asynchronous and core security loops make no remote calls.',
+    question: 'Does Krypton slow down my computer or development workflow?',
+  },
+  {
+    answer:
+      'Core security decisions do not send source code, files, or telemetry to cloud services. Native events stay in the bounded local .krypton/telemetry/alerts.jsonl ledger. The dashboard includes an external GitHub link that opens only when selected, and demonstration rows are explicitly mock data.',
+    question: 'Does Krypton send my code, files, or telemetry to the cloud?',
+  },
+  {
+    answer:
+      'Audit-Only Mode records integrated policy violations without requesting process termination. Enforcement Mode denies integrated out-of-bounds actions and may quarantine only an owned, registered child after its PID, start time, executable path, and parent PID are revalidated. Portable watcher events alone never authorize arbitrary PID isolation.',
+    question: 'What is the difference between Audit-Only Mode and Enforcement Mode?',
+  },
+  {
+    answer:
+      'Krypton reduces risk without trying to classify natural-language prompts. When a tool integrates with the policy layer or protected launcher, a request such as cat ~/.ssh/id_rsa can be rejected before the action proceeds. The portable filesystem watcher alone is post-event evidence, so Krypton does not claim universal pre-access prevention.',
+    question: 'How does Krypton reduce the risk of indirect prompt injection?',
+  },
+  {
+    answer:
+      'macOS is the actively supported and tested native runtime. Linux native control currently remains experimental. Windows supports dashboard-only demonstration mode, not native isolation. The simulated dashboard experience is available across supported web environments with npm run dev:dashboard.',
+    question: 'Which operating systems are currently supported?',
+  },
+  {
+    answer:
+      'A same-user or administrator-level attacker may still disable or tamper with Krypton; it is not a root security boundary. Krypton reduces local attack surface with a 0700 runtime directory, 0600 socket and capability files, authenticated local commands, peer-user checks, and compound process identity validation. Authenticated local audit-mode and termination endpoints exist and are not remote backdoors.',
+    question: 'Can host malware disable or manipulate Krypton?',
+  },
+  {
+    answer:
+      'Existing targets are canonicalized. Missing or deleted targets resolve through the nearest existing canonical ancestor plus a validated lexical tail. Parent traversal, escaping symlinks, and sibling-prefix confusion fail closed rather than being silently stripped. A documented time-of-check/time-of-use risk remains between validation and the operating-system action.',
+    question: 'How does Krypton handle path traversal and symlinks?',
+  },
+  {
+    answer:
+      'Clone the repository, enter krypton-security, run npm ci, and use npm run dev:full for the actively supported macOS native daemon and dashboard. In a second terminal, run npm run test:sim. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+    question: 'How do I run the project locally?',
+  },
+];
 
 export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element {
   const { defaultTab = 'overview' } = props;
@@ -201,7 +263,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
 
           <nav
             aria-label="About Krypton sections"
-            className="grid grid-cols-3 gap-krypton-space-2 border-b border-krypton-border-muted bg-krypton-bg-surface/70 px-krypton-space-5 py-krypton-space-3 sm:px-krypton-space-6"
+            className="grid grid-cols-2 gap-krypton-space-2 border-b border-krypton-border-muted bg-krypton-bg-surface/70 px-krypton-space-5 py-krypton-space-3 sm:grid-cols-4 sm:px-krypton-space-6"
             role="tablist"
           >
             {TABS.map((tab) => {
@@ -421,6 +483,36 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       ? 'Copy failed. Select the command above and copy it manually.'
                       : ''}
                 </p>
+              </section>
+            ) : null}
+
+            {activeTab === 'faq' ? (
+              <section aria-labelledby="explainer-tab-faq" id="explainer-panel-faq" role="tabpanel">
+                <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-accent-cyan">
+                  COMMON QUESTIONS
+                </p>
+                <h2 className="mt-2 text-xl font-bold text-krypton-fg-primary">
+                  Frequently asked questions
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  Straight answers based on Krypton&apos;s current implementation and documented
+                  security boundary.
+                </p>
+                <div className="mt-5 space-y-krypton-space-3">
+                  {FAQ_ITEMS.map((item) => (
+                    <details
+                      className="group rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface"
+                      key={item.question}
+                    >
+                      <summary className="cursor-pointer select-none px-krypton-space-4 py-krypton-space-3 text-sm font-bold leading-6 text-krypton-fg-primary transition-colors hover:bg-krypton-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-krypton-focus-ring">
+                        {item.question}
+                      </summary>
+                      <p className="border-t border-krypton-border-muted px-krypton-space-4 py-krypton-space-3 text-sm leading-6 text-krypton-fg-muted">
+                        {item.answer}
+                      </p>
+                    </details>
+                  ))}
+                </div>
               </section>
             ) : null}
           </div>

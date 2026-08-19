@@ -15,6 +15,8 @@ platform-specific work.
       CODEOWNERS, Dependabot, CodeQL, dependency license-policy checks, and SBOM
       workflow definitions.
 - [x] Root ISC software license covering Krypton source distribution.
+- [x] Synchronized README and dashboard FAQs that describe current setup,
+      platform support, local telemetry, and security-boundary limitations.
 
 ## Partially implemented
 

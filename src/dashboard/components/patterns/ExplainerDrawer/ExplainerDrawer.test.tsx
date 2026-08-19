@@ -52,6 +52,49 @@ describe('ExplainerDrawer', () => {
     );
   });
 
+  it('opens the FAQ tab and renders its guide heading', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+
+    expect(screen.getByRole('heading', { name: 'Frequently asked questions' })).toBeTruthy();
+  });
+
+  it('renders all ten FAQ questions in order', () => {
+    const { container } = render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+
+    const questions = [...container.ownerDocument.querySelectorAll('details > summary')].map(
+      (summary) => summary.textContent?.trim()
+    );
+
+    expect(questions).toEqual([
+      'What is Krypton in simple terms?',
+      'Is Krypton an antivirus program?',
+      'Does Krypton slow down my computer or development workflow?',
+      'Does Krypton send my code, files, or telemetry to the cloud?',
+      'What is the difference between Audit-Only Mode and Enforcement Mode?',
+      'How does Krypton reduce the risk of indirect prompt injection?',
+      'Which operating systems are currently supported?',
+      'Can host malware disable or manipulate Krypton?',
+      'How does Krypton handle path traversal and symlinks?',
+      'How do I run the project locally?',
+    ]);
+  });
+
+  it('moves from setup to FAQ with the right arrow key', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Install & Setup' }), {
+      key: 'ArrowRight',
+    });
+
+    expect(screen.getByRole('tab', { name: 'FAQ' }).getAttribute('aria-selected')).toBe('true');
+  });
+
   it('renders the external repository link in the setup guide', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

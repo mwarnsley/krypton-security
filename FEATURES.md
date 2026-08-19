@@ -12,7 +12,7 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
 
 ## Phase 2: Native workspace telemetry and ownership
 
-- **Status:** Implemented on macOS and Linux
+- **Status:** Implemented on macOS; experimental on Linux
 - Loads separate `projectRoot` and `protectedWorkspaceRoot` configuration.
 - Resolves existing, deleted, renamed, and symlinked paths through
   component-aware policy checks.
@@ -49,6 +49,9 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
 - Requires compound process identity for Force Isolate actions.
 - Keeps Timeline Rewind signature downloads and dependency/process labels for
   events that carry reliable attribution.
+- Provides a four-tab public Explainer Drawer whose FAQ mirrors the README,
+  current platform support, registered-process boundary, and portable-watcher
+  limitations.
 
 ## Phase 4: Public-release hardening
 

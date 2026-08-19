@@ -320,6 +320,116 @@ growth for 100, 1,000, and 10,000 deterministic events.
   it only to regenerate an intentionally changed lockfile, review the dependency
   diff, remove `node_modules`, and confirm `npm ci` succeeds afterward.
 
+## Frequently Asked Questions (FAQ)
+
+<details>
+<summary>1. What is Krypton in simple terms?</summary>
+
+Krypton is a lightweight local runtime boundary for developers using AI tools,
+package scripts, and automated commands. Integrations that use Krypton's policy
+and protected launcher can keep approved file mutations within the configured
+workspace; actions outside those integration points are not automatically
+contained.
+
+</details>
+
+<details>
+<summary>2. Is Krypton an antivirus program?</summary>
+
+No. Antivirus software typically scans files for known or suspicious malware.
+Krypton makes deterministic path-policy and registered-process decisions.
+Portable filesystem notifications remain post-event telemetry and do not
+identify or automatically stop the actor that caused them.
+
+</details>
+
+<details>
+<summary>3. Does Krypton slow down my computer or development workflow?</summary>
+
+Krypton is designed for bounded, low-overhead local checks rather than full-disk
+indexing. Repeated policy membership uses native `Set` or `Map` lookups with
+average O(1) cost, while path normalization remains O(L) in path length.
+Telemetry persistence is asynchronous and core security loops make no remote
+calls.
+
+</details>
+
+<details>
+<summary>4. Does Krypton send my code, files, or telemetry to the cloud?</summary>
+
+Core security decisions do not send source code, files, or telemetry to cloud
+services. Native events stay in the bounded local
+`.krypton/telemetry/alerts.jsonl` ledger. The dashboard includes an external
+GitHub link that opens only when selected, and demonstration rows are explicitly
+mock data.
+
+</details>
+
+<details>
+<summary>5. What is the difference between Audit-Only Mode and Enforcement Mode?</summary>
+
+Audit-Only Mode records integrated policy violations without requesting process
+termination. Enforcement Mode denies integrated out-of-bounds actions and may
+quarantine only an owned, registered child after its PID, start time, executable
+path, and parent PID are revalidated. Portable watcher events alone never
+authorize arbitrary PID isolation.
+
+</details>
+
+<details>
+<summary>6. How does Krypton reduce the risk of indirect prompt injection?</summary>
+
+Krypton reduces risk without trying to classify natural-language prompts. When
+a tool integrates with the policy layer or protected launcher, a request such as
+`cat ~/.ssh/id_rsa` can be rejected before the action proceeds. The portable
+filesystem watcher alone is post-event evidence, so Krypton does not claim
+universal pre-access prevention.
+
+</details>
+
+<details>
+<summary>7. Which operating systems are currently supported?</summary>
+
+macOS is the actively supported and tested native runtime. Linux native control
+currently remains experimental. Windows supports dashboard-only demonstration
+mode, not native isolation. The simulated dashboard experience is available
+across supported web environments with `npm run dev:dashboard`.
+
+</details>
+
+<details>
+<summary>8. Can host malware disable or manipulate Krypton?</summary>
+
+A same-user or administrator-level attacker may still disable or tamper with
+Krypton; it is not a root security boundary. Krypton reduces local attack
+surface with a `0700` runtime directory, `0600` socket and capability files,
+authenticated local commands, peer-user checks, and compound process identity
+validation. Authenticated local audit-mode and termination endpoints exist and
+are not remote backdoors.
+
+</details>
+
+<details>
+<summary>9. How does Krypton handle path traversal and symlinks?</summary>
+
+Existing targets are canonicalized. Missing or deleted targets resolve through
+the nearest existing canonical ancestor plus a validated lexical tail. Parent
+traversal, escaping symlinks, and sibling-prefix confusion fail closed rather
+than being silently stripped. A documented time-of-check/time-of-use risk
+remains between validation and the operating-system action.
+
+</details>
+
+<details>
+<summary>10. How do I run the project locally?</summary>
+
+Clone the repository, enter `krypton-security`, run `npm ci`, and use
+`npm run dev:full` for the actively supported macOS native daemon and dashboard.
+In a second terminal, run `npm run test:sim`. For a cross-platform mock dashboard
+without native isolation, run `npm run dev:dashboard`.
+
+</details>
+
 ## Documentation
 
 - [THREAT_MODEL.md](THREAT_MODEL.md) — trust boundaries and technical limitations.
