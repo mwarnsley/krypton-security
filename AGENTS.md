@@ -32,21 +32,26 @@ fail-closed.
    editing. Existing modified or untracked files belong to the user unless the
    task proves otherwise. Never discard, overwrite, stage, commit, or push them
    without explicit authorization.
-7. **Never commit secrets.** Do not place `.env` contents, credentials, tokens,
+7. **No Automatic Commits or Pushes:** AI agents must NEVER run 'git commit' or
+   'git push' autonomously after making changes, running fixes, or executing
+   verification commands. Agents must leave verified changes in the working
+   tree and commit/push ONLY when the human engineer explicitly instructs to do
+   so.
+8. **Never commit secrets.** Do not place `.env` contents, credentials, tokens,
    capabilities, private keys, runtime socket metadata, or other secrets in
    source files, logs, fixtures, documentation examples, commits, or release
    archives. Use clearly fake placeholders in examples.
-8. **Keep security validation deterministic and local.** Core path, process,
+9. **Keep security validation deterministic and local.** Core path, process,
    registry, enforcement, and telemetry-validation loops must not call remote
    APIs, model providers, analytics services, or other network resources.
-9. **Fail closed.** Unknown errors, malformed inputs, stale identities,
-   unavailable registries, corrupt telemetry, and unhandled path states must
-   deny access or report degraded health. An enforcement caller may isolate
-   only an owned, registered Krypton child whose live identity still matches.
-10. **Do not add human interaction to enforcement hooks.** Security checks run
+10. **Fail closed.** Unknown errors, malformed inputs, stale identities,
+    unavailable registries, corrupt telemetry, and unhandled path states must
+    deny access or report degraded health. An enforcement caller may isolate
+    only an owned, registered Krypton child whose live identity still matches.
+11. **Do not add human interaction to enforcement hooks.** Security checks run
     silently and with bounded latency. Do not add approval prompts, retry
     dialogs, or other interactive loops to the execution path.
-11. **Report evidence, not assumptions.** Distinguish commands actually run
+12. **Report evidence, not assumptions.** Distinguish commands actually run
     from commands merely recommended. Never describe work as complete,
     verified, or deployment-ready while a required gate is skipped, failing,
     or warning.
