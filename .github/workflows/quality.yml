@@ -51,7 +51,7 @@ jobs:
       - name: Test native core
         run: npm run rust:test
       - name: Install pinned Rust policy tools
-        run: cargo install cargo-audit --locked --version 0.21.2 && cargo install cargo-deny --locked --version 0.18.5 && cargo install cargo-cyclonedx --locked --version 0.5.7
+        run: cargo install cargo-audit --locked --force --version 0.22.2 && cargo install cargo-deny --locked --version 0.18.5 && cargo install cargo-cyclonedx --locked --version 0.5.7
       - name: Audit Rust dependencies
         run: cargo audit --file src/core-native/Cargo.lock
       - name: Validate Rust advisories, bans, sources, and licenses

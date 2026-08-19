@@ -201,7 +201,7 @@ export function KryptonDataTable<TData extends RowData>(
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
-                    className="px-krypton-space-4 py-krypton-space-3 font-semibold"
+                    className="px-krypton-space-4 py-krypton-space-3 align-middle font-semibold"
                     key={header.id}
                     scope="col"
                   >
@@ -222,7 +222,10 @@ export function KryptonDataTable<TData extends RowData>(
                   {...getRowDataAttributes?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td className="px-krypton-space-4 py-krypton-space-3 align-top" key={cell.id}>
+                    <td
+                      className="px-krypton-space-4 py-krypton-space-3 align-middle"
+                      key={cell.id}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}
@@ -230,8 +233,13 @@ export function KryptonDataTable<TData extends RowData>(
               ))
             ) : (
               <tr>
-                <td className="px-krypton-space-4 py-12 text-center" colSpan={columns.length}>
-                  <KryptonTypography>{emptyMessage}</KryptonTypography>
+                <td
+                  className="px-krypton-space-4 py-krypton-space-3 align-middle text-center"
+                  colSpan={columns.length}
+                >
+                  <div className="flex h-48 w-full items-center justify-center">
+                    <KryptonTypography>{emptyMessage}</KryptonTypography>
+                  </div>
                 </td>
               </tr>
             )}

@@ -19,4 +19,12 @@ describe('InfoTooltip', () => {
 
     expect(markup).toContain('lucide-info');
   });
+
+  it('uses the shared pointer cursor contract for its trigger', () => {
+    const markup = renderToStaticMarkup(
+      <InfoTooltip content="Explains process termination." label="Actions" />
+    );
+
+    expect(markup).toContain('cursor-pointer');
+  });
 });

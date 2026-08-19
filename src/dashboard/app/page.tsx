@@ -106,6 +106,26 @@ export function showSimulatedThreatEventToast(): string | number {
 }
 
 /**
+ * Announces a local-only execution-mode change in the standalone simulation.
+ *
+ * @param {boolean} auditOnly - Whether the simulation records without active quarantine.
+ * @returns {string | number} The Sonner-generated informational toast identifier.
+ * @complexity O(1) time and O(1) auxiliary space.
+ * @example
+ * showSimulationAuditModeToast(true);
+ * // => an informational Audit-Only Mode simulation toast identifier
+ */
+export function showSimulationAuditModeToast(auditOnly: boolean): string | number {
+  return auditOnly
+    ? toast.info('Audit-Only Mode enabled (Simulation)', {
+        description: 'Policy violations will be logged without active process termination.',
+      })
+    : toast.info('Enforcement Mode enabled (Simulation)', {
+        description: 'Policy violations will trigger immediate process quarantine.',
+      });
+}
+
+/**
  * Creates the explicit demonstration snapshot used when a static deployment has no API route.
  *
  * The static demo starts with an empty simulated ledger and waits for an
@@ -709,22 +729,26 @@ export function shouldSynchronizeAuditModeWithDaemon(isDemoMode: boolean): boole
  * @param {boolean} isDemoMode - Whether the dashboard is running as a standalone demo.
  * @param {(nextAuditOnly: boolean) => void} updateLocalState - Publishes the local UI state.
  * @param {(nextAuditOnly: boolean) => void} synchronizeWithDaemon - Starts native confirmation.
+ * @param {(nextAuditOnly: boolean) => void} notifySimulation - Announces a local demo selection.
  * @returns {void} No value; callbacks receive the selected state directly.
  * @complexity O(1) time and O(1) auxiliary space.
  * @example
- * routeAuditModeChange(true, true, setAuditOnly, synchronizeWithDaemon);
- * // => updates local state without contacting the daemon
+ * routeAuditModeChange(true, true, setAuditOnly, synchronizeWithDaemon, showSimulationAuditModeToast);
+ * // => updates local state and announces simulation mode without contacting the daemon
  */
 export function routeAuditModeChange(
   nextAuditOnly: boolean,
   isDemoMode: boolean,
   updateLocalState: (nextAuditOnly: boolean) => void,
-  synchronizeWithDaemon: (nextAuditOnly: boolean) => void
+  synchronizeWithDaemon: (nextAuditOnly: boolean) => void,
+  notifySimulation: (nextAuditOnly: boolean) => void
 ): void {
   updateLocalState(nextAuditOnly);
 
   if (shouldSynchronizeAuditModeWithDaemon(isDemoMode)) {
     synchronizeWithDaemon(nextAuditOnly);
+  } else {
+    notifySimulation(nextAuditOnly);
   }
 }
 
@@ -886,9 +910,15 @@ export default function DashboardPage(): React.JSX.Element {
    */
   const handleAuditModeChange = useCallback(
     (nextAuditOnly: boolean): void => {
-      routeAuditModeChange(nextAuditOnly, isDemoMode, setAuditOnly, (selectedAuditOnly) => {
-        void synchronizeNativeAuditMode(selectedAuditOnly);
-      });
+      routeAuditModeChange(
+        nextAuditOnly,
+        isDemoMode,
+        setAuditOnly,
+        (selectedAuditOnly) => {
+          void synchronizeNativeAuditMode(selectedAuditOnly);
+        },
+        showSimulationAuditModeToast
+      );
     },
     [isDemoMode, synchronizeNativeAuditMode]
   );

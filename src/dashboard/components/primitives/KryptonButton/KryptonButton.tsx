@@ -25,7 +25,7 @@ export interface KryptonButtonProps extends Omit<
 }
 
 const BASE_CLASSES =
-  'inline-flex min-w-0 shrink-0 touch-manipulation items-center justify-center gap-krypton-space-2 whitespace-nowrap rounded-krypton-radius-control font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-krypton-bg-main disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex min-w-0 shrink-0 cursor-pointer touch-manipulation items-center justify-center gap-krypton-space-2 whitespace-nowrap rounded-krypton-radius-control font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-krypton-bg-main disabled:cursor-not-allowed disabled:opacity-50';
 
 const VARIANT_CLASSES: Readonly<Record<KryptonButtonVariant, string>> = {
   primary:

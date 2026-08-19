@@ -8,7 +8,9 @@ import {
   formatAttemptedAction,
   formatEnforcementStatus,
   requestProcessIsolation,
+  resolveAlertActionMode,
   resolveAlertPageSize,
+  SIMULATED_ALERT_ACTION_LABELS,
   type SecurityAlert,
 } from './AlertTable';
 
@@ -28,10 +30,33 @@ const ALERT: SecurityAlert = {
   origin_attribution: '@scope/dependency-name',
   processName: 'node',
   process: PROCESS_IDENTITY,
+  sequence: 1,
   severity: 'high',
   targetProcessId: 4242,
   timestamp: '2026-07-14T12:00:00.000Z',
   triggerSignature: 'PATH_BOUNDARY_ESCAPE',
+};
+
+const SIMULATED_ALERT: SecurityAlert = {
+  attribution: 'unattributed',
+  attemptedAction: ALERT.attemptedAction,
+  attemptedPath: ALERT.attemptedPath,
+  enforcementStatus: ALERT.enforcementStatus,
+  id: 'simulated-alert-1',
+  origin_attribution: ALERT.origin_attribution,
+  processName: 'npm install',
+  severity: ALERT.severity,
+  targetProcessId: 45_600,
+  timestamp: ALERT.timestamp,
+  triggerSignature: ALERT.triggerSignature,
+};
+
+const UNVERIFIED_PROCESS_ALERT: SecurityAlert = {
+  ...SIMULATED_ALERT,
+  attribution: 'process',
+  process: PROCESS_IDENTITY,
+  processName: 'node',
+  targetProcessId: PROCESS_IDENTITY.pid,
 };
 
 /**
@@ -94,7 +119,7 @@ describe('AlertTable', () => {
     try {
       const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
-      expect(markup).toContain('2026-07-14 • 08:00:00 AM');
+      expect(markup).toContain('07/14/2026 • 08:00:00 AM');
     } finally {
       if (originalTimezone === undefined) {
         delete process.env.TZ;
@@ -130,6 +155,31 @@ describe('AlertTable', () => {
 
     expect(markup).toContain('aria-label="Open actions for process 4242"');
     expect(markup).toContain('aria-haspopup="menu"');
+  });
+
+  it('keeps the simulated row action-menu trigger enabled', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[SIMULATED_ALERT]} />);
+    const triggerStart = markup.indexOf('aria-label="Open simulated actions for npm install"');
+    const triggerEnd = markup.indexOf('</button>', triggerStart);
+
+    expect(triggerStart).toBeGreaterThan(-1);
+    expect(markup.slice(triggerStart, triggerEnd)).not.toContain('disabled=""');
+  });
+
+  it('exposes the complete simulated action menu contract', () => {
+    expect(SIMULATED_ALERT_ACTION_LABELS).toEqual([
+      'View Raw Payload',
+      'Copy Process Details',
+      'Inspect Sandbox Boundary',
+    ]);
+  });
+
+  it.each([
+    { alert: ALERT, expectedMode: 'native' },
+    { alert: SIMULATED_ALERT, expectedMode: 'simulation' },
+    { alert: UNVERIFIED_PROCESS_ALERT, expectedMode: 'simulation' },
+  ] as const)('resolves the row action mode as $expectedMode', ({ alert, expectedMode }) => {
+    expect(resolveAlertActionMode(alert)).toBe(expectedMode);
   });
 
   it('removes inline action labels from the closed table row', () => {
@@ -344,7 +394,7 @@ describe('AlertTable', () => {
     process.env.TZ = 'America/Indiana/Indianapolis';
 
     try {
-      expect(formatAlertTimestamp(ALERT.timestamp)).toBe('2026-07-14 • 08:00:00 AM');
+      expect(formatAlertTimestamp(ALERT.timestamp)).toBe('07/14/2026 • 08:00:00 AM');
     } finally {
       if (originalTimezone === undefined) {
         delete process.env.TZ;

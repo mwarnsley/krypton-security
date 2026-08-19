@@ -21,4 +21,14 @@ describe('KryptonIconButton', () => {
 
     expect(markup).toContain('bg-krypton-alert-rose');
   });
+
+  it('exposes explicit pointer and disabled cursor states', () => {
+    const markup = renderToStaticMarkup(
+      <KryptonIconButton aria-label="Delete alert" disabled icon={<MoreVertical />} />
+    );
+
+    expect(markup).toContain('cursor-pointer');
+    expect(markup).toContain('disabled:cursor-not-allowed');
+    expect(markup).not.toContain('disabled:pointer-events-none');
+  });
 });

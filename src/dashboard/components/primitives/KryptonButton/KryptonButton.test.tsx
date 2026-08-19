@@ -29,4 +29,12 @@ describe('KryptonButton', () => {
 
     expect(markup).toContain(tokenClass);
   });
+
+  it('exposes explicit pointer and disabled cursor states', () => {
+    const markup = renderToStaticMarkup(<KryptonButton disabled>Protect</KryptonButton>);
+
+    expect(markup).toContain('cursor-pointer');
+    expect(markup).toContain('disabled:cursor-not-allowed');
+    expect(markup).not.toContain('disabled:pointer-events-none');
+  });
 });

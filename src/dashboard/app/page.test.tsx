@@ -16,6 +16,7 @@ import DashboardPage, {
   scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
+  showSimulationAuditModeToast,
   showSimulatedThreatEventToast,
   shouldPollTelemetryApi,
   shouldSynchronizeAuditModeWithDaemon,
@@ -237,7 +238,7 @@ describe('DashboardPage', () => {
     const updateLocalState = vi.fn();
     const synchronizeWithDaemon = vi.fn();
 
-    routeAuditModeChange(false, true, updateLocalState, synchronizeWithDaemon);
+    routeAuditModeChange(false, true, updateLocalState, synchronizeWithDaemon, () => {});
 
     expect(synchronizeWithDaemon).not.toHaveBeenCalled();
   });
@@ -245,7 +246,13 @@ describe('DashboardPage', () => {
   it('uses the selected audit-only value directly in static mode', () => {
     const updateLocalState = vi.fn();
 
-    routeAuditModeChange(false, true, updateLocalState, () => {});
+    routeAuditModeChange(
+      false,
+      true,
+      updateLocalState,
+      () => {},
+      () => {}
+    );
 
     expect(updateLocalState).toHaveBeenCalledWith(false);
   });
@@ -253,7 +260,13 @@ describe('DashboardPage', () => {
   it('synchronizes native audit-mode changes exactly once', () => {
     const synchronizeWithDaemon = vi.fn();
 
-    routeAuditModeChange(true, false, () => {}, synchronizeWithDaemon);
+    routeAuditModeChange(
+      true,
+      false,
+      () => {},
+      synchronizeWithDaemon,
+      () => {}
+    );
 
     expect(synchronizeWithDaemon).toHaveBeenCalledOnce();
     expect(synchronizeWithDaemon).toHaveBeenCalledWith(true);
@@ -264,6 +277,42 @@ describe('DashboardPage', () => {
     [false, true],
   ])('routes daemon synchronization for demo mode %s', (isDemoMode, expected) => {
     expect(shouldSynchronizeAuditModeWithDaemon(isDemoMode)).toBe(expected);
+  });
+
+  it.each([
+    [
+      true,
+      'Audit-Only Mode enabled (Simulation)',
+      'Policy violations will be logged without active process termination.',
+    ],
+    [
+      false,
+      'Enforcement Mode enabled (Simulation)',
+      'Policy violations will trigger immediate process quarantine.',
+    ],
+  ] as const)(
+    'announces the selected simulation enforcement mode for audit-only state %s',
+    (nextAuditOnly, title, description) => {
+      const toastInfoSpy = vi.spyOn(toast, 'info').mockReturnValue('toast-mode');
+
+      showSimulationAuditModeToast(nextAuditOnly);
+
+      expect(toastInfoSpy).toHaveBeenCalledWith(title, { description });
+    }
+  );
+
+  it('routes demo audit-mode changes to the simulation notification', () => {
+    const notifySimulation = vi.fn();
+
+    routeAuditModeChange(
+      false,
+      true,
+      () => {},
+      () => {},
+      notifySimulation
+    );
+
+    expect(notifySimulation).toHaveBeenCalledWith(false);
   });
 
   it.each([

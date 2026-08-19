@@ -41,6 +41,12 @@ export type { EnforcementStatus, SecurityAlert, TelemetrySeverity } from '../../
 const DEFAULT_ALERTS_PER_PAGE = 25;
 const ALERT_PAGE_SIZE_OPTIONS = [10, 25, 50, 75, 100] as const;
 
+export const SIMULATED_ALERT_ACTION_LABELS = [
+  'View Raw Payload',
+  'Copy Process Details',
+  'Inspect Sandbox Boundary',
+] as const;
+
 const ATTEMPTED_ACTION_LABELS: Readonly<Record<string, string>> = {
   filesystem_boundary_breakout: 'Unauthorized Workspace Escape Attempt',
 };
@@ -137,11 +143,11 @@ export function formatEnforcementStatus(enforcementStatus: EnforcementStatus): s
  * Parses an ISO timestamp and formats it in the local device timezone.
  *
  * @param {string} timestamp - The raw ISO-8601 timestamp from telemetry.
- * @returns {string} A readable `YYYY-MM-DD • HH:MM:SS AM/PM` timestamp.
+ * @returns {string} A readable `MM/DD/YYYY • HH:MM:SS AM/PM` timestamp.
  * @complexity O(L) time and O(1) auxiliary space for fixed-length date fields.
  * @example
  * formatAlertTimestamp("2026-07-14T12:00:00");
- * // => "2026-07-14 • 12:00:00 PM"
+ * // => "07/14/2026 • 12:00:00 PM"
  */
 export function formatAlertTimestamp(timestamp: string): string {
   const capturedAt = parseISO(timestamp);
@@ -150,7 +156,27 @@ export function formatAlertTimestamp(timestamp: string): string {
     return timestamp;
   }
 
-  return format(capturedAt, 'yyyy-MM-dd • hh:mm:ss a');
+  return format(capturedAt, 'MM/dd/yyyy • hh:mm:ss a');
+}
+
+/**
+ * Selects native enforcement actions only for sequenced evidence with a complete process identity.
+ *
+ * @param {SecurityAlert} alert - The telemetry row whose action boundary is being selected.
+ * @returns {'native' | 'simulation'} Native actions for verified process evidence, otherwise mock actions.
+ * @complexity O(1) time and O(1) auxiliary space.
+ * @example
+ * resolveAlertActionMode(simulatedAlert);
+ * // => "simulation"
+ */
+export function resolveAlertActionMode(alert: SecurityAlert): 'native' | 'simulation' {
+  return alert.attribution === 'process' &&
+    alert.sequence !== undefined &&
+    alert.process !== undefined &&
+    alert.targetProcessId !== null &&
+    alert.process.pid === alert.targetProcessId
+    ? 'native'
+    : 'simulation';
 }
 
 /**
@@ -218,6 +244,21 @@ function SortableColumnHeader(props: SortableColumnHeaderProps): React.JSX.Eleme
       </KryptonButton>
       {helperText ? <InfoTooltip content={helperText} label={label} /> : null}
     </div>
+  );
+}
+
+function SimulatedAlertActions(): React.JSX.Element {
+  return (
+    <>
+      {SIMULATED_ALERT_ACTION_LABELS.map((label) => (
+        <DropdownMenuItem
+          className="text-krypton-fg-secondary focus:text-krypton-fg-primary"
+          key={label}
+        >
+          {label}
+        </DropdownMenuItem>
+      ))}
+    </>
   );
 }
 
@@ -442,9 +483,12 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         cell: ({ row }) => {
           const targetProcessId = row.original.targetProcessId;
           const processIdentity = row.original.process;
-          const isActionable = targetProcessId !== null && processIdentity !== undefined;
+          const actionMode = resolveAlertActionMode(row.original);
+          const hasNativeActions = actionMode === 'native';
           const isIsolating =
-            targetProcessId === null ? false : isolatingProcessIds.has(targetProcessId);
+            !hasNativeActions || targetProcessId === null
+              ? false
+              : isolatingProcessIds.has(targetProcessId);
           const isolationStatus =
             targetProcessId === null ? undefined : isolationStatuses.get(targetProcessId);
 
@@ -455,43 +499,51 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                   <KryptonIconButton
                     aria-busy={isIsolating}
                     aria-label={
-                      isActionable
+                      hasNativeActions
                         ? `Open actions for process ${String(targetProcessId)}`
-                        : 'Process isolation unavailable for unattributed event'
+                        : `Open simulated actions for ${row.original.processName}`
                     }
-                    disabled={!isActionable || isIsolating}
+                    disabled={isIsolating}
                     icon={<MoreVertical />}
                     size="md"
                     variant="link"
                   />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="text-krypton-danger-foreground focus:bg-krypton-alert-rose/10 focus:text-krypton-danger-foreground"
-                    disabled={!isActionable || isIsolating}
-                    onSelect={() => {
-                      if (processIdentity !== undefined) void forceIsolate(processIdentity);
-                    }}
-                  >
-                    <SquareTerminal aria-hidden="true" className="h-4 w-4" />
-                    {isIsolating ? 'Isolating…' : 'Force Isolate'}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-krypton-fg-secondary focus:text-krypton-fg-primary"
-                    onSelect={() =>
-                      downloadExploitSignature({
-                        mitigationStatus: formatEnforcementStatus(row.original.enforcementStatus),
-                        securityEvent: formatAttemptedAction(row.original.attemptedAction),
-                        targetProcessId: targetProcessId ?? 0,
-                        timestamp: row.original.timestamp,
-                        violatedContainmentPath: row.original.attemptedPath,
-                      })
-                    }
-                  >
-                    <Download aria-hidden="true" className="h-4 w-4" />
-                    Download Signature
-                  </DropdownMenuItem>
+                  {hasNativeActions ? (
+                    <>
+                      <DropdownMenuItem
+                        className="text-krypton-danger-foreground focus:bg-krypton-alert-rose/10 focus:text-krypton-danger-foreground"
+                        disabled={isIsolating}
+                        onSelect={() => {
+                          if (processIdentity !== undefined) void forceIsolate(processIdentity);
+                        }}
+                      >
+                        <SquareTerminal aria-hidden="true" className="h-4 w-4" />
+                        {isIsolating ? 'Isolating…' : 'Force Isolate'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-krypton-fg-secondary focus:text-krypton-fg-primary"
+                        onSelect={() =>
+                          downloadExploitSignature({
+                            mitigationStatus: formatEnforcementStatus(
+                              row.original.enforcementStatus
+                            ),
+                            securityEvent: formatAttemptedAction(row.original.attemptedAction),
+                            targetProcessId: targetProcessId ?? 0,
+                            timestamp: row.original.timestamp,
+                            violatedContainmentPath: row.original.attemptedPath,
+                          })
+                        }
+                      >
+                        <Download aria-hidden="true" className="h-4 w-4" />
+                        Download Signature
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <SimulatedAlertActions />
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
               {isolationStatus ? (
