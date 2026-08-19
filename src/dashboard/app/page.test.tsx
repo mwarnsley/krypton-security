@@ -12,10 +12,13 @@ import DashboardPage, {
   EnforcementLedgerActions,
   isStandaloneDemoLocation,
   mergeTelemetryAlerts,
+  routeAuditModeChange,
   scrollDashboardToTop,
   selectFreshBreakoutAlerts,
   showContainmentBreakoutToast,
   showSimulatedThreatEventToast,
+  shouldPollTelemetryApi,
+  shouldSynchronizeAuditModeWithDaemon,
   TelemetrySourceBanner,
   waitForStaticTelemetryFallback,
 } from './page';
@@ -125,6 +128,7 @@ describe('DashboardPage', () => {
   it('prevents default click behavior before running the simulation handler', () => {
     const handleSimulateEvent = vi.fn();
     const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
     const simulationAction = getSimulationAction(handleSimulateEvent);
     const onClick = simulationAction.props.onClick;
 
@@ -132,26 +136,31 @@ describe('DashboardPage', () => {
       throw new Error('Expected the demonstration simulation action to expose onClick.');
     }
 
-    onClick({ preventDefault });
+    onClick({ preventDefault, stopPropagation });
 
     expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
     expect(handleSimulateEvent).toHaveBeenCalledOnce();
   });
 
-  it.each(['onMouseEnter', 'onMouseOver', 'onPointerOver', 'onFocus', 'prefetch'])(
-    'does not bind the simulation action or parent to %s',
-    (forbiddenProp) => {
-      const actions = EnforcementLedgerActions({
-        isDemoMode: true,
-        onClearAlerts: () => {},
-        onSimulateThreatEvent: () => {},
-      });
-      const simulationAction = getSimulationAction(() => {});
+  it.each([
+    'onMouseEnter',
+    'onMouseOver',
+    'onPointerEnter',
+    'onPointerOver',
+    'onFocus',
+    'prefetch',
+  ])('does not bind the simulation action or parent to %s', (forbiddenProp) => {
+    const actions = EnforcementLedgerActions({
+      isDemoMode: true,
+      onClearAlerts: () => {},
+      onSimulateThreatEvent: () => {},
+    });
+    const simulationAction = getSimulationAction(() => {});
 
-      expect(actions.props).not.toHaveProperty(forbiddenProp);
-      expect(simulationAction.props).not.toHaveProperty(forbiddenProp);
-    }
-  );
+    expect(actions.props).not.toHaveProperty(forbiddenProp);
+    expect(simulationAction.props).not.toHaveProperty(forbiddenProp);
+  });
 
   it('keeps click as the simulation action only event callback', () => {
     const simulationAction = getSimulationAction(() => {});
@@ -160,13 +169,24 @@ describe('DashboardPage', () => {
     expect(eventProps).toEqual(['onClick']);
   });
 
+  it('detects a compile-time static export on a custom domain', () => {
+    expect(isStandaloneDemoLocation({ hostname: 'security.example.com', port: '' }, true)).toBe(
+      true
+    );
+  });
+
+  it('does not treat a dynamic custom-domain dashboard as a standalone demo', () => {
+    expect(isStandaloneDemoLocation({ hostname: 'security.example.com', port: '' }, false)).toBe(
+      false
+    );
+  });
+
   it.each([
     [{ hostname: 'mwarnsley.github.io', port: '' }, true],
     [{ hostname: 'localhost', port: '3001' }, true],
     [{ hostname: 'localhost', port: '3000' }, false],
-    [{ hostname: 'krypton.example.com', port: '' }, false],
-  ])('detects standalone demo location %o', (location, expected) => {
-    expect(isStandaloneDemoLocation(location)).toBe(expected);
+  ])('detects standalone demo location fallback %o', (location, expected) => {
+    expect(isStandaloneDemoLocation(location, false)).toBe(expected);
   });
 
   it('dismisses the complete Sonner toast stack', () => {
@@ -207,18 +227,50 @@ describe('DashboardPage', () => {
     expect(markup).toContain('Security alert telemetry');
   });
 
-  it('creates the critical npm install breakout used by static deployments', () => {
-    const fallback = createStaticTelemetryFallback(new Date('2026-07-20T12:00:00.000Z'));
+  it('starts the static demonstration ledger empty', () => {
+    const fallback = createStaticTelemetryFallback(new Date('2026-07-20T12:34:56.789Z'));
 
-    expect(fallback.source).toBe('mock');
-    expect(fallback.alerts).toHaveLength(1);
-    expect(fallback.alerts[0]).toEqual(
-      expect.objectContaining({
-        attemptedAction: 'filesystem_boundary_breakout',
-        processName: 'npm install',
-        severity: 'critical',
-      })
-    );
+    expect(fallback.alerts).toEqual([]);
+  });
+
+  it('keeps static audit-mode changes local', () => {
+    const updateLocalState = vi.fn();
+    const synchronizeWithDaemon = vi.fn();
+
+    routeAuditModeChange(false, true, updateLocalState, synchronizeWithDaemon);
+
+    expect(synchronizeWithDaemon).not.toHaveBeenCalled();
+  });
+
+  it('uses the selected audit-only value directly in static mode', () => {
+    const updateLocalState = vi.fn();
+
+    routeAuditModeChange(false, true, updateLocalState, () => {});
+
+    expect(updateLocalState).toHaveBeenCalledWith(false);
+  });
+
+  it('synchronizes native audit-mode changes exactly once', () => {
+    const synchronizeWithDaemon = vi.fn();
+
+    routeAuditModeChange(true, false, () => {}, synchronizeWithDaemon);
+
+    expect(synchronizeWithDaemon).toHaveBeenCalledOnce();
+    expect(synchronizeWithDaemon).toHaveBeenCalledWith(true);
+  });
+
+  it.each([
+    [true, false],
+    [false, true],
+  ])('routes daemon synchronization for demo mode %s', (isDemoMode, expected) => {
+    expect(shouldSynchronizeAuditModeWithDaemon(isDemoMode)).toBe(expected);
+  });
+
+  it.each([
+    [true, false],
+    [false, true],
+  ])('routes telemetry polling for demo mode %s', (isDemoMode, expected) => {
+    expect(shouldPollTelemetryApi(isDemoMode)).toBe(expected);
   });
 
   it('creates the complete timestamped visitor-triggered threat event', () => {

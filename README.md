@@ -167,6 +167,13 @@ Events shown below are simulated.” If the daemon is reachable but its ledger i
 degraded or invalid, the banner instead says that native telemetry could not be
 validated.
 
+The static GitHub Pages demo begins with an empty simulated ledger. A threat row
+is created only when you select **Simulate Threat Event**. In that static
+demonstration, the Audit-Only Mode toggle changes local UI state only: it does
+not contact the native daemon or represent real containment. Native local mode
+continues to require authenticated daemon confirmation and rolls the toggle back
+when confirmation fails.
+
 To run only the actively supported native daemon on macOS:
 
 ```sh

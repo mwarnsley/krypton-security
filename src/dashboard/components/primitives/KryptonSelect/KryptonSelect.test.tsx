@@ -12,7 +12,7 @@ describe('KryptonSelect', () => {
           { label: '25', value: '25' },
           { label: 'ALL', value: 'ALL' },
         ]}
-        value="25"
+        defaultValue="25"
       />
     );
 

@@ -34,6 +34,7 @@ jobs:
         env:
           KRYPTON_STATIC_EXPORT: 'true'
         run: |
+          # API routes are removed only from this disposable Actions checkout because static exports cannot contain server handlers.
           rm -rf src/dashboard/app/api
           npm run build
       - name: Upload GitHub Pages artifact

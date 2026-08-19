@@ -24,6 +24,7 @@ const STATIC_TELEMETRY_FALLBACK_DELAY_MS = 2_000;
 const BREAKOUT_TOAST_FRESHNESS_WINDOW_MS = 10_000;
 const BACK_TO_TOP_VISIBILITY_THRESHOLD_PX = 300;
 const MAX_CLIENT_RETAINED_ALERTS = 500;
+const IS_STATIC_EXPORT_BUILD = process.env.NEXT_PUBLIC_KRYPTON_STATIC_EXPORT === 'true';
 
 interface TelemetryState {
   /** The number of owned child processes currently monitored by Krypton. */
@@ -107,25 +108,22 @@ export function showSimulatedThreatEventToast(): string | number {
 /**
  * Creates the explicit demonstration snapshot used when a static deployment has no API route.
  *
- * @param {Date} generatedAt - The time assigned to the simulated breakout occurrence.
- * @returns {TelemetryState} A mock-only critical npm-install breakout snapshot.
- * @complexity O(1) time and O(1) space for one bounded demonstration event.
+ * The static demo starts with an empty simulated ledger and waits for an
+ * explicit visitor action before inserting a threat occurrence.
+ *
+ * @param {Date} generatedAt - The time assigned to the empty demonstration snapshot.
+ * @returns {TelemetryState} A mock-only snapshot with no initial alert rows.
+ * @complexity O(1) time and O(1) space for one fixed-size demonstration snapshot.
  * @example
  * createStaticTelemetryFallback(new Date('2026-07-20T12:00:00.000Z'));
- * // => a mock telemetry snapshot containing one critical npm install breakout
+ * // => a mock telemetry snapshot with an empty alerts array
  */
 export function createStaticTelemetryFallback(generatedAt = new Date()): TelemetryState {
   const timestamp = generatedAt.toISOString();
-  const baselineAlert = createSimulatedThreatEvent(generatedAt);
 
   return {
     activeProcessCount: 0,
-    alerts: [
-      {
-        ...baselineAlert,
-        id: 'static-demo-npm-install-breakout',
-      },
-    ],
+    alerts: [],
     fallbackReason: 'daemon_unreachable',
     generatedAt: timestamp,
     nativeDaemonReachable: false,
@@ -166,14 +164,18 @@ export function waitForStaticTelemetryFallback(signal: AbortSignal): Promise<boo
  * Detects the standalone browser environments allowed to expose demo controls.
  *
  * @param {Pick<Location, 'hostname' | 'port'>} location - The current browser location fields.
- * @returns {boolean} Whether GitHub Pages or the dedicated port-3001 sandbox is active.
+ * @param {boolean} isStaticExport - Whether the compile-time standalone export marker is active.
+ * @returns {boolean} Whether a static export or supported demo-location fallback is active.
  * @complexity O(H) time in hostname length and O(1) auxiliary space.
  * @example
  * isStandaloneDemoLocation({ hostname: 'example.github.io', port: '' });
  * // => true
  */
-export function isStandaloneDemoLocation(location: Pick<Location, 'hostname' | 'port'>): boolean {
-  return location.hostname.includes('github.io') || location.port === '3001';
+export function isStandaloneDemoLocation(
+  location: Pick<Location, 'hostname' | 'port'>,
+  isStaticExport = IS_STATIC_EXPORT_BUILD
+): boolean {
+  return isStaticExport || location.hostname.endsWith('.github.io') || location.port === '3001';
 }
 
 /**
@@ -206,16 +208,16 @@ function getDemoEnvironmentSnapshot(): boolean {
 }
 
 /**
- * Keeps environment-only controls hidden in the server-rendered static snapshot.
+ * Preserves the compile-time static-export decision in the server-rendered snapshot.
  *
- * @returns {boolean} Always `false` before browser hydration.
+ * @returns {boolean} Whether this bundle was compiled as a standalone static export.
  * @complexity O(1) time and O(1) space.
  * @example
  * getServerDemoEnvironmentSnapshot();
- * // => false
+ * // => true in a standalone static-export bundle
  */
 function getServerDemoEnvironmentSnapshot(): boolean {
-  return false;
+  return IS_STATIC_EXPORT_BUILD;
 }
 
 /**
@@ -509,8 +511,9 @@ export function EnforcementLedgerActions(props: EnforcementLedgerActionsProps): 
       {props.isDemoMode ? (
         <KryptonButton
           aria-label="Simulate threat event"
-          onClick={(e) => {
-            e.preventDefault();
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
             handleSimulateEvent();
           }}
           size="sm"
@@ -685,16 +688,74 @@ export async function dispatchAuditModeUpdate(auditOnly: boolean): Promise<void>
   }
 }
 
+/**
+ * Decides whether an execution-mode change requires authenticated daemon confirmation.
+ *
+ * @param {boolean} isDemoMode - Whether the dashboard is running as a standalone demo.
+ * @returns {boolean} `true` only for native local dashboard mode.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * shouldSynchronizeAuditModeWithDaemon(true);
+ * // => false
+ */
+export function shouldSynchronizeAuditModeWithDaemon(isDemoMode: boolean): boolean {
+  return !isDemoMode;
+}
+
+/**
+ * Routes one audit-mode selection to local state and, when required, native verification.
+ *
+ * @param {boolean} nextAuditOnly - The exact state selected by the operator.
+ * @param {boolean} isDemoMode - Whether the dashboard is running as a standalone demo.
+ * @param {(nextAuditOnly: boolean) => void} updateLocalState - Publishes the local UI state.
+ * @param {(nextAuditOnly: boolean) => void} synchronizeWithDaemon - Starts native confirmation.
+ * @returns {void} No value; callbacks receive the selected state directly.
+ * @complexity O(1) time and O(1) auxiliary space.
+ * @example
+ * routeAuditModeChange(true, true, setAuditOnly, synchronizeWithDaemon);
+ * // => updates local state without contacting the daemon
+ */
+export function routeAuditModeChange(
+  nextAuditOnly: boolean,
+  isDemoMode: boolean,
+  updateLocalState: (nextAuditOnly: boolean) => void,
+  synchronizeWithDaemon: (nextAuditOnly: boolean) => void
+): void {
+  updateLocalState(nextAuditOnly);
+
+  if (shouldSynchronizeAuditModeWithDaemon(isDemoMode)) {
+    synchronizeWithDaemon(nextAuditOnly);
+  }
+}
+
+/**
+ * Decides whether the dashboard should start requests against its local telemetry API.
+ *
+ * @param {boolean} isDemoMode - Whether the dashboard is running as a standalone demo.
+ * @returns {boolean} `true` only when dynamic native telemetry routes are expected.
+ * @complexity O(1) time and O(1) space.
+ * @example
+ * shouldPollTelemetryApi(true);
+ * // => false
+ */
+export function shouldPollTelemetryApi(isDemoMode: boolean): boolean {
+  return !isDemoMode;
+}
+
 export default function DashboardPage(): React.JSX.Element {
-  const [auditOnly, setAuditOnly] = useState(true);
-  const [isAuditModeUpdating, setIsAuditModeUpdating] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-  const [telemetry, setTelemetry] = useState<TelemetryState>(EMPTY_TELEMETRY);
-  const [systemStatus, setSystemStatus] = useState<SystemStatus>('degraded');
   const isDemoMode = useSyncExternalStore(
     subscribeToDemoEnvironment,
     getDemoEnvironmentSnapshot,
     getServerDemoEnvironmentSnapshot
+  );
+  const [auditOnly, setAuditOnly] = useState(true);
+  const [isAuditModeUpdating, setIsAuditModeUpdating] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [telemetry, setTelemetry] = useState<TelemetryState>(() =>
+    isDemoMode ? createStaticTelemetryFallback() : EMPTY_TELEMETRY
+  );
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>(() =>
+    isDemoMode ? 'offline' : 'degraded'
   );
   const notifiedBreakoutIds = useRef(new Set<string>());
   const requestGeneration = useRef(0);
@@ -825,18 +886,11 @@ export default function DashboardPage(): React.JSX.Element {
    */
   const handleAuditModeChange = useCallback(
     (nextAuditOnly: boolean): void => {
-      const isDemoMode =
-        typeof window !== 'undefined' && window.location.hostname.includes('github.io');
-
-      if (isDemoMode) {
-        setAuditOnly(!auditOnly);
-        return;
-      }
-
-      setAuditOnly(nextAuditOnly);
-      void synchronizeNativeAuditMode(nextAuditOnly);
+      routeAuditModeChange(nextAuditOnly, isDemoMode, setAuditOnly, (selectedAuditOnly) => {
+        void synchronizeNativeAuditMode(selectedAuditOnly);
+      });
     },
-    [auditOnly, synchronizeNativeAuditMode]
+    [isDemoMode, synchronizeNativeAuditMode]
   );
 
   /**
@@ -848,6 +902,21 @@ export default function DashboardPage(): React.JSX.Element {
    * // Mounted DashboardPage instances poll immediately and every five seconds.
    */
   useEffect(() => {
+    if (!shouldPollTelemetryApi(isDemoMode)) {
+      latestCursor.current = undefined;
+
+      if (IS_STATIC_EXPORT_BUILD) {
+        return undefined;
+      }
+
+      const demoStateTimerId = window.setTimeout(() => {
+        setTelemetry(createStaticTelemetryFallback());
+        setSystemStatus('offline');
+      }, 0);
+
+      return () => window.clearTimeout(demoStateTimerId);
+    }
+
     let activeController: AbortController | undefined;
     let timerId: number | undefined;
     let requestInFlight = false;
@@ -918,7 +987,7 @@ export default function DashboardPage(): React.JSX.Element {
       activeController?.abort();
       requestGeneration.current += 1;
     };
-  }, [refreshTelemetry]);
+  }, [isDemoMode, refreshTelemetry]);
 
   /**
    * Tracks whether the viewport has crossed the floating-navigation threshold.

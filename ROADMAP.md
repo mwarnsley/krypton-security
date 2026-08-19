@@ -9,6 +9,8 @@ platform-specific work.
 - [x] Compound process identity plus authenticated Unix-domain socket control.
 - [x] Bounded JSONL retention, cursor API reads, deterministic mock rotation, and
       bounded client rendering.
+- [x] Compile-time static-demo detection, empty-ledger startup, explicit-only
+      simulation, local-only demo toggles, and API-free static telemetry startup.
 - [x] Strict dashboard TypeScript, primitive token compliance, SHA-pinned Actions,
       CODEOWNERS, Dependabot, CodeQL, dependency license-policy checks, and SBOM
       workflow definitions.

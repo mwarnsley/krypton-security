@@ -30,6 +30,15 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
   reachability, fallback reason, generation time, health, and cursor metadata.
 - Shows an accessible persistent demonstration banner; degraded native telemetry
   uses distinct wording from an unreachable daemon.
+- Uses a compile-time static-export marker, with GitHub Pages host and local
+  preview checks retained only as fallbacks, so custom-domain static builds are
+  identified without depending on runtime hostname matching.
+- Starts static demonstrations with an empty mock ledger, creates exactly one
+  simulated threat only after explicit button activation, and never polls API
+  routes that do not exist in the export.
+- Keeps Audit-Only Mode local to the static demonstration while preserving
+  authenticated daemon confirmation, optimistic updates, rollback, and failure
+  notification in native local mode.
 - Cycles through deterministic demonstration scenarios with slot-specific event
   IDs and never labels those scenarios as native evidence.
 - Polls incrementally with one request in flight, abort-on-unmount, hidden-tab
@@ -59,8 +68,8 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
   checks, and SBOM workflows.
 - Publishes the actual ISC software license separately from dependency-policy
   checks and future signed-release provenance.
-- Provides a clean-install lockfile for the pinned Node runtime and records the
-  exact npm version used to produce it.
+- Provides a clean-install lockfile verified with Node.js 20.19.4 and npm 10.8.2
+  and records the exact package-manager version used to produce it.
 - Uses conventional `tests/` and `docs/CONTRIBUTION_SECURITY.md` paths so first
   contact with the repository is unambiguous.
 - Packages tracked files only, runs release preflight before archive generation,
