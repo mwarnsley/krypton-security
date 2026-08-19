@@ -19,15 +19,6 @@ export type DropdownMenuSeparatorProps = React.ComponentPropsWithoutRef<
   typeof DropdownMenuPrimitive.Separator
 >;
 
-/**
- * Renders portaled Shadcn-style dropdown content beside its trigger.
- *
- * @param {DropdownMenuContentProps} props - Radix placement, behavior, and styling properties.
- * @returns {React.JSX.Element} Accessible menu content with a high-contrast desktop treatment.
- * @example
- * <DropdownMenuContent align="end">Menu actions</DropdownMenuContent>
- * // => renders a right-aligned local action menu
- */
 export const DropdownMenuContent = forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   DropdownMenuContentProps
@@ -36,7 +27,7 @@ export const DropdownMenuContent = forwardRef<
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         className={clsx(
-          'z-50 min-w-52 overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-main p-1.5 text-slate-100 shadow-2xl shadow-black/60',
+          'z-50 min-w-52 overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-main p-1.5 text-krypton-fg-primary shadow-2xl shadow-krypton-shadow',
           className
         )}
         ref={ref}
@@ -47,15 +38,6 @@ export const DropdownMenuContent = forwardRef<
   );
 });
 
-/**
- * Renders an accessible action row inside a shared dropdown menu.
- *
- * @param {DropdownMenuItemProps} props - Radix selection behavior and item styling properties.
- * @returns {React.JSX.Element} A keyboard- and pointer-selectable menu item.
- * @example
- * <DropdownMenuItem>Download Signature</DropdownMenuItem>
- * // => renders one selectable dropdown action
- */
 export const DropdownMenuItem = forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
   DropdownMenuItemProps
@@ -63,7 +45,7 @@ export const DropdownMenuItem = forwardRef<
   return (
     <DropdownMenuPrimitive.Item
       className={clsx(
-        'relative flex cursor-pointer select-none items-center gap-krypton-space-2 rounded-krypton-radius-control px-2.5 py-krypton-space-2 text-sm font-medium outline-none transition-colors focus:bg-slate-800 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        'relative flex cursor-pointer select-none items-center gap-krypton-space-2 rounded-krypton-radius-control px-2.5 py-krypton-space-2 text-sm font-medium outline-none transition-colors focus:bg-krypton-control-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
         className
       )}
       ref={ref}
@@ -72,15 +54,6 @@ export const DropdownMenuItem = forwardRef<
   );
 });
 
-/**
- * Renders a subtle visual divider between related dropdown action groups.
- *
- * @param {DropdownMenuSeparatorProps} props - Radix separator and styling properties.
- * @returns {React.JSX.Element} A non-interactive horizontal menu divider.
- * @example
- * <DropdownMenuSeparator />
- * // => renders a slate divider between menu items
- */
 export const DropdownMenuSeparator = forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   DropdownMenuSeparatorProps

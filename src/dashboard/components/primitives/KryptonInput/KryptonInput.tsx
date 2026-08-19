@@ -14,15 +14,6 @@ const SIZE_CLASSES: Readonly<Record<NonNullable<KryptonInputProps['size']>, stri
   lg: 'h-11 px-krypton-space-4 text-sm',
 };
 
-/**
- * Renders a token-driven native text input with a consistent active focus state.
- *
- * @param {KryptonInputProps} props - Native input behavior and fixed size selection.
- * @returns {React.JSX.Element} A forwarded native input control.
- * @example
- * <KryptonInput aria-label="Filter alerts" placeholder="Search" />
- * // => renders the standard medium input
- */
 export const KryptonInput = forwardRef<HTMLInputElement, KryptonInputProps>(function KryptonInput(
   { size = 'md', type = 'text', ...inputProps },
   ref

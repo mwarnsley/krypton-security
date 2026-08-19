@@ -43,15 +43,6 @@ const SIZE_CLASSES: Readonly<Record<KryptonButtonSize, string>> = {
   lg: 'h-11 px-krypton-space-5 text-sm',
 };
 
-/**
- * Renders the closed-variant Krypton action primitive.
- *
- * @param {KryptonButtonProps} props - Native button behavior plus semantic layout options.
- * @returns {React.JSX.Element} A styled native button or Radix slotted child.
- * @example
- * <KryptonButton startIcon={<Shield />} variant="primary">Protect</KryptonButton>
- * // => renders a primary action with a leading icon
- */
 export function KryptonButton(props: KryptonButtonProps): React.JSX.Element {
   const {
     asChild = false,

@@ -12,15 +12,6 @@ const SIZE_CLASSES: Readonly<Record<NonNullable<KryptonLoadingSpinnerProps['size
   lg: 'h-9 w-9 border-4 sm:h-10 sm:w-10',
 };
 
-/**
- * Renders a lightweight CSS-only looping API activity indicator.
- *
- * @param {KryptonLoadingSpinnerProps} props - Accessible label and responsive size.
- * @returns {React.JSX.Element} A polite status region containing an animated ring.
- * @example
- * <KryptonLoadingSpinner label="Loading telemetry" />
- * // => renders a medium cyan spinner
- */
 export function KryptonLoadingSpinner(props: KryptonLoadingSpinnerProps): React.JSX.Element {
   const { label = 'Loading', size = 'md' } = props;
 

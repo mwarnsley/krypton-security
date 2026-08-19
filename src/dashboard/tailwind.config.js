@@ -9,7 +9,9 @@ const config = {
         'krypton-radius-full': '9999px',
       },
       colors: {
+        'krypton-accent-blue': '#3b82f6',
         'krypton-accent-cyan': '#22d3ee',
+        'krypton-accent-violet': '#8b5cf6',
         'krypton-alert-rose': '#fb7185',
         'krypton-bg-main': '#020617',
         'krypton-bg-surface': '#0f172a',
@@ -45,11 +47,14 @@ const config = {
         ],
       },
       letterSpacing: {
+        'krypton-heading': '0.18em',
+        'krypton-hero': '0.22em',
         'krypton-label': '0.12em',
         'krypton-mono': '0.025em',
       },
       fontSize: {
         'krypton-micro': ['0.6875rem', { lineHeight: '1rem' }],
+        'krypton-nano': ['0.625rem', { lineHeight: '0.875rem' }],
       },
       spacing: {
         'krypton-space-1': '4px',

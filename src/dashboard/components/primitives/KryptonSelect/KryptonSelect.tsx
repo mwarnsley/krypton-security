@@ -24,15 +24,6 @@ const SIZE_CLASSES: Readonly<Record<NonNullable<KryptonSelectProps['size']>, str
   md: 'h-10 pl-3 pr-9 text-sm',
 };
 
-/**
- * Renders an accessible native selector with the polished Krypton dark treatment.
- *
- * @param {KryptonSelectProps} props - Native selection behavior and structured options.
- * @returns {React.JSX.Element} A forwarded native select control.
- * @example
- * <KryptonSelect aria-label="Rows per page" options={[{ label: "25", value: "25" }]} />
- * // => renders a compact dark selector
- */
 export const KryptonSelect = forwardRef<HTMLSelectElement, KryptonSelectProps>(
   function KryptonSelect({ options, size = 'sm', ...selectProps }, ref): React.JSX.Element {
     return (

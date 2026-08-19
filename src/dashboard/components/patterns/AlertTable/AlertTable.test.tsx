@@ -144,21 +144,25 @@ describe('AlertTable', () => {
 
     expect(markup).toContain('Force Isolate');
     expect(markup).toContain('Download Signature');
-    expect(markup).toContain('my-3 border-t border-slate-800/60');
+    expect(markup).toContain('my-3 border-t border-krypton-border-muted/60');
   });
 
   it('styles both Actions descriptions with softer supporting text', () => {
     const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
 
-    expect(markup.match(/text-xs font-normal leading-relaxed text-slate-400/g)).toHaveLength(2);
+    expect(markup.match(/text-xs font-normal leading-relaxed text-krypton-fg-muted/g)).toHaveLength(
+      2
+    );
   });
 
   it('uses distinct high-contrast treatments for both Actions headers', () => {
     const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
 
-    expect(markup).toContain('mb-1 flex items-center gap-2 text-sm font-semibold text-rose-400');
     expect(markup).toContain(
-      'mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-cyan-400'
+      'mb-1 flex items-center gap-2 text-sm font-semibold text-krypton-alert-rose'
+    );
+    expect(markup).toContain(
+      'mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-krypton-accent-cyan'
     );
   });
 
@@ -235,6 +239,11 @@ describe('AlertTable', () => {
     expect(markup).toContain('aria-label="Rows per page"');
     expect(markup.match(/<option/g)).toHaveLength(5);
     expect(markup).toContain('<option value="25" selected="">25</option>');
+  });
+
+  it('does not render an unbounded rows-per-page option', () => {
+    const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
+
     expect(markup).not.toContain('<option value="ALL">ALL</option>');
   });
 

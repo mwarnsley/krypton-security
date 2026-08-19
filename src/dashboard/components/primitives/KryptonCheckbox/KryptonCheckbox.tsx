@@ -17,15 +17,6 @@ const BOX_SIZE_CLASSES: Readonly<Record<NonNullable<KryptonCheckboxProps['size']
   md: 'h-5 w-5',
 };
 
-/**
- * Renders an accessible native checkbox with tokenized checked-state feedback.
- *
- * @param {KryptonCheckboxProps} props - Native checked behavior plus visible label and size.
- * @returns {React.JSX.Element} A labelled checkbox with a semantic cyan indicator.
- * @example
- * <KryptonCheckbox label="Select alert" />
- * // => renders a medium labelled checkbox
- */
 export const KryptonCheckbox = forwardRef<HTMLInputElement, KryptonCheckboxProps>(
   function KryptonCheckbox({ label, size = 'md', ...checkboxProps }, ref): React.JSX.Element {
     return (

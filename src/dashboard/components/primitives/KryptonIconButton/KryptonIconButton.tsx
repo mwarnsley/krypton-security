@@ -44,15 +44,6 @@ const ICON_SIZES: Readonly<Record<KryptonIconButtonSize, number>> = {
   lg: 20,
 };
 
-/**
- * Renders a labelled square control around one Lucide icon element.
- *
- * @param {KryptonIconButtonProps} props - Native button behavior and fixed icon options.
- * @returns {React.JSX.Element} An accessible icon-only button.
- * @example
- * <KryptonIconButton aria-label="Open menu" icon={<MoreVertical />} />
- * // => renders a medium secondary icon button
- */
 export function KryptonIconButton(props: KryptonIconButtonProps): React.JSX.Element {
   const { icon, size = 'md', type = 'button', variant = 'secondary', ...buttonProps } = props;
 

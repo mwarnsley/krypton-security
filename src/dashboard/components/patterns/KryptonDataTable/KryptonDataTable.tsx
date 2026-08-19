@@ -143,15 +143,6 @@ export function getKryptonPageTokens(
   return tokens;
 }
 
-/**
- * Renders a generic TanStack data grid with shared Krypton table chrome.
- *
- * @param {KryptonDataTableProps<TData>} props - Typed data, columns, and controlled state seams.
- * @returns {React.JSX.Element} A responsive table with row counts and pagination controls.
- * @example
- * <KryptonDataTable caption="Assets" columns={columns} data={assets} emptyMessage="No assets." itemLabel="asset" pagination={pagination} />
- * // => renders the shared paginated table shell
- */
 export function KryptonDataTable<TData extends RowData>(
   props: KryptonDataTableProps<TData>
 ): React.JSX.Element {
@@ -199,13 +190,13 @@ export function KryptonDataTable<TData extends RowData>(
 
   return (
     <div
-      className="w-full min-w-0 overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted shadow-2xl shadow-black/20"
+      className="w-full min-w-0 overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted shadow-2xl shadow-krypton-shadow"
       data-component="krypton-data-table"
     >
       <div className="w-full overflow-x-auto bg-krypton-bg-main/40">
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">{caption}</caption>
-          <thead className="border-b border-krypton-border-muted bg-krypton-bg-surface/95 text-xs uppercase tracking-wider text-slate-400">
+          <thead className="border-b border-krypton-border-muted bg-krypton-bg-surface/95 text-xs uppercase tracking-wider text-krypton-table-header">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
@@ -255,7 +246,10 @@ export function KryptonDataTable<TData extends RowData>(
         </div>
         <div className="flex w-full items-center justify-end gap-krypton-space-5 sm:w-auto">
           <div className="flex shrink-0 items-center gap-krypton-space-2">
-            <label className="whitespace-nowrap text-xs text-slate-400" htmlFor={pageSizeSelectId}>
+            <label
+              className="whitespace-nowrap text-xs text-krypton-fg-muted"
+              htmlFor={pageSizeSelectId}
+            >
               Rows per page
             </label>
             <KryptonSelect
@@ -297,7 +291,7 @@ export function KryptonDataTable<TData extends RowData>(
               ) : (
                 <span
                   aria-hidden="true"
-                  className="inline-flex h-8 w-8 items-center justify-center text-slate-500"
+                  className="inline-flex h-8 w-8 items-center justify-center text-krypton-fg-muted"
                   key={pageToken}
                 >
                   <MoreHorizontal aria-hidden="true" className="h-4 w-4" />

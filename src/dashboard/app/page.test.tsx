@@ -81,6 +81,11 @@ describe('DashboardPage', () => {
     expect(markup).toContain('Audit-Only Mode');
     expect(markup).toContain('role="switch"');
     expect(markup).toContain('aria-checked="true"');
+  });
+
+  it('renders the audit-only information control with an accessible label', () => {
+    const markup = renderToStaticMarkup(<DashboardPage />);
+
     expect(markup).toContain('aria-label="Info for Audit-Only Mode"');
   });
 

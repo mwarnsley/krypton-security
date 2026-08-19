@@ -14,15 +14,6 @@ export interface InfoTooltipProps {
   readonly size?: KryptonTooltipSize;
 }
 
-/**
- * Renders a filled information icon with an instant hover-and-focus tooltip.
- *
- * @param {InfoTooltipProps} props - The accessible label and explanatory copy.
- * @returns {React.JSX.Element} A standalone info trigger that never activates parent controls.
- * @example
- * <InfoTooltip label="Actions" content="Explains process termination." />
- * // => renders a filled info icon with an above-positioned tooltip
- */
 export function InfoTooltip(props: InfoTooltipProps): React.JSX.Element {
   const { content, label, size = 'md' } = props;
 

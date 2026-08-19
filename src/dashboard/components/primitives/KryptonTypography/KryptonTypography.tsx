@@ -24,15 +24,6 @@ const VARIANT_CLASSES: Readonly<Record<KryptonTypographyVariant, string>> = {
   'mono-code': 'font-mono text-xs leading-5 tracking-krypton-mono text-krypton-accent-cyan',
 };
 
-/**
- * Renders dashboard text through one semantic scale contract.
- *
- * @param {KryptonTypographyProps} props - Semantic variant and native element attributes.
- * @returns {React.JSX.Element} The element assigned to the selected typography variant.
- * @example
- * <KryptonTypography variant="h1">Security events</KryptonTypography>
- * // => renders the dashboard h1 scale
- */
 export function KryptonTypography(props: KryptonTypographyProps): React.JSX.Element {
   const { variant = 'body', ...typographyProps } = props;
   const Component = ELEMENTS[variant];

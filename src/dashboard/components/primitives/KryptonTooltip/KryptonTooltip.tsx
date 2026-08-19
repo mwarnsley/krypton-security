@@ -25,15 +25,6 @@ const SIZE_CLASSES: Readonly<Record<KryptonTooltipSize, string>> = {
   lg: 'max-w-80 p-krypton-space-4 sm:p-krypton-space-5',
 };
 
-/**
- * Renders an instant-open, instant-dismiss Radix tooltip with Krypton glass styling.
- *
- * @param {KryptonTooltipProps} props - Trigger, content, and placement options.
- * @returns {React.JSX.Element} A portaled accessible tooltip relationship.
- * @example
- * <KryptonTooltip content="Refresh telemetry"><button>Refresh</button></KryptonTooltip>
- * // => renders an immediately responsive tooltip
- */
 export function KryptonTooltip(props: KryptonTooltipProps): React.JSX.Element {
   const { children, content, side = 'top', size = 'md' } = props;
 

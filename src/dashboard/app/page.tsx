@@ -501,15 +501,6 @@ interface EnforcementLedgerActionsProps {
   readonly onSimulateThreatEvent: () => void;
 }
 
-/**
- * Renders the environment-aware actions displayed above the enforcement ledger.
- *
- * @param {EnforcementLedgerActionsProps} props - Demo visibility and toolbar action callbacks.
- * @returns {React.JSX.Element} The responsive enforcement-ledger action group.
- * @example
- * <EnforcementLedgerActions isDemoMode onClearAlerts={() => {}} onSimulateThreatEvent={() => {}} />
- * // => renders Simulate Threat Event before Clear Alerts
- */
 export function EnforcementLedgerActions(props: EnforcementLedgerActionsProps): React.JSX.Element {
   const handleSimulateEvent = props.onSimulateThreatEvent;
 
@@ -541,15 +532,6 @@ export function EnforcementLedgerActions(props: EnforcementLedgerActionsProps): 
   );
 }
 
-/**
- * Makes demonstration telemetry unmistakable without presenting it as native evidence.
- *
- * @param {TelemetrySourceBannerProps} props - Current source and daemon reachability metadata.
- * @returns {React.JSX.Element | null} A persistent accessible fallback banner or no content.
- * @example
- * <TelemetrySourceBanner source="mock" nativeDaemonReachable={false} />
- * // => renders the demonstration-mode warning
- */
 export function TelemetrySourceBanner(props: TelemetrySourceBannerProps): React.JSX.Element | null {
   if (props.source !== 'mock') return null;
   return (
@@ -703,15 +685,6 @@ export async function dispatchAuditModeUpdate(auditOnly: boolean): Promise<void>
   }
 }
 
-/**
- * Composes the AegisAgent command view from a global firewall status region,
- * active-process telemetry, and a stable newest-first security alert table.
- *
- * @returns {React.JSX.Element} The polling security dashboard page layout.
- * @example
- * <DashboardPage />
- * // => renders the status overview and intercepted-alert telemetry table
- */
 export default function DashboardPage(): React.JSX.Element {
   const [auditOnly, setAuditOnly] = useState(true);
   const [isAuditModeUpdating, setIsAuditModeUpdating] = useState(false);
@@ -976,24 +949,24 @@ export default function DashboardPage(): React.JSX.Element {
 
   return (
     <main
-      className="min-h-screen bg-krypton-bg-main px-krypton-space-4 py-krypton-space-5 text-slate-100 sm:px-krypton-space-5 lg:px-krypton-space-6 lg:py-krypton-space-6"
+      className="min-h-screen bg-krypton-bg-main px-krypton-space-4 py-krypton-space-5 text-krypton-fg-primary sm:px-krypton-space-5 lg:px-krypton-space-6 lg:py-krypton-space-6"
       data-system-status={systemStatus}
     >
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <header className="relative overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-7 shadow-2xl shadow-black/30 sm:px-krypton-space-6">
+        <header className="relative overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-7 shadow-2xl shadow-krypton-shadow sm:px-krypton-space-6">
           <div
             aria-hidden="true"
-            className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-cyan-400 via-blue-500 to-violet-500"
+            className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-krypton-accent-cyan via-krypton-accent-blue to-krypton-accent-violet"
           />
           <div className="relative flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-400">
+              <p className="text-xs font-bold uppercase tracking-krypton-hero text-krypton-accent-cyan">
                 ACTIVE SECURITY WORKSPACE
               </p>
-              <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+              <h1 className="mt-2 text-2xl font-black tracking-tight text-krypton-fg-primary sm:text-3xl">
                 AegisAgent Security Command
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-krypton-fg-muted">
                 Real-time monitoring and threat isolation for automated applications and file
                 systems.
               </p>
@@ -1004,7 +977,7 @@ export default function DashboardPage(): React.JSX.Element {
                 className="flex items-center gap-krypton-space-3 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"
               >
                 <label
-                  className="cursor-pointer text-xs font-bold uppercase tracking-wider text-slate-200"
+                  className="cursor-pointer text-xs font-bold uppercase tracking-wider text-krypton-fg-secondary"
                   htmlFor="audit-only-mode"
                 >
                   Audit-Only Mode
@@ -1027,15 +1000,17 @@ export default function DashboardPage(): React.JSX.Element {
                 className={clsx(
                   'inline-flex w-fit items-center gap-krypton-space-2 rounded-krypton-radius-full border px-krypton-space-3 py-1.5 text-xs font-bold uppercase tracking-wider',
                   systemStatus === 'operational'
-                    ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
-                    : 'border-amber-400/40 bg-amber-400/10 text-amber-200'
+                    ? 'border-krypton-success/40 bg-krypton-success/10 text-krypton-success'
+                    : 'border-krypton-warning-amber/40 bg-krypton-warning-amber/10 text-krypton-warning-foreground'
                 )}
               >
                 <span
                   aria-hidden="true"
                   className={clsx(
                     'h-2 w-2 rounded-krypton-radius-full',
-                    systemStatus === 'operational' ? 'bg-emerald-400' : 'bg-amber-300'
+                    systemStatus === 'operational'
+                      ? 'bg-krypton-success'
+                      : 'bg-krypton-warning-amber'
                   )}
                 />
                 Telemetry stream: {systemStatus}
@@ -1049,13 +1024,16 @@ export default function DashboardPage(): React.JSX.Element {
           className="flex flex-col gap-krypton-space-4 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-main/70 p-krypton-space-5 lg:flex-row lg:items-stretch lg:justify-between lg:p-krypton-space-5"
         >
           <div className="max-w-xl py-1">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+            <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-fg-muted">
               Engine overview
             </p>
-            <h2 className="mt-2 text-xl font-bold text-white" id="firewall-overview-title">
+            <h2
+              className="mt-2 text-xl font-bold text-krypton-fg-primary"
+              id="firewall-overview-title"
+            >
               Active Workspace Protection
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
+            <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
               Krypton maps file interactions inside your current folder directory and safely
               isolates malicious scripts before they can read or write data to other areas of your
               computer.
@@ -1072,10 +1050,13 @@ export default function DashboardPage(): React.JSX.Element {
         <section aria-labelledby="threat-telemetry-title" className="space-y-4">
           <header className="flex flex-col items-start justify-between gap-4 px-1 sm:flex-row sm:items-end">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-fg-muted">
                 SECURITY ACTIVITY LOG
               </p>
-              <h2 className="mt-1 text-xl font-bold text-white" id="threat-telemetry-title">
+              <h2
+                className="mt-1 text-xl font-bold text-krypton-fg-primary"
+                id="threat-telemetry-title"
+              >
                 Intercepted security alerts
               </h2>
             </div>

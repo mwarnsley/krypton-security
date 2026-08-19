@@ -7,15 +7,6 @@ export type ToasterProps = Omit<SonnerToasterProps, 'visibleToasts'> & {
   readonly limit: number;
 };
 
-/**
- * Renders the shared Sonner notification region with an explicit stack limit.
- *
- * @param {ToasterProps} props - Sonner configuration and the visible stack limit.
- * @returns {React.JSX.Element} A globally mounted, stack-limited toast region.
- * @example
- * <Toaster limit={3} position="top-right" theme="dark" />
- * // => renders no more than three simultaneous notifications
- */
 export function Toaster(props: ToasterProps): React.JSX.Element {
   const { limit, ...sonnerProps } = props;
 

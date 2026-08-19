@@ -29,15 +29,6 @@ const VARIANT_CLASSES: Readonly<Record<NonNullable<KryptonToggleProps['variant']
   warning: 'data-[state=checked]:bg-krypton-warning-amber',
 };
 
-/**
- * Renders the semantic Krypton binary toggle on top of Radix Switch.
- *
- * @param {KryptonToggleProps} props - Radix state behavior plus fixed visual options.
- * @returns {React.JSX.Element} A keyboard-accessible switch control.
- * @example
- * <KryptonToggle aria-label="Audit mode" variant="warning" />
- * // => renders an amber checked-state toggle
- */
 export const KryptonToggle = forwardRef<
   React.ElementRef<typeof SwitchPrimitive.Root>,
   KryptonToggleProps

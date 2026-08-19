@@ -115,7 +115,7 @@ function unregisterWorkspaceProcess(pid) {
  * Returns the number of child processes currently owned by this runtime registry.
  *
  * @returns {number} The current number of registered workspace process IDs.
- * @complexity O(1) time and O(1) space through native `Set.prototype.size`.
+ * @complexity O(1) time and O(1) space through native `Map.prototype.size`.
  * @example
  * getActiveWorkspaceProcessCount();
  * // => 2
@@ -252,6 +252,17 @@ async function dispatchNativeControl(command) {
     const socket = net.createConnection(endpoint.endpoint);
     let responseText = "";
     let settled = false;
+
+    /**
+     * Settles the pending native request exactly once and releases its socket.
+     *
+     * @param {Error | undefined} error - The transport failure, or `undefined` to validate the response.
+     * @returns {void} No value; the surrounding promise is resolved or rejected.
+     * @complexity O(L) time and space to parse a bounded response of length L.
+     * @example
+     * complete(new Error("The native request timed out."));
+     * // => rejects the pending request and destroys its socket
+     */
     const complete = (error) => {
       if (settled) return;
       settled = true;
@@ -323,6 +334,16 @@ async function spawnProtectedProcess(command, args = [], options = {}, dependenc
   }
   let cleaned = false;
   let timeout;
+
+  /**
+   * Unregisters the exact child generation and clears its bounded runtime timer once.
+   *
+   * @returns {Promise<void>} A promise that settles after local and native cleanup completes.
+   * @complexity O(1) average Map deletion plus O(L) bounded native IPC time and space.
+   * @example
+   * await cleanup();
+   * // => removes the child identity and cancels its runtime timer exactly once
+   */
   const cleanup = async () => {
     if (cleaned) return;
     cleaned = true;

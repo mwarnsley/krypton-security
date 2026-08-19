@@ -55,8 +55,9 @@ const SEVERITY_CLASSES: Readonly<Record<TelemetrySeverity, string>> = {
   critical: 'border-krypton-alert-rose bg-krypton-alert-rose/10 text-krypton-alert-rose',
   high: 'border-krypton-warning-amber bg-krypton-warning-amber/10 text-krypton-warning-amber',
   info: 'border-krypton-accent-cyan/40 bg-krypton-accent-cyan/10 text-krypton-accent-cyan',
-  low: 'border-krypton-border-muted bg-krypton-bg-surface text-slate-300',
-  medium: 'border-krypton-warning-amber/50 bg-krypton-warning-amber/10 text-amber-200',
+  low: 'border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary',
+  medium:
+    'border-krypton-warning-amber/50 bg-krypton-warning-amber/10 text-krypton-warning-foreground',
 };
 
 export interface AlertTableProps {
@@ -170,34 +171,26 @@ export function resolveAlertPageSize(selection: string): number {
     : DEFAULT_ALERTS_PER_PAGE;
 }
 
-/**
- * Renders structured onboarding guidance for the alert-row action menu.
- *
- * @returns {React.JSX.Element} Two action explanations separated by a subtle divider.
- * @example
- * <ActionsHeaderTooltipContent />
- * // => explains Force Isolate and Download Signature
- */
 export function ActionsHeaderTooltipContent(): React.JSX.Element {
   return (
     <div>
       <section>
-        <strong className="mb-1 flex items-center gap-2 text-sm font-semibold text-rose-400">
+        <strong className="mb-1 flex items-center gap-2 text-sm font-semibold text-krypton-alert-rose">
           <SquareTerminal aria-hidden="true" className="h-4 w-4" />
           Force Isolate
         </strong>
-        <p className="text-xs font-normal leading-relaxed text-slate-400">
+        <p className="text-xs font-normal leading-relaxed text-krypton-fg-muted">
           Immediately drops an OS-level termination signal (SIGKILL) onto the rogue process ID to
           instantly halt execution.
         </p>
       </section>
-      <div aria-hidden="true" className="my-3 border-t border-slate-800/60" />
+      <div aria-hidden="true" className="my-3 border-t border-krypton-border-muted/60" />
       <section>
-        <strong className="mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-cyan-400">
+        <strong className="mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-krypton-accent-cyan">
           <Download aria-hidden="true" className="h-4 w-4" />
           Download Signature
         </strong>
-        <p className="text-xs font-normal leading-relaxed text-slate-400">
+        <p className="text-xs font-normal leading-relaxed text-krypton-fg-muted">
           Bundles the captured filesystem traversal paths, process identifiers, and mitigation
           metrics into a structured Markdown security report wrapper.
         </p>
@@ -206,15 +199,6 @@ export function ActionsHeaderTooltipContent(): React.JSX.Element {
   );
 }
 
-/**
- * Renders an accessible sortable table heading with directional feedback.
- *
- * @param {SortableColumnHeaderProps} props - The column, label, and optional helper copy.
- * @returns {React.JSX.Element} A Shadcn button that toggles the column sort direction.
- * @example
- * <SortableColumnHeader column={column} label="Timestamp" />
- * // => renders a sortable Timestamp heading
- */
 function SortableColumnHeader(props: SortableColumnHeaderProps): React.JSX.Element {
   const { column, helperText, label } = props;
   const sortDirection = column.getIsSorted();
@@ -302,15 +286,6 @@ export async function requestProcessIsolation(
   };
 }
 
-/**
- * Renders security telemetry through TanStack's memoized row and column model.
- *
- * @param {AlertTableProps} props - The immutable security alerts to display in newest-first order.
- * @returns {React.JSX.Element} A high-contrast telemetry grid with per-process isolation controls.
- * @example
- * <AlertTable alerts={[alert]} />
- * // => renders one telemetry row with a Force Isolate action
- */
 export function AlertTable(props: AlertTableProps): React.JSX.Element {
   const { alerts } = props;
   const inFlightProcessIds = useRef(new Set<number>());
@@ -366,7 +341,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           const timestamp = getValue<string>();
 
           return (
-            <time className="whitespace-nowrap text-slate-300" dateTime={timestamp}>
+            <time className="whitespace-nowrap text-krypton-fg-secondary" dateTime={timestamp}>
               {formatAlertTimestamp(timestamp)}
             </time>
           );
@@ -397,7 +372,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           />
         ),
         cell: ({ getValue }) => (
-          <span className="whitespace-nowrap font-semibold text-slate-100">
+          <span className="whitespace-nowrap font-semibold text-krypton-fg-primary">
             {getValue<string>()}
           </span>
         ),
@@ -412,7 +387,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           />
         ),
         cell: ({ getValue }) => (
-          <code className="block min-w-64 break-all font-mono text-xs text-slate-400">
+          <code className="block min-w-64 break-all font-mono text-xs text-krypton-fg-muted">
             {getValue<string>()}
           </code>
         ),
@@ -432,7 +407,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           return (
             <strong
               className={clsx(
-                'inline-flex rounded-krypton-radius-full border px-2.5 py-krypton-space-1 text-[11px] font-bold uppercase tracking-[0.12em]',
+                'inline-flex rounded-krypton-radius-full border px-2.5 py-krypton-space-1 text-krypton-micro font-bold uppercase tracking-krypton-label',
                 SEVERITY_CLASSES[severity]
               )}
             >
@@ -451,7 +426,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           />
         ),
         cell: ({ getValue }) => (
-          <span className="inline-flex max-w-56 rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-[10px] font-semibold tracking-krypton-mono text-slate-300">
+          <span className="inline-flex max-w-56 rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-krypton-nano font-semibold tracking-krypton-mono text-krypton-fg-secondary">
             {getValue<string>()}
           </span>
         ),
@@ -492,7 +467,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
-                    className="text-rose-300 focus:bg-rose-500/10 focus:text-rose-200"
+                    className="text-krypton-danger-foreground focus:bg-krypton-alert-rose/10 focus:text-krypton-danger-foreground"
                     disabled={!isActionable || isIsolating}
                     onSelect={() => {
                       if (processIdentity !== undefined) void forceIsolate(processIdentity);
@@ -503,7 +478,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    className="text-slate-200 focus:text-white"
+                    className="text-krypton-fg-secondary focus:text-krypton-fg-primary"
                     onSelect={() =>
                       downloadExploitSignature({
                         mitigationStatus: formatEnforcementStatus(row.original.enforcementStatus),
@@ -523,8 +498,10 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                 <span
                   aria-live="polite"
                   className={clsx(
-                    'max-w-56 text-[11px] font-medium',
-                    isolationStatus.tone === 'success' ? 'text-emerald-300' : 'text-rose-300'
+                    'max-w-56 text-krypton-micro font-medium',
+                    isolationStatus.tone === 'success'
+                      ? 'text-krypton-success'
+                      : 'text-krypton-danger-foreground'
                   )}
                   role={isolationStatus.tone === 'success' ? 'status' : 'alert'}
                 >
