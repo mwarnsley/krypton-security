@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { toast } from 'sonner';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { SecurityAlert } from '../components/patterns';
+import type { SecurityAlert } from '../';
 import DashboardPage, {
   clearAlertToasts,
   createSimulatedThreatEvent,
@@ -22,7 +22,7 @@ import DashboardPage, {
   shouldSynchronizeAuditModeWithDaemon,
   TelemetrySourceBanner,
   waitForStaticTelemetryFallback,
-} from './page';
+} from './DashboardPage';
 
 const CURRENT_TIME_MS = Date.parse('2026-07-14T12:00:10.000Z');
 

@@ -1,4 +1,5 @@
 import { dispatchNativeCommand } from '../../../../server/telemetry/nativeClient';
+import { validateLocalMutation } from '../../../../server/localMutationGuard';
 
 export const runtime = 'nodejs';
 
@@ -25,16 +26,19 @@ function isRequestBody(value: unknown): value is RequestBody {
  * Sends one validated audit-mode update to the native Krypton daemon.
  *
  * @param {Request} request - The JSON request containing an `auditOnly` boolean.
- * @returns {Promise<Response>} A JSON mode-update result with HTTP 200, 400, or 502.
+ * @returns {Promise<Response>} A result with HTTP 200, 400, 403, 415, or 502.
  * @complexity O(1) validation and bounded IPC dispatch time with O(1) auxiliary space.
  * @example
  * const response = await POST(new Request("http://localhost/api/telemetry/audit-mode", {
  *   method: "POST",
+ *   headers: { Host: "localhost", Origin: "http://localhost", "Content-Type": "application/json" },
  *   body: JSON.stringify({ auditOnly: true }),
  * }));
  * // => Response { status: 200 }
  */
 export async function POST(request: Request): Promise<Response> {
+  const rejection = validateLocalMutation(request);
+  if (rejection) return rejection;
   let payload: unknown;
 
   try {

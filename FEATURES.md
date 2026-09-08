@@ -55,6 +55,11 @@ in `ROADMAP.md`.
 - Uses bounded table pagination options `10, 25, 50, 75, 100`; unbounded `ALL`
   rendering is removed.
 - Requires compound process identity for Force Isolate actions.
+- Preserves portable watcher rows with a null PID as observed, unattributed
+  evidence; attributed native identities include `parentPid` (number or null).
+- Rejects mutation requests without JSON and matching loopback Host/Origin
+  headers before daemon dispatch. Capabilities remain server-side; these browser
+  guards do not authenticate remote clients, so loopback binding is required.
 - Keeps Timeline Rewind signature downloads and dependency/process labels for
   events that carry reliable attribution.
 - Provides a four-tab public Explainer Drawer whose FAQ mirrors the README,

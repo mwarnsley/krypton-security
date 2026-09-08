@@ -44,6 +44,13 @@ attacker that can read the private file can authenticate.
 
 ## Filesystem attribution and enforcement limits
 
+Dashboard HTTP mutation routes require `application/json` and matching loopback
+Host and Origin headers (`localhost` or `127.0.0.1`) before invoking native IPC.
+Missing, cross-origin, or invalid headers are denied; daemon capabilities remain
+server-side. These guards address browser cross-origin requests, not caller
+authentication. Non-browser clients can forge headers, so the dashboard must be
+bound to loopback and must not be exposed through a public reverse proxy.
+
 The portable `notify` adapter reports event kinds and paths, not the responsible
 process. Krypton therefore records those events as `unattributed` and never
 increments a per-process breakout threshold or quarantines a child from that

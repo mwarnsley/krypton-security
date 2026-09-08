@@ -1,4 +1,5 @@
 import { dispatchNativeCommand } from '../../../../server/telemetry/nativeClient';
+import { validateLocalMutation } from '../../../../server/localMutationGuard';
 import type { ProcessIdentityPayload } from '../../../../types';
 
 export const runtime = 'nodejs';
@@ -40,6 +41,8 @@ function parseProcessIdentity(value: unknown): ProcessIdentityPayload | undefine
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const rejection = validateLocalMutation(request);
+  if (rejection) return rejection;
   let payload: unknown;
   try {
     payload = await request.json();

@@ -28,6 +28,7 @@ pub struct ProcessIdentitySummary {
     pub pid: u32,
     pub start_time: u64,
     pub executable_path: PathBuf,
+    pub parent_pid: Option<u32>,
 }
 
 impl From<&ProcessIdentity> for ProcessIdentitySummary {
@@ -36,6 +37,7 @@ impl From<&ProcessIdentity> for ProcessIdentitySummary {
             pid: value.pid,
             start_time: value.start_time,
             executable_path: value.executable_path.clone(),
+            parent_pid: value.parent_pid,
         }
     }
 }
@@ -238,6 +240,35 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn serializes_complete_process_identity() {
+        let identity = crate::process_identity::ProcessIdentity {
+            pid: 4242,
+            start_time: 1234,
+            executable_path: "/usr/bin/node".into(),
+            parent_pid: Some(4000),
+        };
+        let value = serde_json::to_value(super::ProcessIdentitySummary::from(&identity))
+            .expect("serialize");
+        assert_eq!(
+            value,
+            serde_json::json!({"pid":4242,"startTime":1234,"executablePath":"/usr/bin/node","parentPid":4000})
+        );
+    }
+
+    #[test]
+    fn serializes_unavailable_parent_as_null() {
+        let identity = crate::process_identity::ProcessIdentity {
+            pid: 4242,
+            start_time: 1234,
+            executable_path: "/usr/bin/node".into(),
+            parent_pid: None,
+        };
+        let value = serde_json::to_value(super::ProcessIdentitySummary::from(&identity))
+            .expect("serialize");
+        assert_eq!(value.get("parentPid"), Some(&serde_json::Value::Null));
+    }
 
     fn path(name: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()

@@ -86,6 +86,23 @@ afterEach(() => {
 });
 
 describe('AlertTable', () => {
+  it('labels null-PID evidence as observed without claiming an actor', () => {
+    const markup = renderToStaticMarkup(
+      <AlertTable
+        alerts={[
+          {
+            ...SIMULATED_ALERT,
+            attribution: 'unattributed',
+            targetProcessId: null,
+            enforcementStatus: 'OBSERVED',
+          },
+        ]}
+      />
+    );
+    expect(markup).toContain('Observed (unattributed)');
+    expect(markup).not.toContain('Open actions for process');
+  });
+
   test.each([
     'Timestamp',
     'Process ID',

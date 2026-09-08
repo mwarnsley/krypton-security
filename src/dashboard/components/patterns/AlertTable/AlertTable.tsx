@@ -399,7 +399,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         ),
         cell: ({ getValue }) => (
           <code className="font-mono font-semibold tracking-krypton-mono text-krypton-accent-cyan">
-            {getValue<number>()}
+            {getValue<number | null>() ?? 'Observed (unattributed)'}
           </code>
         ),
       },

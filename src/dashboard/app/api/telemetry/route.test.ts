@@ -37,7 +37,7 @@ beforeEach(() => {
 
 describe('telemetry route', () => {
   it('returns one explicit native envelope', async () => {
-    const response = await GET();
+    const response = await GET(new Request('http://localhost/api/telemetry'));
     const body = await response.json();
     expect(body).toEqual(
       expect.objectContaining({
@@ -50,13 +50,13 @@ describe('telemetry route', () => {
   });
 
   it('sets no-store caching on every successful response', async () => {
-    const response = await GET();
+    const response = await GET(new Request('http://localhost/api/telemetry'));
     expect(response.headers.get('Cache-Control')).toBe('no-store, max-age=0');
   });
 
   it('identifies an unreachable daemon distinctly', async () => {
     serverMocks.queryNativeHealth.mockRejectedValue(new Error('unreachable'));
-    const body = await (await GET()).json();
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
     expect(body).toEqual(
       expect.objectContaining({
         fallbackReason: 'daemon_unreachable',
@@ -71,7 +71,7 @@ describe('telemetry route', () => {
       ...HEALTHY,
       health: { ...HEALTHY.health, ledger: 'write_failed', status: 'degraded' },
     });
-    const body = await (await GET()).json();
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
     expect(body).toEqual(
       expect.objectContaining({
         fallbackReason: 'native_degraded',
@@ -83,7 +83,7 @@ describe('telemetry route', () => {
 
   it('identifies invalid ledger data distinctly', async () => {
     serverMocks.readLedgerPage.mockRejectedValue(new TypeError('invalid'));
-    const body = await (await GET()).json();
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
     expect(body).toEqual(expect.objectContaining({ fallbackReason: 'ledger_invalid' }));
   });
 
@@ -91,7 +91,7 @@ describe('telemetry route', () => {
     serverMocks.readLedgerPage.mockRejectedValue(
       Object.assign(new Error('missing'), { code: 'ENOENT' })
     );
-    const body = await (await GET()).json();
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
     expect(body).toEqual(expect.objectContaining({ fallbackReason: 'ledger_unavailable' }));
   });
 

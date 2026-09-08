@@ -424,8 +424,11 @@ A same-user or administrator-level attacker may still disable or tamper with
 Krypton; it is not a root security boundary. Krypton reduces local attack
 surface with a `0700` runtime directory, `0600` socket and capability files,
 authenticated local commands, peer-user checks, and compound process identity
-validation. Authenticated local audit-mode and termination endpoints exist and
-are not remote backdoors.
+validation. Dashboard audit-mode and termination requests require JSON and
+matching loopback Host and Origin headers (localhost or 127.0.0.1); daemon
+capabilities remain server-side. These browser request guards are not caller
+authentication: keep the dashboard bound to loopback, because non-browser clients
+can forge headers.
 
 </details>
 

@@ -62,6 +62,10 @@ the browser.
       presents bounded native JSONL telemetry from
       `.krypton/telemetry/alerts.jsonl`, limits client rendering to 500 rows,
       and distinguishes native evidence from mock data.
+      Portable watcher rows retain a null PID and an observed label. Dashboard
+      mutations require same-origin loopback JSON requests; header validation is
+      browser protection, not remote authentication, and requires loopback-only
+      deployment.
 - [x] **Offline deterministic security loop:** Repeated policy and registry
       membership uses native `Set` or `Map` lookups with average-case $O(1)$
       cost. Lexical path normalization and inspection remain $O(L)$ in path

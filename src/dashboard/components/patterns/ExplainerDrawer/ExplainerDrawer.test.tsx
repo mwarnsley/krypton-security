@@ -141,6 +141,16 @@ describe('ExplainerDrawer', () => {
     ]);
   });
 
+  it('explains the loopback HTTP boundary without claiming caller authentication', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+    fireEvent.click(screen.getByText('Can host malware disable or manipulate Krypton?'));
+    expect(
+      screen.getByText(/These browser request guards are not caller authentication/)
+    ).toBeTruthy();
+  });
+
   it('opens the agent bypass FAQ with the current containment boundary', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

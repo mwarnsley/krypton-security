@@ -13,7 +13,11 @@ const PROCESS = {
 } as const;
 
 function request(body: string): Request {
-  return new Request('http://localhost/api/telemetry/terminate', { body, method: 'POST' });
+  return new Request('http://localhost/api/telemetry/terminate', {
+    body,
+    method: 'POST',
+    headers: { host: 'localhost', origin: 'http://localhost', 'content-type': 'application/json' },
+  });
 }
 
 beforeEach(() => {
@@ -52,4 +56,27 @@ describe('telemetry termination route', () => {
     ipcMocks.dispatchNativeCommand.mockResolvedValue({ code: 'audit_only', ok: false });
     expect((await POST(request(JSON.stringify({ process: PROCESS })))).status).toBe(409);
   });
+});
+
+it.each([
+  { headers: { origin: 'http://evil.test' }, status: 403 },
+  { headers: { origin: '' }, status: 403 },
+  { headers: { host: 'evil.test' }, status: 403 },
+  { headers: { 'content-type': 'text/plain' }, status: 415 },
+])('rejects untrusted callers before native dispatch: %j', async ({ headers, status }) => {
+  ipcMocks.dispatchNativeCommand.mockClear();
+  const response = await POST(
+    new Request('http://localhost/api/telemetry', {
+      method: 'POST',
+      headers: {
+        host: 'localhost',
+        origin: 'http://localhost',
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body: '{}',
+    })
+  );
+  expect(response.status).toBe(status);
+  expect(ipcMocks.dispatchNativeCommand).not.toHaveBeenCalled();
 });

@@ -52,6 +52,16 @@ function severity(value: unknown): TelemetrySeverity {
   throw new TypeError('Native telemetry severity is invalid.');
 }
 
+/**
+ * Validates a native ledger event without inventing portable watcher attribution.
+ *
+ * @param {unknown} value - An untrusted parsed JSONL record.
+ * @returns {SecurityAlert} A normalized row; throws TypeError for invalid evidence.
+ * @complexity O(L) time and space in bounded path and identity string length.
+ * @example
+ * normalizePersistedEvent(record);
+ * // Unattributed records yield targetProcessId: null and enforcementStatus: 'OBSERVED'.
+ */
 export function normalizePersistedEvent(value: unknown): SecurityAlert {
   if (!isRecord(value)) throw new TypeError('Native telemetry event must be an object.');
   const sequence = value.sequence;
@@ -63,6 +73,9 @@ export function normalizePersistedEvent(value: unknown): SecurityAlert {
     throw new TypeError('Native telemetry attribution is invalid.');
   }
   const process = processIdentity(value.process);
+  if (attribution === 'unattributed' && process !== undefined) {
+    throw new TypeError('Unattributed telemetry cannot carry a process identity.');
+  }
   if (attribution === 'process' && process === undefined) {
     throw new TypeError('Process-attributed telemetry requires a compound identity.');
   }
@@ -74,7 +87,7 @@ export function normalizePersistedEvent(value: unknown): SecurityAlert {
     attemptedAction: category === 'workspace_boundary' ? 'filesystem_boundary_breakout' : category,
     attemptedPath,
     attribution,
-    enforcementStatus: 'INTERCEPTED',
+    enforcementStatus: attribution === 'unattributed' ? 'OBSERVED' : 'INTERCEPTED',
     id,
     origin_attribution:
       attribution === 'process'

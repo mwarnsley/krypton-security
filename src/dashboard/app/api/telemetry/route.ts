@@ -44,8 +44,8 @@ function mockResponse(
   return Response.json(body, { headers: NO_STORE_HEADERS, status: 200 });
 }
 
-export async function GET(request?: Request): Promise<Response> {
-  const requestUrl = new URL(request?.url ?? 'http://localhost/api/telemetry');
+export async function GET(request: Request): Promise<Response> {
+  const requestUrl = new URL(request.url);
   const after = parseBoundedInteger(
     requestUrl.searchParams.get('after'),
     undefined,
