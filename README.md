@@ -462,17 +462,26 @@ enforcement boundary.
    public-launch milestone.
 2. **Phase 2 — Transparent Developer Experience & Zero-Config CLI (v1.1):**
    planned `krypton exec -- <command>` protected launching and capability-aware
-   Safe Auto-Pilot host integrations. These commands and approval/network
-   controls are not implemented today.
+   Safe Auto-Pilot host integrations, plus standalone Homebrew and verified
+   shell-script distribution with a sub-30-second time-to-first-containment
+   target. `brew install krypton-security/tap/krypton` and
+   `curl -fsSL https://get.krypton.dev | sh` are planned commands and are not
+   available installation paths today.
 3. **Phase 3 — Native Desktop Application & Developer Convenience
    (v1.2–v1.3):** planned Tauri packaging for macOS and Windows, system-tray
    status, native notifications, validated `.kryptonrc` and session exceptions,
-   and evidence-labeled agent tagging. The initial Windows application is a
-   shell and simulation/demo experience, not native containment.
+   evidence-labeled agent tagging, and a sanitized **Export Incident Brief / Share
+   Kill-Cam** action. The initial Windows application is a shell and
+   simulation/demo experience, not native containment.
 4. **Phase 4 — Enterprise Cross-Platform Containment & Fleet Systems (v2.0):**
    planned Windows Named Pipes and Job Objects, Linux Landlock and seccomp-bpf
    adapters, and opt-in enterprise fleet governance. Only this phase activates
    true Windows native containment.
+
+The planned companion `krypton-vulnerable-agent-demo` repository will provide a
+disposable vulnerable-agent playground for demonstrating prompt-injection and
+path-traversal behavior in Audit-Only and Enforcement modes. It is not currently
+published or included in this repository.
 
 ### Commercial direction (target state)
 

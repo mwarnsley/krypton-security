@@ -64,6 +64,19 @@ describe('ExplainerDrawer', () => {
     );
   });
 
+  it('labels distribution, incident exports, and the playground as planned work', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
+
+    expect(screen.getByRole('listitem', { name: 'Krypton roadmap phase 2' }).textContent).toContain(
+      'none of these install paths or companion assets are available today'
+    );
+    expect(screen.getByRole('listitem', { name: 'Krypton roadmap phase 3' }).textContent).toContain(
+      'Incident Brief / Kill-Cam exports'
+    );
+  });
+
   it('moves to the next tab with the right arrow key', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

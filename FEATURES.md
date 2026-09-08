@@ -88,6 +88,13 @@ ledger. In particular:
 - No Tauri desktop application, installer, tray integration, paid tier, dynamic
   threat feed, snapshot rollback, AI incident explainer, or fleet control plane
   is implemented today.
+- Homebrew tap installation, the `get.krypton.dev` shell installer, and the
+  sub-30-second time-to-first-containment objective are planned immediate Phase 2
+  distribution work; those installation commands are not available today.
+- The Phase 3 **Export Incident Brief / Share Kill-Cam** action and its sanitized
+  Markdown, JSON, and image outputs are planned and are not implemented today.
+- The separate `krypton-vulnerable-agent-demo` vulnerable-agent playground is a
+  planned companion repository and is not currently published from this codebase.
 - A planned Phase 3 Windows Tauri application initially provides only the desktop
   shell and explicitly simulated demonstration data. True Windows native
   containment requires the Phase 4 Named Pipe and Job Object runtime.

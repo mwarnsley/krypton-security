@@ -138,13 +138,13 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
     status: 'Planned',
     summary:
-      'Introduce krypton exec and supported host adapters for bounded Safe Auto-Pilot workflows without claiming universal approval or network mediation.',
+      'Introduce krypton exec, bounded Safe Auto-Pilot host adapters, and standalone Homebrew or verified shell installation with a sub-30-second time-to-first-containment target. A separate vulnerable-agent playground is also planned; none of these install paths or companion assets are available today.',
     title: 'Phase 2 · Transparent DX & Zero-Config CLI (v1.1)',
   },
   {
     status: 'Planned',
     summary:
-      'Package the dashboard in a lightweight Tauri app with tray controls, native alerts, validated path exceptions, and agent tags. Windows shell and simulation only until Phase 4.',
+      'Package the dashboard in a lightweight Tauri app with tray controls, native alerts, validated path exceptions, agent tags, and sanitized Incident Brief / Kill-Cam exports. Windows shell and simulation only until Phase 4.',
     title: 'Phase 3 · Native Desktop App & Developer Convenience (v1.2–v1.3)',
   },
   {
