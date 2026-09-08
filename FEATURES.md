@@ -1,8 +1,10 @@
 # Krypton feature ledger
 
-This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`.
+This ledger describes implemented behavior. Its capability groupings are not
+release phases; the versioned four-phase release plan and all planned work live
+in `ROADMAP.md`.
 
-## Phase 1: Local policy reference engine
+## Capability 1: Local policy reference engine
 
 - **Status:** Implemented
 - Resolves paths against an explicit sandbox boundary and denies sensitive
@@ -10,7 +12,7 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
 - Provides controlled disposable-child simulation coverage.
 - Keeps local reference tracking separate from the native daemon authority.
 
-## Phase 2: Native workspace telemetry and ownership
+## Capability 2: Native workspace telemetry and ownership
 
 - **Status:** Implemented on macOS; experimental on Linux
 - Loads separate `projectRoot` and `protectedWorkspaceRoot` configuration.
@@ -23,7 +25,7 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
 - Re-inspects a live process before isolation and rejects PID reuse, stale
   generations, unregistered identities, and daemon self-targeting.
 
-## Phase 3: AegisAgent Dashboard Command Center
+## Capability 3: AegisAgent Dashboard Command Center
 
 - **Status:** Implemented
 - Returns one typed native/mock telemetry envelope with source, daemon
@@ -53,7 +55,7 @@ This ledger describes implemented behavior. Planned work remains in `ROADMAP.md`
   current platform support, registered-process boundary, and portable-watcher
   limitations.
 
-## Phase 4: Public-release hardening
+## Capability 4: Public-release hardening
 
 - **Status:** Implemented in repository; external settings remain owner-managed
 - Uses an authenticated, versioned Unix-domain control socket with a private

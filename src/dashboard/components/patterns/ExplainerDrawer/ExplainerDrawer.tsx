@@ -52,6 +52,17 @@ interface FaqItem {
   readonly answer: string;
 }
 
+interface ReleasePhase {
+  /** The versioned release milestone shown to dashboard visitors. */
+  readonly title: string;
+
+  /** The implementation status that prevents future work from appearing available today. */
+  readonly status: string;
+
+  /** The concise, security-qualified outcome planned for the release. */
+  readonly summary: string;
+}
+
 const REPOSITORY_URL = 'https://github.com/mwarnsley/krypton-security';
 const NATIVE_SETUP_COMMAND =
   'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && npm run dev:full';
@@ -117,6 +128,33 @@ const CORE_FEATURES: readonly GuideItem[] = [
   },
 ];
 
+const RELEASE_PHASES: readonly ReleasePhase[] = [
+  {
+    status: 'Current: core shipped; desktop alerts remain',
+    summary:
+      'Harden the supported macOS daemon, local telemetry dashboard, offline policy loop, and public simulation while adding native desktop quarantine notifications before the v1.0 launch closes.',
+    title: 'Phase 1 · Native macOS Hardening & Public Launch (v1.0)',
+  },
+  {
+    status: 'Planned',
+    summary:
+      'Introduce krypton exec and supported host adapters for bounded Safe Auto-Pilot workflows without claiming universal approval or network mediation.',
+    title: 'Phase 2 · Transparent DX & Zero-Config CLI (v1.1)',
+  },
+  {
+    status: 'Planned',
+    summary:
+      'Add validated permanent and session path exceptions plus evidence-labeled agent runtime attribution in the dashboard.',
+    title: 'Phase 3 · Interactive Rules & Granular Exceptions (v1.2)',
+  },
+  {
+    status: 'Planned',
+    summary:
+      'Build Windows Named Pipe and Job Object containment, then Linux Landlock and seccomp-bpf adapters, without weakening the registered-process boundary.',
+    title: 'Phase 4 · Cross-Platform Native Containment (v2.0)',
+  },
+];
+
 const SETUP_STEPS = [
   ['1. Clone the repository', 'git clone https://github.com/mwarnsley/krypton-security.git'],
   ['2. Enter the project and install dependencies', 'cd krypton-security && npm ci'],
@@ -157,7 +195,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'macOS is the actively supported and tested native runtime. Linux native control currently remains experimental. Windows supports dashboard-only demonstration mode, not native isolation. The simulated dashboard experience is available across supported web environments with npm run dev:dashboard.',
+      'macOS is the actively supported and tested native runtime. Linux native control currently remains experimental. Windows supports dashboard-only demonstration mode, not native isolation. The v2.0 roadmap targets Windows Named Pipes and Job Objects plus Linux Landlock and seccomp-bpf adapters; none of those future controls are available today. The simulated dashboard experience is available across supported web environments with npm run dev:dashboard.',
     question: 'Which operating systems are currently supported?',
   },
   {
@@ -417,6 +455,40 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     );
                   })}
                 </div>
+
+                <aside className="mt-6 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-accent-cyan">
+                    RELEASE ROADMAP
+                  </p>
+                  <h2 className="mt-2 text-base font-bold text-krypton-fg-primary">
+                    Four release phases
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    Current capability and future intent stay explicitly separated. Planned controls
+                    do not expand what Krypton can enforce today.
+                  </p>
+                  <ol className="mt-4 space-y-krypton-space-3">
+                    {RELEASE_PHASES.map((phase, index) => (
+                      <li
+                        aria-label={`Krypton roadmap phase ${index + 1}`}
+                        className="rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-main p-krypton-space-3"
+                        key={phase.title}
+                      >
+                        <div className="flex flex-col gap-krypton-space-1 sm:flex-row sm:items-start sm:justify-between sm:gap-krypton-space-3">
+                          <h3 className="text-sm font-bold text-krypton-fg-primary">
+                            {phase.title}
+                          </h3>
+                          <span className="shrink-0 text-xs font-semibold text-krypton-accent-cyan">
+                            {phase.status}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                          {phase.summary}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                </aside>
               </section>
             ) : null}
 
@@ -451,7 +523,8 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
                     macOS is the actively supported native runtime. Linux native mode is
                     experimental. Windows uses dashboard-only demonstration mode. Every platform can
-                    explore simulated telemetry with <code>npm run dev:dashboard</code>.
+                    explore simulated telemetry with <code>npm run dev:dashboard</code>. Native
+                    Windows and hardened Linux containment remain planned for v2.0.
                   </p>
                 </aside>
 

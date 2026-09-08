@@ -41,6 +41,16 @@ describe('ExplainerDrawer', () => {
     expect(screen.queryByText('Three steps between a tool and your private files')).toBeNull();
   });
 
+  it('shows the four release phases with current work identified', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
+
+    expect(screen.getByRole('heading', { name: 'Four release phases' })).toBeTruthy();
+    expect(screen.getAllByRole('listitem', { name: /Krypton roadmap phase/ })).toHaveLength(4);
+  });
+
   it('moves to the next tab with the right arrow key', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

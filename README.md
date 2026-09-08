@@ -392,7 +392,9 @@ universal pre-access prevention.
 
 macOS is the actively supported and tested native runtime. Linux native control
 currently remains experimental. Windows supports dashboard-only demonstration
-mode, not native isolation. The simulated dashboard experience is available
+mode, not native isolation. The v2.0 roadmap targets Windows Named Pipes and Job
+Objects plus Linux Landlock and seccomp-bpf adapters; none of those future
+controls are available today. The simulated dashboard experience is available
 across supported web environments with `npm run dev:dashboard`.
 
 </details>
@@ -429,6 +431,29 @@ In a second terminal, run `npm run test:sim`. For a cross-platform mock dashboar
 without native isolation, run `npm run dev:dashboard`.
 
 </details>
+
+## Release roadmap
+
+The authoritative milestones and security acceptance criteria live in
+[ROADMAP.md](ROADMAP.md). Planned features below do not expand Krypton's current
+enforcement boundary.
+
+1. **Phase 1 — Native macOS Hardening & Public Launch (v1.0):** the native
+   daemon, `.krypton/runtime/daemon.sock` IPC, bounded local telemetry dashboard,
+   offline policy loop, and GitHub Pages demonstration are implemented. Native
+   macOS desktop notifications for confirmed quarantine events remain the final
+   public-launch milestone.
+2. **Phase 2 — Transparent Developer Experience & Zero-Config CLI (v1.1):**
+   planned `krypton exec -- <command>` protected launching and capability-aware
+   Safe Auto-Pilot host integrations. These commands and approval/network
+   controls are not implemented today.
+3. **Phase 3 — Interactive Dashboard Rule Creator & Granular Exceptions
+   (v1.2):** planned validated `.kryptonrc` and session-only path exceptions,
+   plus evidence-labeled agent runtime tagging. Inferred tags will not authorize
+   isolation or rule changes.
+4. **Phase 4 — Cross-Platform Native Containment (v2.0):** planned Windows Named
+   Pipes and Job Objects plus Linux Landlock and seccomp-bpf adapters, all behind
+   the existing compound identity and fail-closed contracts.
 
 ## Documentation
 
