@@ -213,6 +213,11 @@ const FAQ_ITEMS: readonly FaqItem[] = [
       'Clone the repository, enter krypton-security, run npm ci, and use npm run dev:full for the actively supported macOS native daemon and dashboard. In a second terminal, run npm run test:sim. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
+  {
+    answer:
+      "Krypton operates independently of an AI agent's internal approval settings. Auto, Bypass Permissions, and YOLO modes remove the agent's own prompts, but they do not bypass controls for actions routed through Krypton's policy layer and protected launcher. In Enforcement Mode, an integrated out-of-bounds file request is denied, and Krypton may quarantine only an explicitly registered child after revalidating its PID, start time, executable path, and parent PID; the current Unix native runtime uses SIGKILL. Portable filesystem events remain post-event and unattributed, tools outside Krypton's integration are not automatically contained, and outbound-network enforcement remains planned. These agent modes therefore increase the importance of launching the agent through Krypton rather than providing universal protection by themselves.",
+    question: "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?",
+  },
 ];
 
 export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element {

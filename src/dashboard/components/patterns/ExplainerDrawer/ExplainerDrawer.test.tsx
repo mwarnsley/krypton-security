@@ -84,7 +84,7 @@ describe('ExplainerDrawer', () => {
     expect(screen.getByRole('heading', { name: 'Frequently asked questions' })).toBeTruthy();
   });
 
-  it('renders all ten FAQ questions in order', () => {
+  it('renders all eleven FAQ questions in order', () => {
     const { container } = render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
@@ -104,7 +104,22 @@ describe('ExplainerDrawer', () => {
       'Can host malware disable or manipulate Krypton?',
       'How does Krypton handle path traversal and symlinks?',
       'How do I run the project locally?',
+      "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?",
     ]);
+  });
+
+  it('opens the agent bypass FAQ with the current containment boundary', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+
+    const question = screen.getByText(
+      "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?"
+    );
+    fireEvent.click(question);
+
+    expect(question.closest('details')?.hasAttribute('open')).toBe(true);
+    expect(screen.getByText(/outbound-network enforcement remains planned/)).toBeTruthy();
   });
 
   it('moves from setup to FAQ with the right arrow key', () => {

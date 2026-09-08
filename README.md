@@ -432,6 +432,23 @@ without native isolation, run `npm run dev:dashboard`.
 
 </details>
 
+<details>
+<summary>11. What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?</summary>
+
+Krypton operates independently of an AI agent's internal approval settings.
+Auto, Bypass Permissions, and YOLO modes remove the agent's own prompts, but
+they do not bypass controls for actions routed through Krypton's policy layer
+and protected launcher. In Enforcement Mode, an integrated out-of-bounds file
+request is denied, and Krypton may quarantine only an explicitly registered
+child after revalidating its PID, start time, executable path, and parent PID;
+the current Unix native runtime uses SIGKILL. Portable filesystem events remain
+post-event and unattributed, tools outside Krypton's integration are not
+automatically contained, and outbound-network enforcement remains planned.
+These agent modes therefore increase the importance of launching the agent
+through Krypton rather than providing universal protection by themselves.
+
+</details>
+
 ## Release roadmap
 
 The authoritative milestones and security acceptance criteria live in
