@@ -27,6 +27,23 @@ Every phase and commercial tier must preserve these boundaries:
   individual workstation containment boundary. Paid capabilities operate around
   local enforcement rather than inside its decision loop.
 
+### Universal Agent Bypass Containment
+
+Krypton treats **Bypass Permissions**, **Auto**, **Full Access**, and **YOLO**
+modes in clients such as Claude Code, Cursor Composer, Codex CLI, and Aider as
+application-layer prompt suppressors, not operating-system authorization tokens.
+When an agent is launched through Krypton's protected runner, its registered
+process tree remains subject to the same deterministic path, process, and enabled
+syscall-boundary controls regardless of the client's approval configuration.
+
+On the current Unix runtime, an enforcement decision may terminate only an
+explicitly registered child after its PID, start time, executable path, and parent
+PID have been revalidated; the deterministic termination mechanism is `SIGKILL`.
+This guarantee does not extend to an unwrapped process or an unavailable native
+adapter, and it does not imply that portable watcher events can identify an
+actor. Future Windows enforcement uses registered Job Object containment rather
+than POSIX signals and remains a Phase 4 capability.
+
 ## Phase 1: Native macOS Hardening & Public Launch (Current Release / v1.0)
 
 **Release objective:** Complete the supported macOS launch around the existing
@@ -144,12 +161,49 @@ developer workflows while preserving verifiable process ownership.
       remain integration-specific; Krypton must not claim it can bypass or
       universally control third-party permission systems.
 
+### Network Egress Isolation & Domain Allowlisting (Phase 2/3 Planned)
+
+**Status:** Planned.
+
+**Objective:** Prevent data exfiltration after an unauthorized file read or
+prompt-injection attempt by constraining outbound communication for processes
+launched through Krypton's protected runner.
+
+- [ ] **Process-level sandbox profiles:** Apply a capability-detected macOS
+      Seatbelt profile containing `(deny network-outbound)` or launch a supported
+      Linux child inside a dedicated network namespace such as `unshare --net`.
+      Profiles must be installed before the agent starts, bound to its registered
+      process tree, and fail closed when the requested adapter or host capability
+      is unavailable. Linux privilege and kernel requirements must be reported
+      explicitly rather than silently falling back to unrestricted execution.
+- [ ] **Air-Gapped Mode:** Block all outbound TCP and UDP sockets for the wrapped
+      process tree. Permit only the minimum authenticated local IPC required by
+      the runtime, including the workspace Unix-domain socket discovered as
+      `.krypton/runtime/daemon.sock`; no remote fallback is allowed.
+- [ ] **Domain Allowlist Mode:** Force agent TCP and UDP traffic through an
+      embedded local proxy that permits only explicitly approved endpoints such
+      as `github.com`, `registry.npmjs.org`, and `crates.io`. Block direct sockets,
+      alternate resolvers, literal-IP bypasses, redirects to unapproved hosts,
+      DNS rebinding, and connections whose destination cannot be bound to an
+      approved policy entry. Proxy control and policy evaluation remain local.
+- [ ] **Audit-Only Egress:** Do not drop packets, but append bounded destination
+      evidence to `.krypton/telemetry/alerts.jsonl`. Record destination IPs and
+      ports when observable and record hostnames only when supported by proxy or
+      DNS evidence; otherwise label the hostname unknown rather than infer one.
+      Audit-only events cannot be presented as blocked or quarantined traffic.
+- [ ] Keep egress telemetry asynchronous, redacted, bounded by the existing
+      10,000-event/8 MiB ledger limits, and explicitly associated with a process
+      only when compound registered identity evidence supports attribution.
+
 ### Phase 2 completion criteria
 
 - `krypton exec` has deterministic argument, path, daemon-discovery, child-tree,
   signal-forwarding, and exit-status tests.
 - Supported host and network adapters publish capability negotiation so a caller
   can distinguish enforcement, audit-only, and unavailable states.
+- Network profiles prove pre-launch installation, direct-socket and DNS-bypass
+  resistance, domain-policy enforcement, evidence-aware audit logging, and
+  fail-closed behavior through deterministic platform-specific tests.
 - The wrapper leaves no stale capability files or live registrations after
   normal exit, crash recovery, or interrupted startup.
 - Homebrew and shell-install paths verify checksums, signatures, platform and
