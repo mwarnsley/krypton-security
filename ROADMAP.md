@@ -2,11 +2,11 @@
 
 This roadmap defines Krypton's prioritized release sequence. Status labels
 separate repository implementation from remaining or proposed work; a planned
-milestone is not a claim that the protection exists today.
+milestone or target entitlement is not a claim that the protection exists today.
 
 ## Roadmap-wide architectural invariants
 
-Every phase must preserve these boundaries:
+Every phase and commercial tier must preserve these boundaries:
 
 - Core policy, process-identity, enforcement, and telemetry-validation loops
   remain local, deterministic, bounded, and free of remote calls.
@@ -20,9 +20,12 @@ Every phase must preserve these boundaries:
 - Native telemetry remains distinct from static or mock demonstration data and
   retains at most 10,000 events or 8 MiB in
   `.krypton/telemetry/alerts.jsonl`.
-- Platform and host integrations must advertise their actual enforcement
-  capability. A missing or degraded adapter must never silently downgrade a
-  requested enforcing workflow to observation-only behavior.
+- Platform, desktop, host, and fleet integrations must advertise their actual
+  enforcement capability. A missing or degraded adapter must never silently
+  downgrade a requested enforcing workflow to observation-only behavior.
+- Licensing or subscription state must never weaken, delay, or remotely gate the
+  individual workstation containment boundary. Paid capabilities operate around
+  local enforcement rather than inside its decision loop.
 
 ## Phase 1: Native macOS Hardening & Public Launch (Current Release / v1.0)
 
@@ -52,12 +55,13 @@ the browser.
 
 ### Remaining v1.0 public-launch milestone
 
-- [ ] **Desktop OS Alert Integration:** Deliver native macOS user-notification
-      banners for confirmed background quarantine events so a developer receives
-      an immediate workstation alert outside the browser. Notifications must be
-      emitted only after authenticated daemon evidence confirms an owned child
-      was quarantined, must not include secret path contents beyond the existing
-      redaction policy, and must not block watcher or enforcement threads.
+- [ ] **Desktop OS Alert Integration:** Deliver a headless native macOS
+      notification adapter for confirmed background quarantine events so a
+      developer receives an immediate workstation alert outside the browser.
+      Notifications must be emitted only after authenticated daemon evidence
+      confirms an owned child was quarantined, must follow the existing redaction
+      policy, and must not block watcher or enforcement threads. Phase 3 will
+      reuse this event path inside the Tauri application.
 
 ### Phase 1 completion criteria
 
@@ -92,7 +96,7 @@ developer workflows while preserving verifiable process ownership.
       expire every registration with its process generation. Near-zero overhead
       means no polling loop or remote decision lies on the path-policy hot path.
 - [ ] Preserve native macOS execution speed and tool behavior without requiring a
-      container runtime. “Zero-config” applies only after the supported Krypton
+      container runtime. Zero-config applies only after the supported Krypton
       binary is installed; permissions or unsupported adapters must produce an
       explicit fail-closed error.
 
@@ -122,19 +126,51 @@ developer workflows while preserving verifiable process ownership.
 - The wrapper leaves no stale capability files or live registrations after
   normal exit, crash recovery, or interrupted startup.
 
-## Phase 3: Interactive Dashboard Rule Creator & Granular Exceptions (v1.2)
+## Phase 3: Native Desktop Application & Developer Convenience (v1.2–v1.3)
 
-**Status:** Planned.
+**Status:** Planned. No Tauri application, installer, tray integration, or
+desktop runtime bridge is implemented in the repository today.
 
-**Release objective:** Let an operator resolve legitimate cross-workspace access
-without weakening default-deny policy or manually editing configuration.
+**Release objective:** Package Krypton's local dashboard and native core into a
+low-overhead desktop experience for developers, general knowledge workers, and
+non-technical users who need zero-terminal setup.
 
-### One-click allowlisting from the Alert Table
+### Tauri Desktop Shell (macOS and Windows)
+
+- [ ] Reuse the existing React dashboard presentation inside a Tauri webview and
+      bundle the Rust core without introducing an Electron or production Node.js
+      runtime. The desktop build will compile a client/static dashboard surface;
+      typed Tauri commands or an authenticated bundled Rust sidecar will replace
+      the current Next.js `/api/*` routes inside the app. Browser development and
+      hosted demonstration builds retain their existing Next.js paths.
+- [ ] Target a release binary below 10 MB and steady-state memory below 50 MB.
+      These are measured engineering budgets, not current guarantees; release CI
+      must report platform-specific package size and idle/active memory evidence.
+- [ ] Provide signed, notarized one-click `.dmg`/`.app` installers for macOS and
+      signed `.msi`/`.exe` installers for Windows, with authenticated updates,
+      rollback metadata, and uninstall guidance.
+- [ ] Add a system-tray or menu-bar shield that reports protection, audit-only,
+      degraded, and unavailable states without obscuring whether a native runtime
+      is connected.
+- [ ] Dispatch native macOS Notification Center and Windows Action Center alerts.
+      macOS alerts may represent confirmed native quarantine evidence. Until
+      Phase 4 ships, Windows alerts and telemetry in the Tauri shell must remain
+      explicitly simulation/demo data and must never claim native containment.
+
+### Phase 3 Windows boundary
+
+The initial Windows Tauri application is a desktop shell and simulation/demo
+experience only. It does not gain true native process containment merely by
+packaging the dashboard or Rust code. Windows enforcement becomes available only
+after Phase 4 delivers the Named Pipe transport, restrictive access control,
+compound Windows process-generation validation, and Job Object isolation.
+
+### One-click interactive allowlisting
 
 - [ ] Extend the three-dot action menu for an eligible intercepted alert with:
-  - **Allow path permanently:** write a validated project rule to `.kryptonrc`.
-  - **Allow path for this session only:** add a daemon-generation-scoped,
-    in-memory exception without restarting the daemon.
+  - **Allow permanently:** write a validated project rule to `.kryptonrc`.
+  - **Allow for session:** add a daemon-generation-scoped, in-memory exception
+    without restarting the daemon.
 - [ ] Canonicalize the proposed path, display the narrowest rule that will be
       created, require an explicit operator action, and reject sensitive roots,
       traversal, ambiguous symlinks, broad wildcards, and rules outside the
@@ -159,47 +195,72 @@ without weakening default-deny policy or manually editing configuration.
 
 ### Phase 3 completion criteria
 
-- Permanent and session exceptions have deterministic allow/deny matrices,
+- Desktop commands preserve the authenticated, versioned, bounded native-control
+  contract and never expose daemon capabilities to webview JavaScript.
+- Packaging tests distinguish macOS native evidence, Windows simulation data,
+  degraded runtime state, and unavailable runtime state.
+- Permanent and session exceptions have deterministic policy matrices,
   permission tests, corruption recovery, revocation coverage, and daemon-restart
   tests.
-- Dashboard mutations require authenticated native confirmation and use
-  optimistic rollback on failure; static demonstrations modify mock state only.
 - Agent tagging has fixtures for supported, unknown, ambiguous, stale, and
   adversarial executable hierarchies.
+- Release CI records installer signature/notarization status and the binary and
+  memory budgets rather than treating targets as unverified guarantees.
 
-## Phase 4: Cross-Platform Native Containment (v2.0)
+## Phase 4: Enterprise Cross-Platform Containment & Fleet Systems (v2.0)
 
 **Status:** Planned. macOS remains the only actively supported and tested native
-runtime today; Linux native control is experimental and Windows remains
-dashboard-only demonstration mode.
+runtime today; Linux native control is experimental, and Windows remains
+dashboard-only demonstration mode until this phase ships.
 
-**Release objective:** Introduce platform-native isolation adapters behind the
-same compound process identity, local IPC, bounded telemetry, and fail-closed
-contracts used by macOS.
+**Release objective:** Introduce Windows and hardened Linux isolation adapters
+behind the same compound process identity, bounded telemetry, and fail-closed
+contracts, then add enterprise fleet visibility without placing cloud services
+inside local security decisions.
 
-### Windows Native Runtime
+### Windows Native Runtime Subsystem
 
 - [ ] Replace Unix-domain socket transport with Windows Named Pipes at
       `\\.\pipe\krypton-ipc`, protected by a restrictive per-user ACL and a
       versioned, authenticated request protocol.
 - [ ] Replace POSIX `SIGSTOP`/`SIGTERM` isolation with Windows Job Objects that
-      bind the registered process tree, enforce hard resource limits, and prevent
-      child escape from the owned job.
-- [ ] Implement canonical Windows drive-letter, case, separator, reparse-point,
+      bind the registered process tree, enforce hard memory and child-process
+      limits, and prevent child escape from the owned job.
+- [ ] Implement canonical Windows drive-letter, backslash, case, reparse-point,
       long-path, and UNC normalization without lexical prefix confusion.
 - [ ] Match process creation time, executable identity, and parent generation
       before a Job Object action; a numeric process ID alone is insufficient.
 
-### Linux Landlock and seccomp-bpf subsystem
+### Linux Landlock, eBPF, and seccomp-bpf subsystem
 
 - [ ] Add unprivileged filesystem restriction through the Linux Landlock LSM,
       with explicit kernel feature detection and fail-closed ruleset creation.
 - [ ] Add narrowly scoped seccomp-bpf filters for supported protected-launch
       profiles. Filters must complement rather than replace canonical path policy
       and registered process-tree ownership.
+- [ ] Evaluate eBPF for attributable, bounded telemetry where kernel support and
+      deployment privileges allow it. eBPF observations alone must not authorize
+      process isolation.
 - [ ] Retain authenticated Unix-domain socket IPC on Linux with private runtime
       permissions and clearly separate post-event watcher telemetry from
       pre-access Landlock enforcement evidence.
+
+### Enterprise fleet systems
+
+- [ ] Add an opt-in multi-seat aggregation console for redacted workstation
+      health, policy version, and incident metadata. Source files, daemon
+      capabilities, raw credential paths, and unrelated local activity must not
+      leave a workstation.
+- [ ] Distribute signed, versioned organization policies through a separate
+      synchronization plane. Local enforcement continues with the last verified
+      policy when the service is unreachable; expired or invalid mandatory policy
+      fails closed according to an explicit organization policy.
+- [ ] Add role-based administration, SSO/SAML identity, audit trails, device
+      enrollment, revocation, and bounded offline recovery without creating a
+      remote arbitrary-PID control channel.
+- [ ] Generate evidence-scoped compliance exports from retained telemetry and
+      policy history. Reports must state their collection window and gaps and
+      must not claim certification or controls that the evidence cannot prove.
 
 ### Phase 4 completion criteria
 
@@ -209,13 +270,79 @@ contracts used by macOS.
 - Unsupported Windows or Linux kernel features produce an explicit unavailable or
   degraded state; they never silently run an enforcing profile without the
   requested boundary.
+- Fleet outage, invalid policy, tenant isolation, authorization, enrollment,
+  revocation, and audit-export failure modes have deterministic tests.
 - Installation packages document required permissions, kernel or OS versions,
   update provenance, rollback, and removal.
 
+## Commercialization & Tiering Strategy (Open-Core Model)
+
+### Open Core with Buyer-Based Tiering
+
+Individual workstation containment remains 100% free, private, and unrestricted
+to build developer trust and bottom-up adoption. Krypton monetizes power-user
+recovery and explanation workflows, fleet visibility, team governance,
+enterprise identity, and compliance evidence—not stronger basic local
+containment. The core local policy and native runtime remain useful offline and
+must never require an account, subscription check, or cloud response to deny an
+unsafe operation.
+
+### Target commercial-state capability matrix
+
+This matrix describes intended entitlements after the corresponding roadmap
+phases ship; it is not a current availability matrix. In particular, Full macOS
+and Windows local containment means all three tiers receive the complete runtime
+once each platform is supported. Today macOS is the only actively supported and
+tested native runtime. The Phase 3 Windows Tauri app is initially a shell and
+simulation/demo experience; true Windows containment becomes available only with
+the Phase 4 Named Pipe and Job Object runtime.
+
+| Capability                              | Free (Community & Solo Dev) |  Pro (Power User / Consultant)  |       Enterprise (Teams & Orgs)        |
+| :-------------------------------------- | :-------------------------: | :-----------------------------: | :------------------------------------: |
+| **Local Runtime Containment**           |   Full (macOS & Windows)    |     Full (macOS & Windows)      |         Full (macOS & Windows)         |
+| **Desktop App & System Tray (Tauri)**   | Included (`.dmg` / `.msi`)  |   Included (`.dmg` / `.msi`)    |       Included (`.dmg` / `.msi`)       |
+| **Local Dashboard & Telemetry**         |  Included (`alerts.jsonl`)  |    Included (`alerts.jsonl`)    |       Included (`alerts.jsonl`)        |
+| **CLI Wrapper (`krypton exec`)**        |          Included           |            Included             |                Included                |
+| **Dynamic Threat Feeds**                |     Static local rules      |   Auto-synced real-time rules   |      Auto-synced real-time rules       |
+| **File Snapshot & 1-Click Rollback**    |        Not included         | Included (APFS / VSS snapshots) |    Included (APFS / VSS snapshots)     |
+| **AI Incident Explainer**               |      Raw process trees      |  Plain-English incident briefs  |     Plain-English incident briefs      |
+| **Centralized Fleet Dashboard**         |        Not included         |          Not included           |     Multi-seat aggregation console     |
+| **Mandatory Org-Wide Policies**         |        Not included         |          Not included           |        Admin-enforced lockdown         |
+| **EU AI Act & SOC 2 Compliance Export** |        Not included         |          Not included           | 1-Click PDF/CSV forensic audit reports |
+| **SSO / SAML (Okta, Azure AD) & RBAC**  |        Not included         |          Not included           |                Included                |
+
+### Commercial architecture guardrails
+
+- Dynamic threat-feed retrieval runs in a separate, authenticated updater. It
+  validates signatures and versions before atomically publishing local rules;
+  network availability never enters the core decision loop.
+- Snapshot and rollback operations require an explicit operator action, bounded
+  retention, available-disk checks, platform capability detection, and recovery
+  tests. APFS or VSS availability is never inferred from subscription state.
+- AI incident briefs must default to local processing or require explicit opt-in,
+  data minimization, redaction, tenant isolation, retention disclosure, and a
+  raw-evidence link. Generated prose is explanatory and not enforcement evidence.
+- Fleet telemetry is opt-in, minimized, authenticated, tenant-isolated, and
+  bounded. Enterprise administration can distribute policy but cannot remotely
+  bypass compound process identity or authorize arbitrary signaling.
+- Compliance exports are evidence packages, not automatic legal certification.
+  They must identify source, time range, policy version, missing intervals, and
+  whether each event is native or simulated.
+
+### Target pricing guidelines
+
+- **Free:** $0 for unlimited individual local containment.
+- **Pro:** approximately $10–$15 per user per month.
+- **Enterprise:** approximately $25–$40 per seat per month.
+
+Pricing is directional planning guidance, not a published offer or billing
+contract. Final packaging depends on implementation cost, platform availability,
+support obligations, and validated buyer demand.
+
 ## Release governance and deferred research
 
-The following work remains important but does not redefine the four release
-phases above:
+The following work remains important but does not redefine the release phases or
+commercial entitlements above:
 
 - [ ] Enable GitHub rulesets, required CODEOWNERS approval, signed commits,
       secret scanning, push protection, and protected release environments.
@@ -224,6 +351,5 @@ phases above:
 - [ ] Add telemetry integrity authentication, optional encrypted local storage,
       real-socket load tests, and browser profiling.
 - [ ] Investigate privacy-preserving clipboard protections, MCP or STDIO host
-      mediation, AI-scaffolded transient execution profiles, and guided IDE
-      integrations as separately threat-modeled research. None is a current
-      protection guarantee.
+      mediation, and AI-scaffolded transient execution profiles as separately
+      threat-modeled research. None is a current protection guarantee.

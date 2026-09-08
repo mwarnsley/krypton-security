@@ -51,6 +51,19 @@ describe('ExplainerDrawer', () => {
     expect(screen.getAllByRole('listitem', { name: /Krypton roadmap phase/ })).toHaveLength(4);
   });
 
+  it('distinguishes the Phase 3 Windows demo from Phase 4 native containment', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
+
+    expect(screen.getByRole('listitem', { name: 'Krypton roadmap phase 3' }).textContent).toContain(
+      'Windows shell and simulation only until Phase 4'
+    );
+    expect(screen.getByRole('listitem', { name: 'Krypton roadmap phase 4' }).textContent).toContain(
+      'activates Windows native containment'
+    );
+  });
+
   it('moves to the next tab with the right arrow key', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

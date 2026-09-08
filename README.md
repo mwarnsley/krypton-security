@@ -392,10 +392,10 @@ universal pre-access prevention.
 
 macOS is the actively supported and tested native runtime. Linux native control
 currently remains experimental. Windows supports dashboard-only demonstration
-mode, not native isolation. The v2.0 roadmap targets Windows Named Pipes and Job
-Objects plus Linux Landlock and seccomp-bpf adapters; none of those future
-controls are available today. The simulated dashboard experience is available
-across supported web environments with `npm run dev:dashboard`.
+mode, not native isolation. Phase 3 plans a Windows Tauri shell with simulation
+and demo behavior only; true Windows containment requires the Phase 4 Named Pipe
+and Job Object runtime. Linux Landlock and seccomp-bpf adapters are also planned
+for Phase 4. None of those future controls are available today.
 
 </details>
 
@@ -447,13 +447,26 @@ enforcement boundary.
    planned `krypton exec -- <command>` protected launching and capability-aware
    Safe Auto-Pilot host integrations. These commands and approval/network
    controls are not implemented today.
-3. **Phase 3 — Interactive Dashboard Rule Creator & Granular Exceptions
-   (v1.2):** planned validated `.kryptonrc` and session-only path exceptions,
-   plus evidence-labeled agent runtime tagging. Inferred tags will not authorize
-   isolation or rule changes.
-4. **Phase 4 — Cross-Platform Native Containment (v2.0):** planned Windows Named
-   Pipes and Job Objects plus Linux Landlock and seccomp-bpf adapters, all behind
-   the existing compound identity and fail-closed contracts.
+3. **Phase 3 — Native Desktop Application & Developer Convenience
+   (v1.2–v1.3):** planned Tauri packaging for macOS and Windows, system-tray
+   status, native notifications, validated `.kryptonrc` and session exceptions,
+   and evidence-labeled agent tagging. The initial Windows application is a
+   shell and simulation/demo experience, not native containment.
+4. **Phase 4 — Enterprise Cross-Platform Containment & Fleet Systems (v2.0):**
+   planned Windows Named Pipes and Job Objects, Linux Landlock and seccomp-bpf
+   adapters, and opt-in enterprise fleet governance. Only this phase activates
+   true Windows native containment.
+
+### Commercial direction (target state)
+
+Krypton's open-core plan keeps unlimited individual workstation containment
+free, private, and unrestricted. Planned paid tiers monetize power-user
+recovery and incident explanation or enterprise fleet visibility, organization
+policy, identity, and compliance evidence. The target entitlement matrix and
+directional pricing—Free at $0, Pro at approximately $10–$15 per user per month,
+and Enterprise at approximately $25–$40 per seat per month—are documented in
+[ROADMAP.md](ROADMAP.md). They are planning guidance, not current product
+availability or a published commercial offer.
 
 ## Documentation
 

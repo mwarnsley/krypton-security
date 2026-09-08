@@ -144,14 +144,14 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
     status: 'Planned',
     summary:
-      'Add validated permanent and session path exceptions plus evidence-labeled agent runtime attribution in the dashboard.',
-    title: 'Phase 3 · Interactive Rules & Granular Exceptions (v1.2)',
+      'Package the dashboard in a lightweight Tauri app with tray controls, native alerts, validated path exceptions, and agent tags. Windows shell and simulation only until Phase 4.',
+    title: 'Phase 3 · Native Desktop App & Developer Convenience (v1.2–v1.3)',
   },
   {
     status: 'Planned',
     summary:
-      'Build Windows Named Pipe and Job Object containment, then Linux Landlock and seccomp-bpf adapters, without weakening the registered-process boundary.',
-    title: 'Phase 4 · Cross-Platform Native Containment (v2.0)',
+      'Phase 4 activates Windows native containment through Named Pipes and Job Objects; Linux Landlock, seccomp-bpf, and enterprise fleet systems follow the same fail-closed boundary.',
+    title: 'Phase 4 · Enterprise Cross-Platform Containment & Fleet Systems (v2.0)',
   },
 ];
 
@@ -195,7 +195,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'macOS is the actively supported and tested native runtime. Linux native control currently remains experimental. Windows supports dashboard-only demonstration mode, not native isolation. The v2.0 roadmap targets Windows Named Pipes and Job Objects plus Linux Landlock and seccomp-bpf adapters; none of those future controls are available today. The simulated dashboard experience is available across supported web environments with npm run dev:dashboard.',
+      'macOS is the actively supported and tested native runtime. Linux native control currently remains experimental. Windows supports dashboard-only demonstration mode, not native isolation. Phase 3 plans a Windows Tauri shell with simulation and demo behavior only; true Windows containment requires the Phase 4 Named Pipe and Job Object runtime. Linux Landlock and seccomp-bpf adapters are also planned for Phase 4. None of those future controls are available today.',
     question: 'Which operating systems are currently supported?',
   },
   {
@@ -488,6 +488,15 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       </li>
                     ))}
                   </ol>
+                  <div className="mt-4 border-t border-krypton-border-muted pt-krypton-space-4">
+                    <h3 className="text-sm font-bold text-krypton-fg-primary">Open-core target</h3>
+                    <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                      Individual workstation containment remains free and private. Planned paid
+                      tiers add power-user recovery and explanation tools or enterprise fleet,
+                      governance, identity, and compliance capabilities—not stronger basic local
+                      containment.
+                    </p>
+                  </div>
                 </aside>
               </section>
             ) : null}
@@ -523,8 +532,9 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
                     macOS is the actively supported native runtime. Linux native mode is
                     experimental. Windows uses dashboard-only demonstration mode. Every platform can
-                    explore simulated telemetry with <code>npm run dev:dashboard</code>. Native
-                    Windows and hardened Linux containment remain planned for v2.0.
+                    explore simulated telemetry with <code>npm run dev:dashboard</code>. The planned
+                    Phase 3 Windows Tauri app remains a shell and simulation experience until Phase
+                    4 delivers native Named Pipe and Job Object containment.
                   </p>
                 </aside>
 

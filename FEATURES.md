@@ -80,6 +80,21 @@ in `ROADMAP.md`.
 - Packages tracked files only, runs release preflight before archive generation,
   and rejects forbidden or traversal-capable ZIP entries before distribution.
 
+## Planned-direction boundary
+
+The versioned plans in `ROADMAP.md` do not change this implemented-feature
+ledger. In particular:
+
+- No Tauri desktop application, installer, tray integration, paid tier, dynamic
+  threat feed, snapshot rollback, AI incident explainer, or fleet control plane
+  is implemented today.
+- A planned Phase 3 Windows Tauri application initially provides only the desktop
+  shell and explicitly simulated demonstration data. True Windows native
+  containment requires the Phase 4 Named Pipe and Job Object runtime.
+- The target open-core matrix keeps individual local containment equally
+  available across Free, Pro, and Enterprise after each supported platform ships;
+  commercial entitlements must not weaken or remotely gate the local policy loop.
+
 ## How to verify
 
 ```sh
