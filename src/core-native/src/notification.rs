@@ -1,14 +1,19 @@
 use crate::process_identity::ProcessIdentity;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
+#[cfg(any(target_os = "macos", test))]
+use std::{io, time::Duration};
 #[cfg(target_os = "macos")]
-use std::{io, process::Command};
+use std::{
+    process::{Command, Stdio},
+    time::Instant,
+};
 
 const NOTIFICATION_QUEUE_CAPACITY: usize = 32;
 const NOTIFICATION_TITLE: &str = "Krypton quarantine confirmed";
-const AGENT_NAME_MAX_CHARS: usize = 48;
 
 #[cfg(target_os = "macos")]
 const MACOS_NOTIFICATION_SCRIPT: &str = r#"on run argv
@@ -22,30 +27,44 @@ pub struct DesktopNotification {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
 pub enum NotificationFailure {
-    DeliveryFailed,
+    DeliveryFailed = 1,
     PermissionDenied,
     QueueFull,
     QueueUnavailable,
     Unavailable,
+    TimedOut,
 }
 
-impl NotificationFailure {
-    fn code(self) -> &'static str {
-        match self {
-            Self::DeliveryFailed => "delivery_failed",
-            Self::PermissionDenied => "permission_denied",
-            Self::QueueFull => "queue_full",
-            Self::QueueUnavailable => "queue_unavailable",
-            Self::Unavailable => "unavailable",
-        }
-    }
-}
-
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NotificationHealth {
     Ready,
     Degraded(NotificationFailure),
+}
+
+/// Atomic status updates never wait on locks or stderr from an IPC caller.
+#[derive(Default)]
+pub struct NotificationStatus(AtomicU8);
+
+impl NotificationStatus {
+    fn degraded(&self, failure: NotificationFailure) {
+        self.0.store(failure as u8, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    fn read(&self) -> NotificationHealth {
+        match self.0.load(Ordering::Relaxed) {
+            0 => NotificationHealth::Ready,
+            1 => NotificationHealth::Degraded(NotificationFailure::DeliveryFailed),
+            2 => NotificationHealth::Degraded(NotificationFailure::PermissionDenied),
+            3 => NotificationHealth::Degraded(NotificationFailure::QueueFull),
+            4 => NotificationHealth::Degraded(NotificationFailure::QueueUnavailable),
+            5 => NotificationHealth::Degraded(NotificationFailure::Unavailable),
+            _ => NotificationHealth::Degraded(NotificationFailure::TimedOut),
+        }
+    }
 }
 
 pub trait NotificationDelivery: Send + Sync + 'static {
@@ -59,7 +78,7 @@ pub trait QuarantineNotifier: Send + Sync {
 #[derive(Clone)]
 pub struct NotificationDispatcher {
     sender: SyncSender<DesktopNotification>,
-    health: Arc<RwLock<NotificationHealth>>,
+    health: Arc<NotificationStatus>,
 }
 
 impl QuarantineNotifier for NotificationDispatcher {
@@ -68,10 +87,10 @@ impl QuarantineNotifier for NotificationDispatcher {
         match self.sender.try_send(notification) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => {
-                mark_degraded(&self.health, NotificationFailure::QueueFull);
+                self.health.degraded(NotificationFailure::QueueFull);
             }
             Err(TrySendError::Disconnected(_)) => {
-                mark_degraded(&self.health, NotificationFailure::QueueUnavailable);
+                self.health.degraded(NotificationFailure::QueueUnavailable);
             }
         }
     }
@@ -90,65 +109,43 @@ impl DesktopNotification {
     }
 }
 
-fn sanitized_agent_name(process: &ProcessIdentity) -> String {
+fn sanitized_agent_name(process: &ProcessIdentity) -> &'static str {
     let candidate = process
         .executable_path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("unknown-agent");
-    let sanitized = candidate
-        .chars()
-        .take(AGENT_NAME_MAX_CHARS)
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    if sanitized
-        .chars()
-        .any(|character| character.is_ascii_alphanumeric())
-    {
-        sanitized
-    } else {
-        "unknown-agent".to_owned()
+    // These are display hints, never executable authenticity or signal authority.
+    match candidate {
+        "claude" => "Claude Code",
+        "codex" => "Codex CLI",
+        "cursor" | "Cursor" => "Cursor",
+        "aider" => "Aider",
+        _ => "Unknown Agent Process",
     }
-}
-
-fn mark_degraded(health: &RwLock<NotificationHealth>, failure: NotificationFailure) {
-    if let Ok(mut current) = health.write() {
-        *current = NotificationHealth::Degraded(failure);
-    }
-    eprintln!(
-        "[NOTIFICATION DEGRADED] desktop alert unavailable: {}",
-        failure.code()
-    );
 }
 
 pub fn start_notification_dispatcher<D>(
     delivery: D,
 ) -> (
     NotificationDispatcher,
-    Arc<RwLock<NotificationHealth>>,
+    Arc<NotificationStatus>,
     JoinHandle<()>,
 )
 where
     D: NotificationDelivery,
 {
     let (sender, receiver) = sync_channel(NOTIFICATION_QUEUE_CAPACITY);
-    let health = Arc::new(RwLock::new(NotificationHealth::Ready));
+    let health = Arc::new(NotificationStatus::default());
     let worker_health = Arc::clone(&health);
     let worker = thread::spawn(move || {
         for notification in receiver {
             match delivery.deliver(&notification) {
                 Ok(()) => {
-                    if let Ok(mut current) = worker_health.write() {
-                        *current = NotificationHealth::Ready;
-                    }
+                    // Keep failures sticky so queue saturation is not hidden by
+                    // an older successful delivery racing with the caller.
                 }
-                Err(failure) => mark_degraded(&worker_health, failure),
+                Err(failure) => worker_health.degraded(failure),
             }
         }
     });
@@ -169,31 +166,76 @@ impl NotificationDelivery for MacOsNotificationDelivery {
     fn deliver(&self, notification: &DesktopNotification) -> Result<(), NotificationFailure> {
         #[cfg(target_os = "macos")]
         {
-            let output = Command::new("/usr/bin/osascript")
+            let mut child = Command::new("/usr/bin/osascript")
                 .arg("-e")
                 .arg(MACOS_NOTIFICATION_SCRIPT)
                 .arg(&notification.title)
                 .arg(&notification.body)
-                .output()
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
                 .map_err(classify_spawn_error)?;
-            if output.status.success() {
-                return Ok(());
-            }
-            let diagnostic = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
-            if diagnostic.contains("not authorized")
-                || diagnostic.contains("permission")
-                || diagnostic.contains("-1743")
-            {
-                Err(NotificationFailure::PermissionDenied)
-            } else {
-                Err(NotificationFailure::DeliveryFailed)
-            }
+            let started = Instant::now();
+            wait_for_delivery(&mut child, || started.elapsed(), thread::sleep)
         }
         #[cfg(not(target_os = "macos"))]
         {
             let _ = notification;
             Err(NotificationFailure::Unavailable)
         }
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+trait DeliveryProcess {
+    fn poll(&mut self) -> io::Result<Option<bool>>;
+    fn kill_and_reap(&mut self) -> io::Result<()>;
+}
+
+#[cfg(target_os = "macos")]
+impl DeliveryProcess for std::process::Child {
+    fn poll(&mut self) -> io::Result<Option<bool>> {
+        self.try_wait().map(|status| status.map(|s| s.success()))
+    }
+    fn kill_and_reap(&mut self) -> io::Result<()> {
+        // wait() is still required if kill races with natural process exit.
+        if let Err(error) = self.kill() {
+            return match self.try_wait()? {
+                Some(_) => Ok(()),
+                None => Err(error),
+            };
+        }
+        self.wait().map(|_| ())
+    }
+}
+
+/// Polls only on the delivery worker; no pipes can fill or retain untrusted output.
+#[cfg(any(target_os = "macos", test))]
+fn wait_for_delivery(
+    process: &mut impl DeliveryProcess,
+    mut elapsed: impl FnMut() -> Duration,
+    mut pause: impl FnMut(Duration),
+) -> Result<(), NotificationFailure> {
+    let deadline = Duration::from_secs(2);
+    loop {
+        match process.poll() {
+            Ok(Some(true)) => return Ok(()),
+            Ok(Some(false)) => return Err(NotificationFailure::DeliveryFailed),
+            Err(_) => {
+                let _ = process.kill_and_reap();
+                return Err(NotificationFailure::DeliveryFailed);
+            }
+            Ok(None) => {}
+        }
+        let remaining = deadline.saturating_sub(elapsed());
+        if remaining.is_zero() {
+            process
+                .kill_and_reap()
+                .map_err(|_| NotificationFailure::DeliveryFailed)?;
+            return Err(NotificationFailure::TimedOut);
+        }
+        pause(remaining.min(Duration::from_millis(20)));
     }
 }
 
@@ -217,6 +259,104 @@ mod tests {
     use crate::process_identity::ProcessIdentity;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+
+    struct FakeProcess {
+        state: std::io::Result<Option<bool>>,
+        cleaned: bool,
+    }
+
+    impl super::DeliveryProcess for FakeProcess {
+        fn poll(&mut self) -> std::io::Result<Option<bool>> {
+            match &self.state {
+                Ok(status) => Ok(*status),
+                Err(_) => Err(std::io::Error::other("poll failed")),
+            }
+        }
+        fn kill_and_reap(&mut self) -> std::io::Result<()> {
+            self.cleaned = true;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn delivery_deadline_kills_and_reaps_without_real_time_or_signals() {
+        use std::{cell::Cell, time::Duration};
+        let now = Cell::new(Duration::ZERO);
+        let mut child = FakeProcess {
+            state: Ok(None),
+            cleaned: false,
+        };
+        let result =
+            super::wait_for_delivery(&mut child, || now.get(), |delay| now.set(now.get() + delay));
+        assert_eq!(result, Err(NotificationFailure::TimedOut));
+        assert!(child.cleaned);
+        assert_eq!(now.get(), Duration::from_secs(2));
+    }
+
+    #[test]
+    fn successful_delivery_does_not_kill_completed_process() {
+        let mut child = FakeProcess {
+            state: Ok(Some(true)),
+            cleaned: false,
+        };
+        let result = super::wait_for_delivery(
+            &mut child,
+            || panic!("clock unnecessary"),
+            |_| panic!("no sleep"),
+        );
+        assert_eq!(result, Ok(()));
+        assert!(!child.cleaned);
+    }
+
+    #[test]
+    fn poll_failure_cleans_up_and_degrades() {
+        let mut child = FakeProcess {
+            state: Err(std::io::Error::other("poll failed")),
+            cleaned: false,
+        };
+        let result =
+            super::wait_for_delivery(&mut child, || panic!("no clock"), |_| panic!("no sleep"));
+        assert_eq!(result, Err(NotificationFailure::DeliveryFailed));
+        assert!(child.cleaned);
+    }
+
+    #[test]
+    fn full_or_disconnected_queue_reports_atomic_degradation() {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let health = Arc::new(super::NotificationStatus::default());
+        let notifier = super::NotificationDispatcher {
+            sender,
+            health: Arc::clone(&health),
+        };
+        notifier.notify_confirmed_quarantine(&identity());
+        notifier.notify_confirmed_quarantine(&identity());
+        assert_eq!(
+            health.read(),
+            NotificationHealth::Degraded(NotificationFailure::QueueFull)
+        );
+        drop(receiver);
+        notifier.notify_confirmed_quarantine(&identity());
+        assert_eq!(
+            health.read(),
+            NotificationHealth::Degraded(NotificationFailure::QueueUnavailable)
+        );
+    }
+
+    #[test]
+    fn trusted_agent_labels_never_echo_unknown_metadata() {
+        for (name, label) in [
+            ("claude", "Claude Code"),
+            ("codex", "Codex CLI"),
+            ("Cursor", "Cursor"),
+            ("aider", "Aider"),
+            ("claude-private-key", "Unknown Agent Process"),
+            ("password\nsecret", "Unknown Agent Process"),
+        ] {
+            let mut process = identity();
+            process.executable_path = PathBuf::from("/tmp").join(name);
+            assert_eq!(super::sanitized_agent_name(&process), label);
+        }
+    }
 
     struct RecordingDelivery {
         notifications: Arc<Mutex<Vec<DesktopNotification>>>,
@@ -254,7 +394,7 @@ mod tests {
         notifier.notify_confirmed_quarantine(&identity());
         drop(notifier);
         worker.join().expect("notification worker");
-        let health = *health.read().expect("notification health");
+        let health = health.read();
         let notifications = notifications.lock().expect("notification records").clone();
         (health, notifications)
     }
@@ -267,7 +407,7 @@ mod tests {
         assert_eq!(notifications.len(), 1);
         assert_eq!(
             notifications[0].body,
-            "claude (PID 4242) was quarantined. Open AegisAgent for details."
+            "Claude Code (PID 4242) was quarantined. Open AegisAgent for details."
         );
     }
 
@@ -288,6 +428,16 @@ mod tests {
         assert_eq!(
             health,
             NotificationHealth::Degraded(NotificationFailure::Unavailable)
+        );
+    }
+
+    #[test]
+    fn confidential_basename_never_reaches_banner() {
+        let mut process = identity();
+        process.executable_path = "/tmp/customer-secret-acquisition.exe".into();
+        assert_eq!(
+            DesktopNotification::for_confirmed_quarantine(&process).body,
+            "Unknown Agent Process (PID 4242) was quarantined. Open AegisAgent for details."
         );
     }
 }

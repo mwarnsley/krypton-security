@@ -6,7 +6,7 @@ use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{sync_channel, Receiver};
@@ -254,15 +254,7 @@ fn generate_capability() -> Result<String, io::Error> {
 }
 
 fn write_private_file(path: &Path, contents: &[u8]) -> Result<(), io::Error> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(contents)?;
-    file.sync_all()?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+    crate::telemetry::write_private_atomic(path, |file| file.write_all(contents))
 }
 
 fn peer_is_current_user(stream: &UnixStream) -> bool {
@@ -407,6 +399,50 @@ pub fn start_ipc(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn private_runtime_publication_rejects_symlink_temporary() {
+        use std::fs;
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("krypton-ipc-atomic-{suffix}"));
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("capability");
+        let target = directory.join("unrelated");
+        let temporary = directory.join("capability.tmp");
+        fs::write(&target, b"untouched").unwrap();
+        std::os::unix::fs::symlink(&target, &temporary).unwrap();
+        let result = super::write_private_file(&path, b"fake-test-capability");
+        let preserved = fs::read(&target).unwrap();
+        fs::remove_file(temporary).unwrap();
+        fs::remove_file(target).unwrap();
+        fs::remove_dir(directory).unwrap();
+        assert!(result.is_err());
+        assert_eq!(preserved, b"untouched");
+    }
+
+    #[test]
+    fn private_runtime_publication_replaces_permissive_file_privately() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("krypton-ipc-private-{suffix}"));
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("daemon.json");
+        fs::write(&path, b"old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        super::write_private_file(&path, b"new").unwrap();
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let bytes = fs::read(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(directory).unwrap();
+        assert_eq!(mode, 0o600);
+        assert_eq!(bytes, b"new");
+    }
+
     use super::{
         handle_request, handle_request_with_terminator, ControlState, EnforcementMode,
         NativeControlCommand, NativeControlRequest, PROTOCOL_VERSION,
