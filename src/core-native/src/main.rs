@@ -1,5 +1,6 @@
 mod config;
 mod ipc;
+mod notification;
 mod path_policy;
 mod process_identity;
 mod process_registry;
@@ -13,6 +14,7 @@ compile_error!(
 
 use config::{load_runtime_config, resolve_repository_root, CONFIG_FILE_NAME};
 use ipc::{start_ipc, ControlState, EnforcementMode};
+use notification::{start_notification_dispatcher, MacOsNotificationDelivery};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use path_policy::{is_ignored_path, resolve_path};
 use process_identity::SystemProcessInspector;
@@ -66,11 +68,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.telemetry_max_bytes,
     )?);
     let (telemetry_sender, _telemetry_worker) = start_writer(Arc::clone(&ledger));
+    let (notification_dispatcher, _notification_health, _notification_worker) =
+        start_notification_dispatcher(MacOsNotificationDelivery);
     let control_state = Arc::new(ControlState {
         registry: Arc::new(ProcessRegistry::default()),
         mode: Arc::new(RwLock::new(EnforcementMode::default())),
         ledger_health: ledger.health(),
         inspector: Arc::new(SystemProcessInspector),
+        notifier: Arc::new(notification_dispatcher),
     });
     let ipc = start_ipc(&config.runtime_root(&repository_root), control_state)?;
     let ignored_components = config.ignored_components();

@@ -51,6 +51,26 @@ describe('ExplainerDrawer', () => {
     expect(screen.getAllByRole('listitem', { name: /Krypton roadmap phase/ })).toHaveLength(4);
   });
 
+  it('marks Phase 1 complete with OS-level quarantine alerts implemented', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
+
+    const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 1' });
+
+    expect(phase.textContent).toContain('Completed');
+    expect(phase.textContent).toContain('redacted OS-level alerts');
+  });
+
+  it('describes the authenticated OS-level quarantine alert boundary', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
+
+    expect(screen.getByRole('heading', { name: 'OS-Level Quarantine Alerts' })).toBeTruthy();
+    expect(screen.getByText(/only after authenticated quarantine/)).toBeTruthy();
+  });
+
   it('distinguishes the Phase 3 Windows demo from Phase 4 native containment', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

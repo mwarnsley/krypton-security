@@ -84,6 +84,21 @@ API page size (250), ledger read window (1 MiB), and client rows (500) are
 bounded. Saturation may drop telemetry or delay clients; it must not expand
 memory without limit.
 
+## Desktop notification boundary
+
+The macOS desktop alert is a downstream convenience signal, not process-control
+authority or additional quarantine evidence. Only a successfully authenticated
+`IsolateProcess` request that revalidates an owned process identity and confirms
+`SIGKILL` can enqueue an alert; portable watcher events cannot do so. A bounded
+background worker invokes `/usr/bin/osascript` with a constant script and passes
+only a sanitized executable basename and PID as arguments, so raw event paths
+and credential details are excluded from the banner.
+
+Notification permission denial, a missing desktop session, an unavailable
+delivery command, queue saturation, and process-launch errors degrade only this
+convenience channel. They are logged categorically without sensitive values and
+cannot block, reverse, or weaken the completed quarantine.
+
 ## Demonstration data
 
 Mock scenarios are deterministic and bounded. Responses set `source: "mock"`

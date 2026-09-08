@@ -30,6 +30,8 @@ permission adapters remain future work.
 - Exposes clearly labeled native and demonstration states in a Next.js dashboard.
 - Allows isolation only for a process identity previously registered by Krypton
   and revalidated against live operating-system state.
+- Queues a redacted macOS Notification Center alert after a confirmed native
+  quarantine without blocking the enforcement request.
 
 ## What Krypton does not do
 
@@ -52,7 +54,7 @@ integrate with its policy or protected launcher.
 
 - macOS: Native Daemon Mode is actively supported and tested. It provides
   Unix-domain socket control, live process identity validation, and Unix signal
-  isolation.
+  isolation, plus redacted OS-level alerts for confirmed quarantines.
 - Linux: native support is planned and currently experimental. The native daemon
   may build on compatible distributions, but it is not part of the actively
   supported and tested rollout yet.
@@ -68,7 +70,8 @@ integrate with its policy or protected launcher.
       ▼
 [Rust daemon process registry] ◄──── authenticated Unix socket ──── [Next API]
       │ exact-generation revalidation                                 │
-      └─ isolate only registered identity                             ▼
+      ├─ isolate only registered identity                             ▼
+      └─ confirmed SIGKILL → bounded alert queue → macOS Notification Center
                                                                [Dashboard]
 
 [OS filesystem notifications]
@@ -114,7 +117,12 @@ npm run dev:full
 ```
 
 `dev:full` starts both the Rust daemon and Next.js dashboard. Open
-`http://localhost:3000`.
+`http://localhost:3000`. After a confirmed native quarantine, the daemon queues
+a macOS Notification Center banner outside the browser. The banner identifies
+only the sanitized agent executable name and PID; it never includes an event
+path or credential detail. macOS may suppress delivery when notifications are
+denied or no interactive desktop session is available, but that does not alter
+the quarantine result.
 
 Linux native support is planned and currently experimental; it is not yet part
 of the actively supported and tested Native Daemon Mode rollout. Windows must
@@ -143,7 +151,9 @@ interception.
    that instructs a mock agent to scrape `../.ssh/id_rsa`. Krypton intercepts
    and blocks the out-of-bounds read before the mock agent can access the key,
    quarantines the disposable mock process, and confirms that the event was
-   recorded in the telemetry ledger.
+   recorded in the telemetry ledger. In an interactive macOS session where
+   notifications are permitted, Krypton also queues an OS-level quarantine
+   banner.
 4. Return to the dashboard. The Next.js UI instantly streams the new
    **CRITICAL** alert row into its live ledger, giving you visible confirmation
    that the complete path from attack detection and blocking through telemetry
@@ -260,6 +270,9 @@ events are native evidence.
 - Escaping symlinks, parent traversal, and sibling-prefix confusion fail closed.
 - Portable watcher events never increment a process counter or quarantine a
   process because `notify` provides no reliable actor PID.
+- Desktop alerts are downstream, non-authoritative effects emitted only after
+  authenticated isolation of a revalidated owned child succeeds. They contain
+  no path or secret data, and delivery failure cannot reverse enforcement.
 - Pre-action denial applies only when an application explicitly asks Krypton's
   policy layer before performing an action. The portable filesystem watcher does
   not block arbitrary OS access before it occurs; OS-specific permission and
@@ -311,6 +324,11 @@ growth for 100, 1,000, and 10,000 deterministic events.
   to a running daemon.
 - **Daemon endpoint missing:** start `npm run dev:daemon` and confirm
   `.krypton/runtime/daemon.json` is created with private permissions.
+- **macOS quarantine banner missing:** confirm the daemon is running in an
+  interactive macOS desktop session and review Notification settings for the
+  process hosting `/usr/bin/osascript`. Headless sessions and denied
+  notifications can suppress the banner; inspect daemon diagnostics and the
+  native telemetry ledger for the authoritative quarantine result.
 - **Mock mode versus degraded native mode:** `source: "mock"` with an unreachable
   daemon is demonstration mode. If the daemon is reachable, inspect
   `fallbackReason`; an invalid or unavailable native ledger is a degraded native
@@ -457,9 +475,8 @@ enforcement boundary.
 
 1. **Phase 1 — Native macOS Hardening & Public Launch (v1.0):** the native
    daemon, `.krypton/runtime/daemon.sock` IPC, bounded local telemetry dashboard,
-   offline policy loop, and GitHub Pages demonstration are implemented. Native
-   macOS desktop notifications for confirmed quarantine events remain the final
-   public-launch milestone.
+   offline policy loop, GitHub Pages demonstration, and redacted OS-level macOS
+   quarantine alerts are implemented. Phase 1 is complete and launch-ready.
 2. **Phase 2 — Transparent Developer Experience & Zero-Config CLI (v1.1):**
    planned `krypton exec -- <command>` protected launching and capability-aware
    Safe Auto-Pilot host integrations, plus standalone Homebrew and verified
@@ -469,10 +486,10 @@ enforcement boundary.
    available installation paths today.
 3. **Phase 3 — Native Desktop Application & Developer Convenience
    (v1.2–v1.3):** planned Tauri packaging for macOS and Windows, system-tray
-   status, native notifications, validated `.kryptonrc` and session exceptions,
-   evidence-labeled agent tagging, and a sanitized **Export Incident Brief / Share
-   Kill-Cam** action. The initial Windows application is a shell and
-   simulation/demo experience, not native containment.
+   status, richer application-owned notifications, validated `.kryptonrc` and
+   session exceptions, evidence-labeled agent tagging, and a sanitized **Export
+   Incident Brief / Share Kill-Cam** action. The initial Windows application is
+   a shell and simulation/demo experience, not native containment.
 4. **Phase 4 — Enterprise Cross-Platform Containment & Fleet Systems (v2.0):**
    planned Windows Named Pipes and Job Objects, Linux Landlock and seccomp-bpf
    adapters, and opt-in enterprise fleet governance. Only this phase activates

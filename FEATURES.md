@@ -24,6 +24,12 @@ in `ROADMAP.md`.
   executable path, and parent PID.
 - Re-inspects a live process before isolation and rejects PID reuse, stale
   generations, unregistered identities, and daemon self-targeting.
+- Dispatches an OS-level macOS Notification Center alert outside the browser
+  only after an authenticated isolation request revalidates an owned child and
+  confirms `SIGKILL` delivery. A bounded background worker invokes
+  `/usr/bin/osascript`; the banner includes only the sanitized agent executable
+  name and PID, while delivery denial, headless execution, and unavailable
+  notification services degrade without changing the quarantine result.
 
 ## Capability 3: AegisAgent Dashboard Command Center
 
@@ -87,7 +93,8 @@ ledger. In particular:
 
 - No Tauri desktop application, installer, tray integration, paid tier, dynamic
   threat feed, snapshot rollback, AI incident explainer, or fleet control plane
-  is implemented today.
+  is implemented today. The implemented headless macOS notification adapter is
+  daemon infrastructure, not a Tauri application or tray integration.
 - Homebrew tap installation, the `get.krypton.dev` shell installer, and the
   sub-30-second time-to-first-containment objective are planned immediate Phase 2
   distribution work; those installation commands are not available today.

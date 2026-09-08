@@ -1,3 +1,4 @@
+use crate::notification::QuarantineNotifier;
 use crate::process_identity::{ProcessIdentity, ProcessInspector};
 use crate::process_registry::{terminate_process, ProcessRegistry, RegistryError};
 use crate::telemetry::LedgerHealth;
@@ -92,6 +93,7 @@ pub struct ControlState {
     pub mode: Arc<RwLock<EnforcementMode>>,
     pub ledger_health: Arc<RwLock<LedgerHealth>>,
     pub inspector: Arc<dyn ProcessInspector>,
+    pub notifier: Arc<dyn QuarantineNotifier>,
 }
 
 pub struct IpcRuntime {
@@ -141,6 +143,18 @@ pub fn handle_request(
     expected_capability: &str,
     state: &ControlState,
 ) -> NativeControlResponse {
+    handle_request_with_terminator(request, expected_capability, state, terminate_process)
+}
+
+fn handle_request_with_terminator<F>(
+    request: NativeControlRequest,
+    expected_capability: &str,
+    state: &ControlState,
+    terminate: F,
+) -> NativeControlResponse
+where
+    F: FnOnce(u32) -> Result<(), String>,
+{
     let request_id = request.request_id;
     if request.protocol_version != PROTOCOL_VERSION {
         return response(request_id, false, "unsupported_protocol_version");
@@ -218,9 +232,12 @@ pub fn handle_request(
             }
             match state
                 .registry
-                .isolate_with(&process, state.inspector.as_ref(), terminate_process)
+                .isolate_with(&process, state.inspector.as_ref(), terminate)
             {
-                Ok(()) => response(request_id, true, "process_isolated"),
+                Ok(()) => {
+                    state.notifier.notify_confirmed_quarantine(&process);
+                    response(request_id, true, "process_isolated")
+                }
                 Err(error) => response(request_id, false, registry_code(error)),
             }
         }
@@ -391,13 +408,15 @@ pub fn start_ipc(
 #[cfg(test)]
 mod tests {
     use super::{
-        handle_request, ControlState, EnforcementMode, NativeControlCommand, NativeControlRequest,
-        PROTOCOL_VERSION,
+        handle_request, handle_request_with_terminator, ControlState, EnforcementMode,
+        NativeControlCommand, NativeControlRequest, PROTOCOL_VERSION,
     };
+    use crate::notification::QuarantineNotifier;
     use crate::process_identity::{ProcessIdentity, ProcessIdentityError, ProcessInspector};
     use crate::process_registry::ProcessRegistry;
     use crate::telemetry::LedgerHealth;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, RwLock};
 
     struct MissingInspector;
@@ -407,12 +426,31 @@ mod tests {
         }
     }
 
+    struct MatchingInspector(ProcessIdentity);
+    impl ProcessInspector for MatchingInspector {
+        fn inspect(&self, _pid: u32) -> Result<ProcessIdentity, ProcessIdentityError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingNotifier {
+        notifications: AtomicUsize,
+    }
+
+    impl QuarantineNotifier for RecordingNotifier {
+        fn notify_confirmed_quarantine(&self, _process: &ProcessIdentity) {
+            self.notifications.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     fn state() -> ControlState {
         ControlState {
             registry: Arc::new(ProcessRegistry::default()),
             mode: Arc::new(RwLock::new(EnforcementMode::AuditOnly)),
             ledger_health: Arc::new(RwLock::new(LedgerHealth::Ready)),
             inspector: Arc::new(MissingInspector),
+            notifier: Arc::new(RecordingNotifier::default()),
         }
     }
 
@@ -423,6 +461,32 @@ mod tests {
             capability: capability.to_owned(),
             command,
         }
+    }
+
+    fn isolation_state() -> (ControlState, ProcessIdentity, Arc<RecordingNotifier>) {
+        let process = ProcessIdentity {
+            pid: 4242,
+            start_time: 10,
+            executable_path: PathBuf::from("/usr/local/bin/claude"),
+            parent_pid: Some(4000),
+        };
+        let inspector = Arc::new(MatchingInspector(process.clone()));
+        let registry = Arc::new(ProcessRegistry::default());
+        registry
+            .register(process.clone(), inspector.as_ref())
+            .expect("register process");
+        let notifier = Arc::new(RecordingNotifier::default());
+        (
+            ControlState {
+                registry,
+                mode: Arc::new(RwLock::new(EnforcementMode::ActiveEnforcement)),
+                ledger_health: Arc::new(RwLock::new(LedgerHealth::Ready)),
+                inspector,
+                notifier: notifier.clone(),
+            },
+            process,
+            notifier,
+        )
     }
 
     #[test]
@@ -491,5 +555,47 @@ mod tests {
             &state(),
         );
         assert_eq!(response.code, "process_inspection_failed");
+    }
+
+    #[test]
+    fn notifies_after_authenticated_confirmed_isolation() {
+        let (state, process, notifier) = isolation_state();
+        let response = handle_request_with_terminator(
+            request("secret", NativeControlCommand::IsolateProcess { process }),
+            "secret",
+            &state,
+            |_| Ok(()),
+        );
+
+        assert_eq!(response.code, "process_isolated");
+        assert_eq!(notifier.notifications.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn does_not_notify_an_unauthenticated_isolation_request() {
+        let (state, process, notifier) = isolation_state();
+        let response = handle_request_with_terminator(
+            request("wrong", NativeControlCommand::IsolateProcess { process }),
+            "secret",
+            &state,
+            |_| panic!("must not signal"),
+        );
+
+        assert_eq!(response.code, "unauthorized");
+        assert_eq!(notifier.notifications.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn does_not_notify_when_signal_delivery_fails() {
+        let (state, process, notifier) = isolation_state();
+        let response = handle_request_with_terminator(
+            request("secret", NativeControlCommand::IsolateProcess { process }),
+            "secret",
+            &state,
+            |_| Err("signal denied".to_owned()),
+        );
+
+        assert_eq!(response.code, "isolation_failed");
+        assert_eq!(notifier.notifications.load(Ordering::Relaxed), 0);
     }
 }

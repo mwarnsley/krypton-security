@@ -3,6 +3,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import {
   Activity,
+  Bell,
   BookOpen,
   Check,
   Copy,
@@ -122,6 +123,12 @@ const CORE_FEATURES: readonly GuideItem[] = [
   },
   {
     description:
+      'Queues a redacted macOS Notification Center banner outside the browser only after authenticated quarantine of a revalidated owned child succeeds.',
+    icon: Bell,
+    title: 'OS-Level Quarantine Alerts',
+  },
+  {
+    description:
       'On GitHub Pages, Simulate Threat Event adds an explicitly mock alert so visitors can explore the interface without a native daemon.',
     icon: Terminal,
     title: 'Interactive Demo Sandbox',
@@ -130,9 +137,9 @@ const CORE_FEATURES: readonly GuideItem[] = [
 
 const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
-    status: 'Current: core shipped; desktop alerts remain',
+    status: 'Completed',
     summary:
-      'Harden the supported macOS daemon, local telemetry dashboard, offline policy loop, and public simulation while adding native desktop quarantine notifications before the v1.0 launch closes.',
+      'The supported macOS daemon, local telemetry dashboard, offline policy loop, public simulation, and redacted OS-level alerts for confirmed native quarantines are implemented.',
     title: 'Phase 1 · Native macOS Hardening & Public Launch (v1.0)',
   },
   {
@@ -539,7 +546,9 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     experimental. Windows uses dashboard-only demonstration mode. Every platform can
                     explore simulated telemetry with <code>npm run dev:dashboard</code>. The planned
                     Phase 3 Windows Tauri app remains a shell and simulation experience until Phase
-                    4 delivers native Named Pipe and Job Object containment.
+                    4 delivers native Named Pipe and Job Object containment. On macOS, a confirmed
+                    native quarantine queues a redacted OS-level banner; denied notification
+                    permission or a headless session suppresses only the banner, not enforcement.
                   </p>
                 </aside>
 

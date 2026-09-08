@@ -44,7 +44,9 @@ adapter, and it does not imply that portable watcher events can identify an
 actor. Future Windows enforcement uses registered Job Object containment rather
 than POSIX signals and remains a Phase 4 capability.
 
-## Phase 1: Native macOS Hardening & Public Launch (Current Release / v1.0)
+## Phase 1: Native macOS Hardening & Public Launch (Completed / v1.0)
+
+**Status:** Implemented and launch-ready.
 
 **Release objective:** Complete the supported macOS launch around the existing
 native containment foundation and make native quarantine events visible outside
@@ -70,17 +72,16 @@ the browser.
       The interactive Explainer Drawer documents the product boundary and its
       limitations.
 
-### Remaining v1.0 public-launch milestone
+- [x] **Desktop OS Alert Integration:** A bounded background dispatcher invokes
+      `/usr/bin/osascript` for an OS-level macOS Notification Center alert only
+      after an authenticated `IsolateProcess` request revalidates an owned child
+      and confirms `SIGKILL` delivery. The alert contains only a sanitized agent
+      executable name and PID; paths and event details remain out of the banner.
+      Delivery failures and unavailable or headless sessions degrade the adapter
+      without blocking or reversing enforcement. Phase 3 can reuse this event
+      path inside the Tauri application.
 
-- [ ] **Desktop OS Alert Integration:** Deliver a headless native macOS
-      notification adapter for confirmed background quarantine events so a
-      developer receives an immediate workstation alert outside the browser.
-      Notifications must be emitted only after authenticated daemon evidence
-      confirms an owned child was quarantined, must follow the existing redaction
-      policy, and must not block watcher or enforcement threads. Phase 3 will
-      reuse this event path inside the Tauri application.
-
-### Phase 1 completion criteria
+### Phase 1 completion evidence
 
 - The notification adapter has deterministic unit coverage with operating-system
   delivery mocked and an explicit no-permission/degraded path.
@@ -236,9 +237,10 @@ non-technical users who need zero-terminal setup.
 - [ ] Add a system-tray or menu-bar shield that reports protection, audit-only,
       degraded, and unavailable states without obscuring whether a native runtime
       is connected.
-- [ ] Dispatch native macOS Notification Center and Windows Action Center alerts.
-      macOS alerts may represent confirmed native quarantine evidence. Until
-      Phase 4 ships, Windows alerts and telemetry in the Tauri shell must remain
+- [ ] Integrate the Phase 1 native macOS quarantine-alert event path into the
+      Tauri application and add Windows Action Center simulation alerts. macOS
+      alerts may represent confirmed native quarantine evidence. Until Phase 4
+      ships, Windows alerts and telemetry in the Tauri shell must remain
       explicitly simulation/demo data and must never claim native containment.
 
 ### Phase 3 Windows boundary
