@@ -143,9 +143,9 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
     title: 'Phase 1 · Native macOS Hardening & Public Launch (v1.0)',
   },
   {
-    status: 'Planned',
+    status: 'In progress',
     summary:
-      'Introduce krypton exec, bounded Safe Auto-Pilot host adapters, and standalone Homebrew or verified shell installation with a sub-30-second time-to-first-containment target. A separate vulnerable-agent playground is also planned; none of these install paths or companion assets are available today.',
+      'The krypton run initial-child supervisor and authenticated termination receipts are implemented. Descendant containment, bounded Safe Auto-Pilot host adapters, and standalone Homebrew or verified shell installation with a sub-30-second time-to-first-containment target remain planned. A separate vulnerable-agent playground is also planned; none of these install paths or companion assets are available today.',
     title: 'Phase 2 · Transparent DX & Zero-Config CLI (v1.1)',
   },
   {
@@ -170,6 +170,8 @@ const SETUP_STEPS = [
   ['5. Run the native daemon and dashboard', 'npm run dev:full'],
   ['6. Run the test gates in another terminal', 'npm test -- --run && npm run rust:test'],
   ['7. Run the isolated native simulation (desktop delivery mocked)', 'npm run test:sim'],
+  ['8. Expose the source-checkout CLI', 'npm link'],
+  ['9. Supervise an agent in another terminal', 'krypton run -- claude'],
 ] as const;
 
 const FAQ_ITEMS: readonly FaqItem[] = [
@@ -220,7 +222,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Desktop MCP hosts can set an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
   {
@@ -564,6 +566,33 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     <code> http://localhost:3001</code>. The override changes only the dashboard
                     HTTP port, not the native Unix socket. GitHub Pages remains a static
                     demonstration; run this stack locally for native telemetry.
+                  </p>
+                </aside>
+
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Supervise a real agent
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    <code>krypton run -- &lt;command&gt; [args...]</code> requires a healthy local
+                    daemon. <code>krypton daemon:start</code> starts the foreground Cargo daemon
+                    without the dashboard. From the checkout root, targets run in the configured
+                    protected workspace; from a protected subdirectory, that directory is preserved.
+                    Relative paths resolve there. Desktop MCP hosts can select the checkout with an
+                    absolute <code>KRYPTON_PROJECT_ROOT</code> and pass a literal argument array.
+                    Stdio is inherited, no shell expansion is performed, and supervisor diagnostics
+                    use stderr so MCP stdout remains intact.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    The supervisor registers only the initial child, forwards SIGINT/SIGTERM, and
+                    preserves exit codes after bounded cleanup. Child execution starts before
+                    registration completes; very short commands may exit before supervision is
+                    established. Descendant containment and universal filesystem/network blocking
+                    remain unavailable. A confirmed enforcement message requires an authenticated
+                    complete-identity receipt after SIGKILL; at most 1,024 receipts remain available
+                    for 60 seconds. Missing, expired, evicted, or unavailable receipts leave
+                    attribution unconfirmed. If registration fails and the OS refuses cleanup, the
+                    CLI exits nonzero and reports that the child may still be running.
                   </p>
                 </aside>
 

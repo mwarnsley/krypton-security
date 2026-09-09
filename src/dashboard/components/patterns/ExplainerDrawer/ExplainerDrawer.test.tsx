@@ -237,6 +237,23 @@ describe('ExplainerDrawer', () => {
     );
   });
 
+  it('documents the supervisor and evidence limits in setup', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(screen.getByText('krypton run -- <command> [args...]')).toBeTruthy();
+    expect(screen.getByText('KRYPTON_PROJECT_ROOT')).toBeTruthy();
+    expect(screen.getByText(/at most 1,024 receipts remain available/)).toBeTruthy();
+  });
+
+  it('marks the Phase 2 initial-child supervisor implemented while descendants remain planned', () => {
+    render(<ExplainerDrawer defaultTab="features" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 2' });
+    expect(phase.textContent).toContain('In progress');
+    expect(phase.textContent).toContain('initial-child supervisor');
+    expect(phase.textContent).toContain('remain planned');
+  });
+
   it('confirms when the native setup command is copied', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,

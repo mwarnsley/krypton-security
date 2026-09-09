@@ -18,6 +18,28 @@ in `ROADMAP.md`.
   parent traversal, filesystem uncertainty, and escaping targets are denied.
 - Keeps local reference tracking separate from the native daemon authority.
 
+## Capability 1a: Authenticated execution supervisor
+
+- **Status:** Implemented for the macOS source checkout; experimental on Linux.
+- Exposes `krypton run -- <command> [args...]` through the package bin and
+  `krypton daemon:start` for the foreground Cargo daemon. `npm link` exposes the
+  executable; `node /absolute/path/to/src/cli.cjs` works without global linking.
+- Discovers the configured checkout, checks authenticated healthy daemon status
+  before spawning, and launches in its canonical protected workspace. Explicit
+  `KRYPTON_PROJECT_ROOT` supports desktop hosts without working-directory control.
+- Preserves literal arguments without a shell and inherits terminal streams;
+  supervisor diagnostics use stderr, preserving MCP stdout.
+- Registers complete initial-child identity, captures early exits, forwards
+  SIGINT/SIGTERM, waits for bounded unregister, and preserves child exit codes.
+  Rejected registration triggers owned-child cleanup; refused or timed-out cleanup
+  is reported without falsely claiming termination or unregistering a live child.
+- Confirms enforcement only through authenticated `termination_receipt` lookup.
+  Rust records successful signals atomically with removal, using at most 1,024
+  complete-identity receipts with a 60-second monotonic expiry. Unknown attribution
+  remains explicit, including daemon restart, contention, eviction, and old daemons.
+- Does not gate child execution until registration succeeds, automatically register
+  descendant trees, attribute portable watcher events, or add kernel/network blocking.
+
 ## Capability 2: Native workspace telemetry and ownership
 
 - **Status:** Implemented on macOS; experimental on Linux

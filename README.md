@@ -266,6 +266,97 @@ file under `.krypton/runtime/`. Directory mode is `0700`; socket, endpoint, and
 capability files are `0600`. The raw capability is never returned by a dashboard
 route or written to logs.
 
+## Supervise a real agent with `krypton run`
+
+After the setup/build steps above, expose the source-checkout executable:
+
+```sh
+npm link
+```
+
+This creates the `krypton` command using your active Node/npm installation.
+No additional CLI package is required. Without linking, use
+`node /absolute/path/to/krypton-security/src/cli.cjs` in place of `krypton`.
+
+Start the daemon in one terminal and the supervised command in another:
+
+```sh
+# Terminal 1, in the Krypton checkout (foreground daemon only)
+krypton daemon:start
+# Or run npm run dev:full to include the dashboard.
+
+# Terminal 2, in the same checkout
+krypton run -- claude
+krypton run -- node agent.js
+```
+
+`krypton daemon:start` runs the checkout's Rust daemon through Cargo; it requires
+rustup/Cargo and does not install a background service. Ctrl+C ends the session.
+`krypton run` validates private daemon discovery and authenticated healthy status
+before spawning. If the daemon is missing, unreachable, unauthenticated, or degraded:
+
+```text
+Krypton native daemon is not running. Please start it with 'npm run dev:full' or 'krypton daemon:start'.
+```
+
+For a degraded daemon, inspect dashboard health and resolve the failure before
+retrying. No target is spawned on failed preflight. Start/restart the updated daemon
+after upgrading so the termination-receipt command is available.
+
+**Workspace selection:** Run from the checkout root or inside its configured
+protected workspace. From the root, the child starts in `sandbox_workspace`
+(or the configured `protectedWorkspaceRoot`); from a protected subdirectory, that
+canonical directory is preserved. Relative executable paths and file arguments
+therefore resolve inside that child directory. The CLI rejects traversal, escaping
+workspace symlinks, and other invocation directories. This source-checkout CLI
+requires `runtimeDirectory: ".krypton/runtime"` and an existing protected directory.
+
+**Desktop/MCP hosts:** Configure the executable as the absolute `src/cli.cjs`
+path (or the linked `krypton` executable), use an argument array such as
+`["run", "--", "/absolute/path/to/node", "/absolute/path/to/server.js"]`, and set
+`KRYPTON_PROJECT_ROOT` to the absolute Krypton checkout path in the host's environment.
+This explicit override selects the protected workspace when the host cannot set
+its working directory. Configure executable paths visible to the desktop host;
+its PATH may differ from your terminal. Stdin/stdout/stderr are inherited, with
+all supervisor diagnostics sent exclusively to stderr so MCP stdout stays intact.
+No shell is used; quoting, shell operators, redirections, and environment expansion
+are not interpreted by Krypton. Invoke a shell explicitly only if you intend that.
+
+**Lifecycle:** The supervisor registers the initial child's complete PID, start
+time, canonical executable, and parent identity through version 1 authenticated
+IPC. It captures exits before waiting for registration, forwards SIGINT/SIGTERM
+to that owned child, and attempts unregister once before exiting. Numeric exit
+codes are preserved; signal exits use `128 + signal number` (SIGKILL is 137).
+Spawn-not-found exits 127, invalid invocation exits 2, and setup failures exit 1.
+A command that exits before registration finishes retains its exit code with an
+explicit stderr notice that supervision was not established. Rejected registration
+requests stop only the newly spawned child; if the OS refuses cleanup or exit is
+not confirmed within two seconds, the supervisor reports that the child may still
+be running and exits nonzero without removing a potentially live registration.
+Each IPC request has an absolute two-second deadline and a 16 KiB frame limit.
+Unregister failure is reported without replacing the child's completed exit code.
+
+**Enforcement evidence:** After SIGKILL, the supervisor queries the authenticated
+`termination_receipt` command with the same complete identity. Only confirmed
+native signal delivery produces:
+
+```text
+[KRYPTON] Process <pid> terminated by native security boundary enforcement.
+```
+
+Otherwise it reports SIGKILL with attribution unconfirmed. The daemon keeps at most
+1,024 receipts for 60 seconds using monotonic time; expiration, eviction, restart,
+contention, old daemons, and unavailable IPC cannot establish attribution. Receipt
+publication is atomic with successful signaling and registry removal. Receipts do
+not change the observational JSONL ledger into enforcement evidence.
+
+This supervises the **initial child**, not an automatically contained descendant
+tree. It does not pause execution until registration succeeds, infer actors from
+portable filesystem events, or provide universal pre-access filesystem/network
+blocking. IDE commands that hand off to an existing application are not evidence
+that the existing application's processes were registered. macOS is supported;
+Linux remains experimental and Windows remains dashboard-only.
+
 ## Protected child lifecycle
 
 Use `spawnProtectedProcess` from `src/core/processIsolation.cjs` for the native
@@ -281,10 +372,12 @@ const child = await spawnProtectedProcess('node', ['agent.js'], {
 ```
 
 The launcher spawns the child, reads its PID/start time/executable/parent,
-registers that exact generation, and unregisters it on terminal exit/error. A
+registers that exact generation, and unregisters it after terminal exit or spawn failure. A
 runtime deadline requests authenticated native isolation; rejection leaves the
 child registered and reports failure, with no local signaling fallback. If
-registration fails, it kills only the child it just spawned. Manual
+registration fails, it requests cleanup only for the child it just spawned.
+`startProtectedProcess` also exposes `registered` and `completed` promises so CLI
+callers can await terminal status, receipt lookup, and bounded cleanup. Manual
 dashboard isolation also requires the compound identity; PID-only requests are
 rejected.
 
@@ -375,6 +468,15 @@ The benchmark reports serialization, cursor filtering, six polling cycles, a
 growth for 100, 1,000, and 10,000 deterministic events.
 
 ## Troubleshooting
+
+- **`krypton` command not found:** run `npm link` in the source checkout using
+  the pinned Node version, or invoke `node /absolute/path/to/src/cli.cjs` directly.
+- **Supervisor workspace unavailable:** set an absolute `KRYPTON_PROJECT_ROOT`
+  for desktop hosts, or run from the checkout/protected directory. Verify the
+  configured protected directory exists and does not escape through a symlink.
+- **Native supervision was not established:** very short commands can finish
+  before identity inspection/registration. Their exit status is preserved, but
+  the CLI does not claim they were protected.
 
 - **`cargo` or `rustc` not found:** install Rust through `rustup`, restart the
   shell if needed, and rerun the four prerequisite version checks.
@@ -522,6 +624,11 @@ Use `npm run dev:full` to start the macOS native daemon at
 `.krypton/runtime/daemon.sock` and Next.js 16 Turbopack dashboard concurrently.
 Keep port 3000 free and open `http://localhost:3000`; if occupied, free it or
 use `PORT=3001 npm run dev:full` and open `http://localhost:3001`.
+After `npm link`, run `krypton run -- <command> [args...]` from the checkout or
+protected workspace. `krypton daemon:start` starts only the foreground daemon.
+For desktop MCP hosts, set an absolute `KRYPTON_PROJECT_ROOT` and use literal
+argument arrays; supervisor diagnostics use stderr. Only the initial child is
+registered, and SIGKILL attribution requires an authenticated native receipt.
 Run `npm run test:sim` for an isolated native end-to-end check using disposable
 children, real authenticated IPC and SIGKILL, durable observational JSONL, and
 mocked desktop delivery. It does not update the running dashboard or display an
@@ -560,10 +667,11 @@ enforcement boundary.
    scoped macOS runtime boundary; native end-to-end tests mock desktop delivery,
    and portable watcher evidence remains non-authoritative.
 2. **Phase 2 — Transparent Developer Experience & Zero-Config CLI (v1.1):**
-   planned `krypton exec -- <command>` protected launching and capability-aware
-   Safe Auto-Pilot host integrations, plus standalone Homebrew and verified
+   `krypton run -- <command>` initial-child supervision and authenticated termination
+   receipts are implemented. Descendant containment, capability-aware Safe
+   Auto-Pilot host integrations, standalone Homebrew and verified
    shell-script distribution with a sub-30-second time-to-first-containment
-   target. `brew install krypton-security/tap/krypton` and
+   target remain planned. `brew install krypton-security/tap/krypton` and
    `curl -fsSL https://get.krypton.dev | sh` are planned commands and are not
    available installation paths today.
 3. **Phase 3 — Native Desktop Application & Developer Convenience

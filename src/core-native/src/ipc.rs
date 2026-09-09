@@ -48,6 +48,7 @@ pub enum NativeControlCommand {
     RegisterProcess { process: ProcessIdentity },
     UnregisterProcess { process: ProcessIdentity },
     IsolateProcess { process: ProcessIdentity },
+    TerminationReceipt { process: ProcessIdentity },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -263,6 +264,13 @@ where
         NativeControlCommand::UnregisterProcess { process } => {
             match state.registry.unregister(&process) {
                 Ok(()) => response(request_id, true, "process_unregistered"),
+                Err(error) => response(request_id, false, registry_code(error)),
+            }
+        }
+        NativeControlCommand::TerminationReceipt { process } => {
+            match state.registry.termination_receipt(&process) {
+                Ok(true) => response(request_id, true, "process_isolated"),
+                Ok(false) => response(request_id, true, "termination_unconfirmed"),
                 Err(error) => response(request_id, false, registry_code(error)),
             }
         }
@@ -579,6 +587,94 @@ mod tests {
             process,
             notifier,
         )
+    }
+
+    fn receipt_request(process: &ProcessIdentity) -> NativeControlRequest {
+        serde_json::from_value(serde_json::json!({
+            "protocolVersion": 1,
+            "requestId": "receipt-test",
+            "capability": "secret",
+            "command": {"type": "termination_receipt", "process": process}
+        }))
+        .expect("receipt request schema")
+    }
+
+    #[test]
+    fn receipt_confirms_successful_native_isolation() {
+        let (state, process, _) = isolation_state();
+        handle_request_with_terminator(
+            request(
+                "secret",
+                NativeControlCommand::IsolateProcess {
+                    process: process.clone(),
+                },
+            ),
+            "secret",
+            &state,
+            |_| Ok(()),
+        );
+        let reply = handle_request(receipt_request(&process), "secret", &state);
+        assert!(reply.ok);
+        assert_eq!(reply.code, "process_isolated");
+    }
+
+    #[test]
+    fn receipt_does_not_confirm_failed_or_unauthorized_or_audit_isolation() {
+        for denial in ["signal", "unauthorized", "audit"] {
+            let (state, process, _) = isolation_state();
+            if denial == "audit" {
+                *state.mode.write().unwrap() = EnforcementMode::AuditOnly;
+            }
+            handle_request_with_terminator(
+                request(
+                    if denial == "unauthorized" {
+                        "wrong"
+                    } else {
+                        "secret"
+                    },
+                    NativeControlCommand::IsolateProcess {
+                        process: process.clone(),
+                    },
+                ),
+                "secret",
+                &state,
+                |_| Err("signal denied".to_owned()),
+            );
+            let reply = handle_request(receipt_request(&process), "secret", &state);
+            assert!(reply.ok);
+            assert_eq!(reply.code, "termination_unconfirmed");
+        }
+    }
+
+    #[test]
+    fn receipt_lookup_requires_authentication_and_supported_protocol() {
+        for protocol in [1, 99] {
+            let (state, process, _) = isolation_state();
+            handle_request_with_terminator(
+                request(
+                    "secret",
+                    NativeControlCommand::IsolateProcess {
+                        process: process.clone(),
+                    },
+                ),
+                "secret",
+                &state,
+                |_| Ok(()),
+            );
+            let mut lookup = receipt_request(&process);
+            lookup.protocol_version = protocol;
+            lookup.capability = "wrong".to_owned();
+            let reply = handle_request(lookup, "secret", &state);
+            assert!(!reply.ok);
+            assert_eq!(
+                reply.code,
+                if protocol == 1 {
+                    "unauthorized"
+                } else {
+                    "unsupported_protocol_version"
+                }
+            );
+        }
     }
 
     #[test]

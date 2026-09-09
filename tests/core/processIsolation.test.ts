@@ -57,8 +57,9 @@ describe('protected child lifecycle', () => {
     );
     expect(dispatch).toHaveBeenCalledWith({ type: 'register_process', process: identity });
     child.emit('exit', 0);
-    await Promise.resolve();
-    expect(dispatch).toHaveBeenLastCalledWith({ type: 'unregister_process', process: identity });
+    await vi.waitFor(() =>
+      expect(dispatch).toHaveBeenLastCalledWith({ type: 'unregister_process', process: identity })
+    );
   });
   it('cleans up only the owned child on failed registration', async () => {
     const child = Object.assign(new EventEmitter(), { kill: vi.fn(), pid: identity.pid });
@@ -93,5 +94,126 @@ describe('protected child lifecycle', () => {
     expect(dispatch).toHaveBeenLastCalledWith({ type: 'isolate_process', process: identity });
     expect(child.kill).not.toHaveBeenCalled();
     child.emit('exit', 0);
+  });
+});
+
+describe('supervisor lifecycle completion', () => {
+  it('captures an exit while registration is pending and unregisters once', async () => {
+    const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn(), pid: identity.pid });
+    let acknowledge!: (value: Record<string, unknown>) => void;
+    const dispatch = vi.fn().mockImplementation((command: { type: string }) =>
+      command.type === 'register_process'
+        ? new Promise((resolve) => {
+            acknowledge = resolve;
+          })
+        : Promise.resolve({ ok: true, code: 'process_unregistered' })
+    );
+    const handle = startProtectedProcess(
+      'node',
+      [],
+      {},
+      {
+        spawn: () => child,
+        inspect: async () => identity,
+        dispatch,
+      }
+    );
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
+    child.emit('exit', 7, null);
+    acknowledge({ ok: true, code: 'process_registered' });
+    expect((await handle.completed).code).toBe(7);
+    expect(
+      dispatch.mock.calls.filter(([command]) => command.type === 'unregister_process')
+    ).toHaveLength(1);
+  });
+
+  it.each([true, false])(
+    'requires a positive receipt for SIGKILL attribution: %s',
+    async (confirmed) => {
+      const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn(), pid: identity.pid });
+      const dispatch = vi.fn().mockImplementation(async (command: { type: string }) => ({
+        ok: true,
+        code:
+          command.type === 'register_process'
+            ? 'process_registered'
+            : command.type === 'termination_receipt'
+              ? confirmed
+                ? 'process_isolated'
+                : 'termination_unconfirmed'
+              : 'process_unregistered',
+      }));
+      const handle = startProtectedProcess(
+        'node',
+        [],
+        {},
+        {
+          spawn: () => child,
+          inspect: async () => identity,
+          dispatch,
+        }
+      );
+      await handle.registered;
+      child.emit('exit', null, 'SIGKILL');
+      expect((await handle.completed).enforcementConfirmed).toBe(confirmed);
+      expect(dispatch).toHaveBeenCalledWith({ type: 'termination_receipt', process: identity });
+    }
+  );
+
+  it('settles a spawn error without an unhandled error event', async () => {
+    const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn(), pid: undefined });
+    const dispatch = vi.fn();
+    const handle = startProtectedProcess('missing', [], {}, { spawn: () => child, dispatch });
+    child.emit('error', Object.assign(new Error('missing'), { code: 'ENOENT' }));
+    await expect(handle.registered).rejects.toThrow();
+    expect((await handle.completed).spawnError).toBeTruthy();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('reaps the owned child and attempts unregister after registration rejection', async () => {
+    const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn(), pid: identity.pid });
+    child.kill.mockImplementation(() => {
+      queueMicrotask(() => child.emit('exit', null, 'SIGKILL'));
+      return true;
+    });
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'unauthorized' });
+    const handle = startProtectedProcess(
+      'node',
+      [],
+      {},
+      {
+        spawn: () => child,
+        inspect: async () => identity,
+        dispatch,
+      }
+    );
+    await expect(handle.registered).rejects.toThrow('registration');
+    expect((await handle.completed).enforcementConfirmed).toBe(false);
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+});
+
+describe('failed owned-child cleanup', () => {
+  it('reports a child that could not be stopped without waiting indefinitely', async () => {
+    const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+    const child = Object.assign(new EventEmitter(), {
+      kill: vi.fn().mockReturnValue(false),
+      unref: vi.fn(),
+      pid: identity.pid,
+    });
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'unauthorized' });
+    const session = startProtectedProcess(
+      'node',
+      [],
+      {},
+      { spawn: () => child, inspect: async () => identity, dispatch }
+    );
+    const result = await session.completed;
+    expect(result.childMayBeRunning).toBe(true);
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'unregister_process', process: identity });
+    expect(child.unref).toHaveBeenCalled();
   });
 });

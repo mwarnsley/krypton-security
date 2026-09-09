@@ -7,8 +7,9 @@ export interface ProcessIdentityPayload {
 
 export interface ProtectedChildLifecycle {
   kill(signal?: NodeJS.Signals): unknown;
+  on(event: string, listener: (...args: unknown[]) => void): this;
   once(event: string, listener: (...args: unknown[]) => void): this;
-  pid?: number;
+  pid?: number | undefined;
 }
 
 export function dispatchNativeControl(
@@ -43,3 +44,26 @@ export function spawnProtectedProcess(
 ): Promise<import('node:child_process').ChildProcess>;
 
 export function unregisterWorkspaceProcess(pid: number): void;
+
+export interface ProtectedProcessOutcome {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  identity: ProcessIdentityPayload | undefined;
+  spawnError: Error | undefined;
+  registrationError: Error | undefined;
+  exitedBeforeRegistrationFailure: boolean;
+  enforcementConfirmed: boolean;
+  cleanupFailed: boolean;
+  childMayBeRunning: boolean;
+}
+export interface ProtectedProcessSession {
+  child: import('node:child_process').ChildProcess;
+  registered: Promise<ProcessIdentityPayload>;
+  completed: Promise<ProtectedProcessOutcome>;
+}
+export function startProtectedProcess(
+  command: string,
+  args?: readonly string[],
+  options?: Parameters<typeof spawnProtectedProcess>[2],
+  dependencies?: Parameters<typeof spawnProtectedProcess>[3]
+): ProtectedProcessSession;

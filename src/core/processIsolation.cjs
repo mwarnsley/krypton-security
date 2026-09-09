@@ -3,6 +3,7 @@ const childProcess = require('node:child_process');
 const net = require('node:net');
 const path = require('node:path');
 const util = require('node:util');
+const { randomUUID } = require('node:crypto');
 
 const PROJECT_ROOT = process.cwd();
 const NATIVE_PROTOCOL_VERSION = 1;
@@ -117,7 +118,7 @@ async function inspectProcessIdentity(pid) {
   const { stdout } = await executeFile(
     'ps',
     ['-p', String(pid), '-o', 'lstart=', '-o', 'ppid=', '-o', 'comm='],
-    { maxBuffer: 4096, timeout: NATIVE_TIMEOUT_MS }
+    { maxBuffer: 4096, timeout: NATIVE_TIMEOUT_MS, env: { ...process.env, LC_ALL: 'C' } }
   );
   const match = stdout.trim().match(/^(.{24})\s+(\d+)\s+(.+)$/);
   if (match === null) {
@@ -142,6 +143,43 @@ async function inspectProcessIdentity(pid) {
 }
 
 /**
+ * Reads bounded private daemon metadata without following a final-component symlink.
+ * @param {string} file - Expected discovery or capability path.
+ * @returns {Promise<string>} At most 16 KiB of UTF-8 data; insecure or oversized files reject.
+ * @complexity O(L) time and space for bounded file length L.
+ * @example
+ * await readNativeFile('/project/.krypton/runtime/daemon.json');
+ */
+async function readNativeFile(file) {
+  const handle = await fs.promises.open(
+    file,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK
+  );
+  try {
+    const stat = await handle.stat();
+    if (
+      !stat.isFile() ||
+      (stat.mode & 0o077) !== 0 ||
+      (process.getuid && stat.uid !== process.getuid())
+    ) {
+      throw new Error('Native runtime metadata must be a private, owned regular file.');
+    }
+    const buffer = Buffer.alloc(NATIVE_RESPONSE_MAX_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    if (length > NATIVE_RESPONSE_MAX_BYTES)
+      throw new Error('Native runtime metadata is oversized.');
+    return buffer.subarray(0, length).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
  * Dispatches one authenticated, versioned command to the workspace daemon.
  *
  * @param {Record<string, unknown>} command - The narrow native command payload.
@@ -154,9 +192,7 @@ async function inspectProcessIdentity(pid) {
  */
 async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
   const runtimeRoot = path.resolve(projectRoot, '.krypton/runtime');
-  const endpoint = JSON.parse(
-    await fs.promises.readFile(path.join(runtimeRoot, 'daemon.json'), 'utf8')
-  );
+  const endpoint = JSON.parse(await readNativeFile(path.join(runtimeRoot, 'daemon.json')));
   if (
     endpoint === null ||
     typeof endpoint !== 'object' ||
@@ -167,8 +203,9 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
   ) {
     throw new Error('The native endpoint discovery record is invalid.');
   }
-  const capability = (await fs.promises.readFile(endpoint.capabilityFile, 'utf8')).trim();
-  const requestId = `launcher-${process.pid}-${Date.now().toString(36)}`;
+  const capability = (await readNativeFile(endpoint.capabilityFile)).trim();
+  if (capability.length === 0) throw new Error('The native capability is empty.');
+  const requestId = `req-${randomUUID()}`;
   const request = JSON.stringify({
     capability,
     command,
@@ -195,6 +232,7 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
     const complete = (error) => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
       socket.removeAllListeners();
       socket.destroy();
       if (error !== undefined) {
@@ -204,6 +242,10 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
       try {
         const response = JSON.parse(responseText.trim());
         if (
+          response === null ||
+          typeof response !== 'object' ||
+          typeof response.ok !== 'boolean' ||
+          typeof response.code !== 'string' ||
           response.requestId !== requestId ||
           response.protocolVersion !== NATIVE_PROTOCOL_VERSION
         ) {
@@ -214,14 +256,22 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
         reject(parseError);
       }
     };
+    const deadline = setTimeout(
+      () => complete(new Error('The native request timed out.')),
+      NATIVE_TIMEOUT_MS
+    );
     socket.setEncoding('utf8');
     socket.setTimeout(NATIVE_TIMEOUT_MS);
     socket.once('connect', () => socket.end(`${request}\n`, 'utf8'));
     socket.on('data', (chunk) => {
-      responseText += chunk;
-      if (Buffer.byteLength(responseText, 'utf8') > NATIVE_RESPONSE_MAX_BYTES) {
+      if (
+        Buffer.byteLength(responseText, 'utf8') + Buffer.byteLength(chunk, 'utf8') >
+        NATIVE_RESPONSE_MAX_BYTES
+      ) {
         complete(new Error('The native response is oversized.'));
+        return;
       }
+      responseText += chunk;
     });
     socket.once('end', () => complete());
     socket.once('timeout', () => complete(new Error('The native request timed out.')));
@@ -230,76 +280,164 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
 }
 
 /**
- * Spawns, registers, monitors, and exactly unregisters one protected child.
+ * Starts an owned child with listeners attached before any asynchronous registration.
  *
- * @param {string} command - The executable to launch inside the protected lifecycle.
- * @param {readonly string[]} args - The bounded executable arguments.
- * @param {import("node:child_process").SpawnOptions & {maxRuntimeMs?: number}} options - Native spawn options and optional timeout.
- * @param {{spawn?: Function, inspect?: Function, dispatch?: Function}} dependencies - Optional injected test boundaries.
- * @returns {Promise<import("node:child_process").ChildProcess>} The registered owned child process.
- * @complexity O(A + L) setup time and space for A arguments and process identity length L.
+ * @param {string} command - Executable passed directly to spawn without a shell.
+ * @param {readonly string[]} args - Executable arguments.
+ * @param {import("node:child_process").SpawnOptions & {maxRuntimeMs?: number}} options - Spawn options and optional deadline.
+ * @param {{spawn?: Function, inspect?: Function, dispatch?: Function}} dependencies - Injected OS and IPC test boundaries.
+ * @returns {{child: import("node:child_process").ChildProcess, registered: Promise<object>, completed: Promise<object>}} Registration and terminal cleanup promises.
+ * @complexity O(A + L) time and space for arguments A and bounded identity/frame length L; session duration follows the child.
  * @example
- * await spawnProtectedProcess("node", ["agent.js"], { cwd: "sandbox_workspace" });
- * // => registered ChildProcess
+ * const session = startProtectedProcess("node", ["agent.js"], { stdio: "inherit" });
+ * await session.registered; await session.completed;
  */
-async function spawnProtectedProcess(command, args = [], options = {}, dependencies = {}) {
+function startProtectedProcess(command, args = [], options = {}, dependencies = {}) {
   const { maxRuntimeMs, ...spawnOptions } = options;
-  const spawn = dependencies.spawn ?? childProcess.spawn;
   const inspect = dependencies.inspect ?? inspectProcessIdentity;
   const dispatch = dependencies.dispatch ?? dispatchNativeControl;
-  const child = spawn(command, [...args], spawnOptions);
-  const pid = child.pid;
-  if (pid === undefined) {
-    throw new Error('The protected child process did not expose a PID.');
-  }
+  const child = (dependencies.spawn ?? childProcess.spawn)(command, [...args], spawnOptions);
+  let exited = false;
+  let spawnError;
+  let registrationError;
+  let exitedBeforeRegistrationFailure = false;
   let identity;
-  try {
-    identity = await inspect(pid);
-    const registration = await dispatch({ process: identity, type: 'register_process' });
-    if (registration.ok !== true || registration.code !== 'process_registered') {
-      throw new Error('The native daemon rejected child-process registration.');
-    }
-    monitoredProcesses.set(pid, identity);
-  } catch (error) {
-    child.kill('SIGKILL');
-    throw error;
-  }
-  let cleaned = false;
+  let attemptedRegistration = false;
+  let registeredSuccessfully = false;
   let timeout;
-
-  /**
-   * Unregisters the exact child generation and clears its bounded runtime timer once.
-   *
-   * @returns {Promise<void>} A promise that settles after local and native cleanup completes.
-   * @complexity O(1) average Map deletion plus O(L) bounded native IPC time and space.
-   * @example
-   * await cleanup();
-   * // => removes the child identity and cancels its runtime timer exactly once
-   */
-  const cleanup = async () => {
-    if (cleaned) return;
-    cleaned = true;
-    monitoredProcesses.delete(pid);
+  let cleanupDeadline;
+  let childMayBeRunning = false;
+  let resolveExit;
+  const exit = new Promise((resolve) => {
+    resolveExit = resolve;
+  });
+  child.once('exit', (code, signal) => {
+    exited = true;
     if (timeout !== undefined) clearTimeout(timeout);
-    try {
-      await dispatch({ process: identity, type: 'unregister_process' });
-    } catch {
-      // The child is already gone; a stale daemon record is rejected on any later isolate request.
+    if (cleanupDeadline !== undefined) clearTimeout(cleanupDeadline);
+    resolveExit({ code: code ?? null, signal: signal ?? null });
+  });
+  child.on('error', (error) => {
+    // Spawn failures have no PID and no exit event. Later errors do not prove exit.
+    if (child.pid === undefined) {
+      spawnError = error;
+      exited = true;
+      resolveExit({ code: null, signal: null });
     }
-  };
-  child.once('exit', () => void cleanup());
-  child.once('error', () => void cleanup());
-  if (Number.isSafeInteger(maxRuntimeMs) && maxRuntimeMs > 0) {
-    timeout = setTimeout(() => {
-      void quarantineProcess(identity, { dispatch }).catch(() => {
-        console.error(
-          '[KRYPTON] Native runtime deadline isolation failed; process remains registered.'
-        );
-      });
-    }, maxRuntimeMs);
-    timeout.unref();
-  }
-  return child;
+  });
+  const registered = (async () => {
+    try {
+      if (child.pid === undefined) {
+        await exit;
+        throw new Error('The protected child process did not expose a PID.');
+      }
+      identity = await inspect(child.pid);
+      if (exited) throw new Error('The child exited before native registration.');
+      attemptedRegistration = true;
+      const reply = await dispatch({ process: identity, type: 'register_process' });
+      if (reply.ok !== true || reply.code !== 'process_registered') {
+        throw new Error('The native daemon rejected child-process registration.');
+      }
+      registeredSuccessfully = true;
+      if (!exited) monitoredProcesses.set(child.pid, identity);
+      if (!exited && Number.isSafeInteger(maxRuntimeMs) && maxRuntimeMs > 0) {
+        timeout = setTimeout(() => {
+          void quarantineProcess(identity, { dispatch }).catch(() => {
+            console.error(
+              '[KRYPTON] Native runtime deadline isolation failed; process remains registered.'
+            );
+          });
+        }, maxRuntimeMs);
+        timeout.unref();
+      }
+      return identity;
+    } catch (error) {
+      registrationError = error;
+      exitedBeforeRegistrationFailure = exited;
+      if (!exited && child.pid !== undefined) {
+        /**
+         * Settles failed cleanup without claiming the child exited or removing its registration.
+         * @returns {void} Releases the supervisor handle and exposes an uncertain live child.
+         * @complexity O(1) time and space.
+         * @example unconfirmed(); // completed.childMayBeRunning is true
+         */
+        const unconfirmed = () => {
+          if (exited) return;
+          childMayBeRunning = true;
+          child.unref?.();
+          resolveExit({ code: null, signal: null });
+        };
+        cleanupDeadline = setTimeout(unconfirmed, NATIVE_TIMEOUT_MS);
+        cleanupDeadline.unref();
+        try {
+          if (child.kill('SIGKILL') === false) {
+            clearTimeout(cleanupDeadline);
+            unconfirmed();
+          }
+        } catch {
+          clearTimeout(cleanupDeadline);
+          unconfirmed();
+        }
+      }
+      throw error;
+    }
+  })();
+  // Completion consumes registration failure even when a caller only awaits exit.
+  const registrationSettled = registered.catch(() => undefined);
+  const completed = (async () => {
+    const outcome = await exit;
+    await registrationSettled;
+    let enforcementConfirmed = false;
+    let cleanupFailed = false;
+    if (timeout !== undefined) clearTimeout(timeout);
+    if (identity !== undefined && attemptedRegistration && !childMayBeRunning) {
+      monitoredProcesses.delete(identity.pid);
+      if (registeredSuccessfully && outcome.signal === 'SIGKILL') {
+        try {
+          const receipt = await dispatch({ type: 'termination_receipt', process: identity });
+          enforcementConfirmed = receipt.ok === true && receipt.code === 'process_isolated';
+        } catch {
+          // An unavailable, expired, or malformed receipt never proves attribution.
+        }
+      }
+      try {
+        const cleanup = await dispatch({ type: 'unregister_process', process: identity });
+        cleanupFailed =
+          !(cleanup.ok === true && cleanup.code === 'process_unregistered') &&
+          !(cleanup.ok === false && cleanup.code === 'process_not_registered');
+      } catch {
+        cleanupFailed = true;
+      }
+    }
+    return {
+      ...outcome,
+      identity,
+      spawnError,
+      registrationError,
+      exitedBeforeRegistrationFailure,
+      enforcementConfirmed,
+      cleanupFailed,
+      childMayBeRunning,
+    };
+  })();
+  return { child, registered, completed };
+}
+
+/**
+ * Preserves the existing API while using the race-safe owned-child lifecycle.
+ * @param {string} command - Executable to launch.
+ * @param {readonly string[]} args - Executable arguments.
+ * @param {import("node:child_process").SpawnOptions & {maxRuntimeMs?: number}} options - Spawn options and optional deadline.
+ * @param {{spawn?: Function, inspect?: Function, dispatch?: Function}} dependencies - Injected test boundaries.
+ * @returns {Promise<import("node:child_process").ChildProcess>} Registered child, or registration rejection after owned-child cleanup is requested.
+ * @complexity O(A + L) setup time and space for argument and bounded identity lengths.
+ * @example
+ * await spawnProtectedProcess("node", ["agent.js"], { cwd: "sandbox_workspace" });
+ */
+async function spawnProtectedProcess(command, args = [], options = {}, dependencies = {}) {
+  const session = startProtectedProcess(command, args, options, dependencies);
+  await session.registered;
+  return session.child;
 }
 
 module.exports = {
@@ -309,5 +447,6 @@ module.exports = {
   quarantineProcess,
   registerWorkspaceProcess,
   spawnProtectedProcess,
+  startProtectedProcess,
   unregisterWorkspaceProcess,
 };
