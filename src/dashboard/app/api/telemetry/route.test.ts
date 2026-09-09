@@ -36,6 +36,25 @@ beforeEach(() => {
 });
 
 describe('telemetry route', () => {
+  it('preserves degraded live mode without inventing a registry count', async () => {
+    serverMocks.queryNativeHealth.mockResolvedValue({
+      ...HEALTHY,
+      activeProcessCount: undefined,
+      health: {
+        ...HEALTHY.health,
+        mode: 'active_enforcement',
+        registry: 'degraded',
+        status: 'degraded',
+      },
+    });
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
+    expect(body.activeProcessCount).toBeNull();
+    expect(body.health).toMatchObject({
+      mode: 'active_enforcement',
+      registry: 'degraded',
+      status: 'degraded',
+    });
+  });
   it('returns one explicit native envelope', async () => {
     const response = await GET(new Request('http://localhost/api/telemetry'));
     const body = await response.json();

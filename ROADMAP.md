@@ -46,7 +46,7 @@ than POSIX signals and remains a Phase 4 capability.
 
 ## Phase 1: Native macOS Hardening & Public Launch (Completed / v1.0)
 
-**Status:** Implemented and launch-ready.
+**Status:** Implemented and verified for the scoped macOS v1.0 runtime boundary.
 
 **Release objective:** Complete the supported macOS launch around the existing
 native containment foundation and make native quarantine events visible outside
@@ -79,13 +79,32 @@ the browser.
 - [x] **Desktop OS Alert Integration:** A bounded background dispatcher invokes
       `/usr/bin/osascript` for an OS-level macOS Notification Center alert only
       after an authenticated `IsolateProcess` request revalidates an owned child
-      and confirms `SIGKILL` delivery. The alert contains only a sanitized agent
-      executable name and PID; paths and event details remain out of the banner.
+      and confirms `SIGKILL` delivery. The alert contains only a trusted agent
+      display label and PID; raw executable names, paths, and event details remain
+      out of the banner. Delivery has a two-second worker deadline with kill/reap
+      cleanup, and queue failure records atomic degraded health without IPC-path logging.
       Delivery failures and unavailable or headless sessions degrade the adapter
       without blocking or reversing enforcement. Phase 3 can reuse this event
       path inside the Tauri application.
 
 ### Phase 1 completion evidence
+
+- Component health and enforcement mode are synchronized end to end: watcher,
+  IPC, ledger, registry, notification, and telemetry-queue failures surface as
+  degraded health. Unknown mode disables the native toggle; unavailable registry
+  counts never appear as zero. Observation rows are not signal receipts.
+
+- `npm run test:sim` verifies a real authenticated native socket, compound-identity
+  registration, denied traversal intent, Audit-Only refusal, actual SIGKILL of an
+  owned disposable child, durable observational JSONL, and mocked desktop delivery.
+  The test-only daemon runs separately from the developer's dashboard and runtime.
+- TypeScript watcher callbacks cannot authorize termination. Existing paths and
+  missing-target parents receive canonical validation; PID-only registration is disabled.
+- Ledger tests verify truncated-tail repair, interior-corruption rejection, and
+  monotonic recovery. Atomic ledger and IPC publication use exclusive `0600`
+  temporary files and parent-directory synchronization around rename.
+- Completion does not imply kernel pre-access denial, OS-level actor attribution,
+  network egress containment, or guaranteed Notification Center presentation.
 
 - The notification adapter has deterministic unit coverage with operating-system
   delivery mocked and an explicit no-permission/degraded path.

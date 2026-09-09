@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { normalizeNativeHealth } from '../../utils/nativeHealth';
 import { createConnection } from 'node:net';
 import * as path from 'node:path';
 
@@ -61,21 +62,7 @@ function parseNativeResponse(value: unknown): NativeControlResponse {
     throw new TypeError('Native active process count is invalid.');
   }
   const healthValue = value.health;
-  const health: NativeDaemonHealth | undefined =
-    isRecord(healthValue) &&
-    (healthValue.status === 'degraded' || healthValue.status === 'healthy') &&
-    (healthValue.watcher === 'ready' || healthValue.watcher === 'write_failed') &&
-    (healthValue.ledger === 'ready' || healthValue.ledger === 'write_failed') &&
-    (healthValue.ipc === 'ready' || healthValue.ipc === 'write_failed') &&
-    (healthValue.mode === 'active_enforcement' || healthValue.mode === 'audit_only')
-      ? {
-          ipc: healthValue.ipc,
-          ledger: healthValue.ledger,
-          mode: healthValue.mode,
-          status: healthValue.status,
-          watcher: healthValue.watcher,
-        }
-      : undefined;
+  const health: NativeDaemonHealth | undefined = normalizeNativeHealth(healthValue);
   if (healthValue !== undefined && health === undefined) {
     throw new TypeError('Native health response is invalid.');
   }
@@ -163,6 +150,12 @@ export async function queryNativeHealth(): Promise<NativeControlResponse> {
   const response = await dispatchNativeCommand({ type: 'health' });
   if (!response.ok || response.health === undefined) {
     throw new Error('Native daemon did not return a valid health response.');
+  }
+  if (response.activeProcessCount === undefined) {
+    return {
+      ...response,
+      health: { ...response.health, registry: 'degraded', status: 'degraded' },
+    };
   }
   return response;
 }

@@ -52,7 +52,7 @@ const nativeMocks = vi.hoisted(() => {
 vi.mock('node:fs', () => ({ promises: { readFile: nativeMocks.readFile } }));
 vi.mock('node:net', () => ({ createConnection: nativeMocks.createConnection }));
 
-import { dispatchNativeCommand } from './nativeClient';
+import { dispatchNativeCommand, queryNativeHealth } from './nativeClient';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -71,6 +71,11 @@ beforeEach(() => {
 });
 
 describe('native control client', () => {
+  it('reports a missing registry count as degraded rather than zero', async () => {
+    const response = await queryNativeHealth();
+    expect(response.activeProcessCount).toBeUndefined();
+    expect(response.health).toMatchObject({ registry: 'degraded', status: 'degraded' });
+  });
   it('uses the workspace-specific Unix-domain socket', async () => {
     await dispatchNativeCommand({ type: 'health' });
     expect(nativeMocks.createConnection).toHaveBeenCalledWith('/runtime/daemon.sock');

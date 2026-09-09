@@ -9,7 +9,13 @@ in `ROADMAP.md`.
 - **Status:** Implemented
 - Resolves paths against an explicit sandbox boundary and denies sensitive
   target segments.
-- Provides controlled disposable-child simulation coverage.
+- Provides authenticated disposable-child simulation coverage with a real native
+  Unix socket, compound identity, SIGKILL, durable observational JSONL, and mocked
+  desktop delivery. The simulation runs in a separate temporary runtime.
+- TypeScript reference watcher events and failures remain `OBSERVED`; PID-only
+  registration and watcher-triggered broadcast termination are disabled.
+- Existing paths and missing-target parents are canonicalized; dangling symlinks,
+  parent traversal, filesystem uncertainty, and escaping targets are denied.
 - Keeps local reference tracking separate from the native daemon authority.
 
 ## Capability 2: Native workspace telemetry and ownership
@@ -27,8 +33,10 @@ in `ROADMAP.md`.
 - Dispatches an OS-level macOS Notification Center alert outside the browser
   only after an authenticated isolation request revalidates an owned child and
   confirms `SIGKILL` delivery. A bounded background worker invokes
-  `/usr/bin/osascript`; the banner includes only the sanitized agent executable
-  name and PID, while delivery denial, headless execution, and unavailable
+  `/usr/bin/osascript` with a two-second execution deadline and kill/reap cleanup;
+  banners use only trusted agent labels and PID, never raw executable basenames.
+  Queue failures update atomic health without caller-side locks or stderr writes.
+  Delivery denial, headless execution, and unavailable
   notification services degrade without changing the quarantine result.
 
 ## Capability 3: AegisAgent Dashboard Command Center
@@ -45,8 +53,13 @@ in `ROADMAP.md`.
   simulated threat only after explicit button activation, and never polls API
   routes that do not exist in the export.
 - Keeps Audit-Only Mode local to the static demonstration while preserving
-  authenticated daemon confirmation, optimistic updates, rollback, and failure
-  notification in native local mode.
+  authenticated daemon confirmation and failure notification in native local mode.
+  Native toggles follow live `health.mode`; unknown mode disables the control.
+- Aggregates watcher, IPC, ledger, registry, notification, and telemetry-queue
+  health. Queue loss and component errors are degraded, not hardcoded readiness;
+  unavailable registry counts are displayed as unavailable rather than zero.
+- Labels ledger observations `OBSERVED`, never confirmed isolation based solely
+  on process attribution. Successful authenticated action receipts display `ISOLATED`.
 - Cycles through deterministic demonstration scenarios with slot-specific event
   IDs and never labels those scenarios as native evidence.
 - Polls incrementally with one request in flight, abort-on-unmount, hidden-tab
@@ -75,6 +88,10 @@ in `ROADMAP.md`.
 - Persists native events as one crash-safe bounded JSONL format with monotonic
   sequence IDs, a 10,000-event/8 MiB retention policy, corruption handling, and
   degraded ledger health.
+- Recovery truncates only incomplete trailing JSON before append; interior
+  corruption and non-monotonic sequences are rejected. Ledger compaction and IPC
+  metadata publication use exclusive `0600` temporary files and sync the parent
+  directory before and after atomic rename; pre-existing temporary paths are rejected.
 - Enables strict dashboard TypeScript including unchecked-index, implicit-return,
   catch-variable, and exact-optional-property checks.
 - Moves the composite data table into patterns and enforces semantic primitive

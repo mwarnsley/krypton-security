@@ -53,7 +53,10 @@ const ATTEMPTED_ACTION_LABELS: Readonly<Record<string, string>> = {
 
 const ENFORCEMENT_STATUS_LABELS: Readonly<Record<string, string>> = {
   AUTOMATED_QUARANTINE: 'Auto-Quarantined (Rate Limit)',
-  INTERCEPTED: 'Blocked & Isolated',
+  INTERCEPTED: 'Intercepted (unconfirmed)',
+  QUARANTINED: 'Quarantine reported (unconfirmed)',
+  ISOLATED: 'Isolated',
+  TERMINATED: 'Terminated',
   OBSERVED: 'Observed',
 };
 
@@ -133,7 +136,7 @@ export function formatAttemptedAction(attemptedAction: string): string {
  * @complexity O(1) average lookup time and O(L) fallback formatting time and space.
  * @example
  * formatEnforcementStatus("INTERCEPTED");
- * // => "Blocked & Isolated"
+ * // => "Intercepted (unconfirmed)"
  */
 export function formatEnforcementStatus(enforcementStatus: EnforcementStatus): string {
   return ENFORCEMENT_STATUS_LABELS[enforcementStatus] ?? humanizeTechnicalKey(enforcementStatus);
@@ -327,22 +330,40 @@ export async function requestProcessIsolation(
   };
 }
 
+/**
+ * Keys action receipts to a complete generation so PID reuse cannot inherit success.
+ * @param {ProcessIdentityPayload} process - Revalidated native identity submitted to the API.
+ * @returns {string} Collision-free serialization of the four identity fields.
+ * @complexity O(L) time and space in executable path length.
+ * @example
+ * isolationIdentityKey({ pid: 42, startTime: 10, executablePath: '/bin/node', parentPid: 1 });
+ * // => '[42,10,"/bin/node",1]'
+ */
+export function isolationIdentityKey(process: ProcessIdentityPayload): string {
+  return JSON.stringify([
+    process.pid,
+    process.startTime,
+    process.executablePath,
+    process.parentPid,
+  ]);
+}
+
 export function AlertTable(props: AlertTableProps): React.JSX.Element {
   const { alerts } = props;
-  const inFlightProcessIds = useRef(new Set<number>());
+  const inFlightProcessIds = useRef(new Set<string>());
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: DEFAULT_ALERTS_PER_PAGE,
   });
   const [pageSizeSelection, setPageSizeSelection] = useState('25');
   const [sorting, setSorting] = useState<SortingState>([{ desc: true, id: 'timestamp' }]);
-  const [isolatingProcessIds, setIsolatingProcessIds] = useState<ReadonlySet<number>>(new Set());
+  const [isolatingProcessIds, setIsolatingProcessIds] = useState<ReadonlySet<string>>(new Set());
   const [isolationStatuses, setIsolationStatuses] = useState<
-    ReadonlyMap<number, IsolationExecutionStatus>
+    ReadonlyMap<string, IsolationExecutionStatus>
   >(new Map());
 
   const forceIsolate = useCallback(async (processIdentity: ProcessIdentityPayload) => {
-    const targetProcessId = processIdentity.pid;
+    const targetProcessId = isolationIdentityKey(processIdentity);
     if (inFlightProcessIds.current.has(targetProcessId)) {
       return;
     }
@@ -397,9 +418,14 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
             label="Process ID"
           />
         ),
-        cell: ({ getValue }) => (
+        cell: ({ getValue, row }) => (
           <code className="font-mono font-semibold tracking-krypton-mono text-krypton-accent-cyan">
-            {getValue<number | null>() ?? 'Observed (unattributed)'}
+            {row.original.attribution === 'unattributed'
+              ? 'Observed (unattributed)'
+              : getValue<number | null>()}
+            {row.original.attribution === 'process' && row.original.enforcementStatus === 'OBSERVED'
+              ? ' — OBSERVED'
+              : ''}
           </code>
         ),
       },
@@ -483,14 +509,18 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         cell: ({ row }) => {
           const targetProcessId = row.original.targetProcessId;
           const processIdentity = row.original.process;
+          const identityKey =
+            processIdentity === undefined ? undefined : isolationIdentityKey(processIdentity);
           const actionMode = resolveAlertActionMode(row.original);
           const hasNativeActions = actionMode === 'native';
           const isIsolating =
-            !hasNativeActions || targetProcessId === null
+            !hasNativeActions || identityKey === undefined
               ? false
-              : isolatingProcessIds.has(targetProcessId);
+              : isolatingProcessIds.has(identityKey);
           const isolationStatus =
-            targetProcessId === null ? undefined : isolationStatuses.get(targetProcessId);
+            !hasNativeActions || identityKey === undefined
+              ? undefined
+              : isolationStatuses.get(identityKey);
 
           return (
             <div className="flex min-w-10 flex-col items-start gap-1.5">
@@ -557,6 +587,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                   )}
                   role={isolationStatus.tone === 'success' ? 'status' : 'alert'}
                 >
+                  {isolationStatus.tone === 'success' ? 'ISOLATED — ' : ''}
                   {isolationStatus.message}
                 </span>
               ) : null}

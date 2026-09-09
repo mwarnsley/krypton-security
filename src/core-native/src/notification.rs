@@ -49,6 +49,9 @@ pub enum NotificationHealth {
 pub struct NotificationStatus(AtomicU8);
 
 impl NotificationStatus {
+    pub fn is_degraded(&self) -> bool {
+        self.0.load(Ordering::Relaxed) != 0
+    }
     fn degraded(&self, failure: NotificationFailure) {
         self.0.store(failure as u8, Ordering::Relaxed);
     }

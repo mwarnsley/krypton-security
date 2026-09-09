@@ -11,15 +11,22 @@ export interface ProtectedChildLifecycle {
   pid?: number;
 }
 
-export function dispatchNativeControl(command: Record<string, unknown>): Promise<Record<string, unknown>>;
+export function dispatchNativeControl(
+  command: Record<string, unknown>,
+  projectRoot?: string
+): Promise<Record<string, unknown>>;
 export function getActiveWorkspaceProcessCount(): number;
 export function inspectProcessIdentity(pid: number): Promise<ProcessIdentityPayload>;
 
-export function quarantineProcess(pid: number, illegalPath: string): void;
+export function quarantineProcess(
+  identity: ProcessIdentityPayload,
+  dependencies?: {
+    dispatch?: (command: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  }
+): Promise<Record<string, unknown>>;
 
-export function quarantineRegisteredProcesses(illegalPath: string): void;
-
-export function registerWorkspaceProcess(pid: number): void;
+/** @deprecated PID-only registration is disabled; use spawnProtectedProcess. */
+export function registerWorkspaceProcess(pid: number): never;
 export function spawnProtectedProcess(
   command: string,
   args?: readonly string[],

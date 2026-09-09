@@ -17,6 +17,12 @@ const event = {
 };
 
 describe('native event schema across dashboard boundaries', () => {
+  it('does not turn process attribution into proof of isolation', () => {
+    const process = { pid: 4242, startTime: 1234, executablePath: '/bin/sh', parentPid: 4000 };
+    expect(
+      normalizePersistedEvent({ ...event, attribution: 'process', process }).enforcementStatus
+    ).toBe('OBSERVED');
+  });
   it('retains an unattributed native row and its cursor through client normalization', () => {
     const alert = normalizePersistedEvent(event);
     const payload = normalizeTelemetryPayload({ source: 'native', alerts: [alert], nextAfter: 42 });

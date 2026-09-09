@@ -39,7 +39,7 @@ pub fn record_portable_boundary_event(
     event: &FilesystemEvent,
     sequence: u64,
     sender: &SyncSender<PersistedSecurityEvent>,
-) {
+) -> bool {
     try_enqueue(
         sender,
         PersistedSecurityEvent::unattributed_filesystem(
@@ -47,7 +47,7 @@ pub fn record_portable_boundary_event(
             &event.decision.resolved_path,
             event.decision.target_existed,
         ),
-    );
+    )
 }
 
 #[cfg(test)]
@@ -87,5 +87,19 @@ mod tests {
         let alert = receiver.try_recv().expect("alert");
         assert_eq!(alert.attribution, TelemetryAttribution::Unattributed);
         assert!(alert.process.is_none());
+    }
+
+    #[test]
+    fn full_queue_reports_loss_without_blocking() {
+        let (sender, _receiver) = sync_channel(1);
+        assert!(record_portable_boundary_event(&event(), 1, &sender));
+        assert!(!record_portable_boundary_event(&event(), 2, &sender));
+    }
+
+    #[test]
+    fn disconnected_queue_reports_loss() {
+        let (sender, receiver) = sync_channel(1);
+        drop(receiver);
+        assert!(!record_portable_boundary_event(&event(), 1, &sender));
     }
 }

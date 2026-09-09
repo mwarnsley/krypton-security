@@ -1,4 +1,5 @@
-export type EnforcementStatus = 'AUTOMATED_QUARANTINE' | 'INTERCEPTED' | 'OBSERVED' | 'QUARANTINED';
+export type EnforcementStatus =
+  'AUTOMATED_QUARANTINE' | 'INTERCEPTED' | 'OBSERVED' | 'QUARANTINED' | 'ISOLATED' | 'TERMINATED';
 
 export type TelemetrySeverity = 'critical' | 'high' | 'info' | 'low' | 'medium';
 
@@ -76,24 +77,32 @@ export interface TelemetryPage {
 
 export interface NativeDaemonHealth {
   /** Native IPC readiness. */
-  readonly ipc: 'ready' | 'write_failed';
+  readonly ipc: NativeComponentHealth;
 
   /** Durable telemetry-ledger readiness. */
-  readonly ledger: 'ready' | 'write_failed';
+  readonly ledger: NativeComponentHealth;
 
   /** The current enforcement policy mode. */
-  readonly mode: 'active_enforcement' | 'audit_only';
+  readonly mode: 'active_enforcement' | 'audit_only' | null;
 
   /** Aggregated health status. */
   readonly status: 'degraded' | 'healthy';
 
   /** Portable watcher readiness. */
-  readonly watcher: 'ready' | 'write_failed';
+  readonly watcher: NativeComponentHealth;
+  /** Registry snapshot readiness; omitted only by older daemons. */
+  readonly registry?: NativeComponentHealth;
+  /** Desktop delivery status, independent of successful quarantine. */
+  readonly notification?: NativeComponentHealth;
+  /** Queue-loss state, sticky until restart. */
+  readonly telemetryQueue?: NativeComponentHealth;
 }
+
+export type NativeComponentHealth = 'ready' | 'write_failed' | 'starting' | 'degraded';
 
 export interface TelemetryResponse extends TelemetryPage {
   /** The number of exact process generations registered with the native daemon. */
-  readonly activeProcessCount: number;
+  readonly activeProcessCount: number | null;
 
   /** The bounded telemetry events included in this page. */
   readonly alerts: readonly SecurityAlert[];

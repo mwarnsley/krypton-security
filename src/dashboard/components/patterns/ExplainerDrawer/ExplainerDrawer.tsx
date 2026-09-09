@@ -111,19 +111,19 @@ const CORE_FEATURES: readonly GuideItem[] = [
   },
   {
     description:
-      'Switches between observation-only logging and active quarantine while native changes require daemon confirmation.',
+      'Reflects live daemon health.mode and requires native confirmation for changes. Unknown mode disables the toggle; unavailable registry counts never become zero. Watcher, IPC, ledger, registry, notification, and queue failures report degraded health. OBSERVED events are not confirmed isolation receipts.',
     icon: ShieldOff,
     title: 'Audit vs. Enforcement Mode',
   },
   {
     description:
-      'Keeps security decisions local and retains at most 10,000 events or 8 MiB in the bounded JSONL ledger.',
+      'Keeps security decisions local and retains at most 10,000 events or 8 MiB in the bounded JSONL ledger. Recovery repairs incomplete tails, rejects interior corruption, and preserves monotonic sequences with private atomic compaction.',
     icon: Activity,
     title: 'Offline & Local Telemetry',
   },
   {
     description:
-      'Queues a redacted macOS Notification Center banner outside the browser only after authenticated quarantine of a revalidated owned child succeeds.',
+      'Queues a redacted macOS Notification Center banner outside the browser only after authenticated quarantine of a revalidated owned child succeeds. Banners use trusted agent labels and PID, never raw filenames; delivery has a two-second worker deadline and atomic degraded health.',
     icon: Bell,
     title: 'OS-Level Quarantine Alerts',
   },
@@ -139,7 +139,7 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
     status: 'Completed',
     summary:
-      'The supported macOS daemon, local telemetry dashboard, offline policy loop, public simulation, and redacted OS-level alerts for confirmed native quarantines are implemented.',
+      'The supported macOS daemon, local telemetry dashboard, offline policy loop, public simulation, and redacted OS-level alerts for confirmed native quarantines are implemented. The scoped v1.0 boundary is verified by native end-to-end tests with mocked desktop delivery; watcher events remain observational, never containment authority.',
     title: 'Phase 1 · Native macOS Hardening & Public Launch (v1.0)',
   },
   {
@@ -166,7 +166,7 @@ const SETUP_STEPS = [
   ['1. Clone the repository', 'git clone https://github.com/mwarnsley/krypton-security.git'],
   ['2. Enter the project and install dependencies', 'cd krypton-security && npm ci'],
   ['3. Run the native daemon and dashboard', 'npm run dev:full'],
-  ['4. Run the mock attack simulation', 'npm run test:sim'],
+  ['4. Run the isolated native simulation (desktop delivery mocked)', 'npm run test:sim'],
 ] as const;
 
 const FAQ_ITEMS: readonly FaqItem[] = [
@@ -217,7 +217,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Clone the repository, enter krypton-security, run npm ci, and use npm run dev:full for the actively supported macOS native daemon and dashboard. In a second terminal, run npm run test:sim. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      'Clone the repository, enter krypton-security, run npm ci, and use npm run dev:full for the actively supported macOS native daemon and dashboard. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
   {

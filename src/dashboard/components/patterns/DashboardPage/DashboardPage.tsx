@@ -18,7 +18,8 @@ import {
   type SystemStatus,
 } from '../';
 import { KryptonButton, KryptonIconButton, KryptonToggle } from '../../primitives';
-import type { TelemetryFallbackReason, TelemetrySource } from '../../../types';
+import type { NativeDaemonHealth, TelemetryFallbackReason, TelemetrySource } from '../../../types';
+import { normalizeNativeHealth } from '../../../utils/nativeHealth';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
 const STATIC_TELEMETRY_FALLBACK_DELAY_MS = 2_000;
@@ -29,7 +30,10 @@ const IS_STATIC_EXPORT_BUILD = process.env.NEXT_PUBLIC_KRYPTON_STATIC_EXPORT ===
 
 interface TelemetryState {
   /** The number of owned child processes currently monitored by Krypton. */
-  readonly activeProcessCount: number;
+  readonly activeProcessCount: number | null;
+
+  /** Validated live mode and component health; absent means unknown. */
+  readonly health?: NativeDaemonHealth;
 
   /** The newest-first security events returned by the telemetry endpoint. */
   readonly alerts: SecurityAlert[];
@@ -53,7 +57,7 @@ interface TelemetryState {
 type TelemetryRecord = Record<string, unknown>;
 
 const EMPTY_TELEMETRY: TelemetryState = {
-  activeProcessCount: 0,
+  activeProcessCount: null,
   alerts: [],
   generatedAt: '',
   nativeDaemonReachable: false,
@@ -286,8 +290,7 @@ function readString(
 /**
  * Maps current and legacy telemetry records to a supported enforcement status.
  *
- * Unknown states fail closed to an intercepted outcome unless the legacy action
- * explicitly records completed process quarantine.
+ * Unknown states remain observational; attribution alone never proves isolation.
  *
  * @param {TelemetryRecord} record - The raw telemetry record to normalize.
  * @returns {EnforcementStatus} A dashboard-supported containment state.
@@ -308,7 +311,7 @@ function normalizeEnforcementStatus(record: TelemetryRecord): EnforcementStatus 
     return enforcementStatus;
   }
 
-  return record.action === 'process_quarantined' ? 'QUARANTINED' : 'INTERCEPTED';
+  return 'OBSERVED';
 }
 
 /**
@@ -458,7 +461,9 @@ export function normalizeTelemetryPayload(payload: unknown): TelemetryState {
     Number.isSafeInteger(reportedProcessCount) &&
     reportedProcessCount >= 0
       ? reportedProcessCount
-      : 0;
+      : null;
+
+  const health = normalizeNativeHealth(payloadRecord?.health);
 
   const source = payloadRecord?.source;
   const fallbackReason = payloadRecord?.fallbackReason;
@@ -475,6 +480,7 @@ export function normalizeTelemetryPayload(payload: unknown): TelemetryState {
 
   return {
     activeProcessCount,
+    ...(health === undefined ? {} : { health }),
     alerts,
     generatedAt: typeof generatedAt === 'string' ? generatedAt : new Date(0).toISOString(),
     nativeDaemonReachable: payloadRecord?.nativeDaemonReachable === true,
@@ -652,6 +658,12 @@ export function showContainmentBreakoutToast(
   breakout: SecurityAlert,
   auditOnly: boolean
 ): string | number {
+  if (breakout.attribution === 'unattributed' || breakout.enforcementStatus === 'OBSERVED') {
+    return toast.info('Observed filesystem activity', {
+      description: 'Observation only; no process isolation is confirmed by this event.',
+      duration: 8_000,
+    });
+  }
   if (auditOnly) {
     return toast.warning(
       'Learning Loop: Process attempted a folder escape but was permitted to continue running.',
@@ -783,7 +795,7 @@ export default function DashboardPage(): React.JSX.Element {
     getDemoEnvironmentSnapshot,
     getServerDemoEnvironmentSnapshot
   );
-  const [auditOnly, setAuditOnly] = useState(true);
+  const [demoAuditOnly, setAuditOnly] = useState(true);
   const [isAuditModeUpdating, setIsAuditModeUpdating] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [telemetry, setTelemetry] = useState<TelemetryState>(() =>
@@ -792,6 +804,11 @@ export default function DashboardPage(): React.JSX.Element {
   const [systemStatus, setSystemStatus] = useState<SystemStatus>(() =>
     isDemoMode ? 'offline' : 'degraded'
   );
+  const nativeMode = telemetry.nativeDaemonReachable ? telemetry.health?.mode : undefined;
+  const auditOnly = isDemoMode ? demoAuditOnly : nativeMode === 'audit_only';
+  const modeKnown =
+    isDemoMode || nativeMode === 'audit_only' || nativeMode === 'active_enforcement';
+  const modeUpdateInFlight = useRef(false);
   const notifiedBreakoutIds = useRef(new Set<string>());
   const requestGeneration = useRef(0);
   const latestCursor = useRef<number | undefined>(undefined);
@@ -857,7 +874,7 @@ export default function DashboardPage(): React.JSX.Element {
       );
 
       for (const breakout of freshBreakouts) {
-        showContainmentBreakoutToast(breakout, auditOnly);
+        showContainmentBreakoutToast(breakout, nextTelemetry.health?.mode === 'audit_only');
       }
 
       latestCursor.current =
@@ -873,18 +890,20 @@ export default function DashboardPage(): React.JSX.Element {
             : nextTelemetry.alerts.slice(0, MAX_CLIENT_RETAINED_ALERTS),
       }));
       setSystemStatus(
-        nextTelemetry.source === 'native'
+        nextTelemetry.source === 'native' &&
+          nextTelemetry.health?.status === 'healthy' &&
+          nextTelemetry.activeProcessCount !== null
           ? 'operational'
           : nextTelemetry.nativeDaemonReachable
             ? 'degraded'
             : 'offline'
       );
     },
-    [auditOnly]
+    []
   );
 
   /**
-   * Synchronizes an optimistic execution-mode update with the local native daemon.
+   * Publishes an execution-mode update only after local native confirmation.
    *
    * @param {boolean} nextAuditOnly - Whether native process termination should be disabled.
    * @returns {Promise<void>} Resolves after confirmation or a handled rollback.
@@ -895,16 +914,30 @@ export default function DashboardPage(): React.JSX.Element {
    */
   const synchronizeNativeAuditMode = useCallback(async (nextAuditOnly: boolean): Promise<void> => {
     setIsAuditModeUpdating(true);
+    modeUpdateInFlight.current = true;
+    requestGeneration.current += 1;
 
     try {
       await dispatchAuditModeUpdate(nextAuditOnly);
+      setTelemetry((current) =>
+        current.health === undefined
+          ? current
+          : {
+              ...current,
+              health: {
+                ...current.health,
+                mode: nextAuditOnly ? 'audit_only' : 'active_enforcement',
+              },
+            }
+      );
       toast.success(nextAuditOnly ? 'Audit-Only Mode enabled' : 'Active Enforcement restored');
     } catch {
-      setAuditOnly(!nextAuditOnly);
       toast.error('Execution mode update failed', {
         description: 'The native Krypton watchdog did not confirm the requested mode.',
       });
     } finally {
+      requestGeneration.current += 1;
+      modeUpdateInFlight.current = false;
       setIsAuditModeUpdating(false);
     }
   }, []);
@@ -974,6 +1007,10 @@ export default function DashboardPage(): React.JSX.Element {
      */
     const pollTelemetry = async (): Promise<void> => {
       if (requestInFlight || document.visibilityState !== 'visible' || disposed) {
+        return;
+      }
+      if (modeUpdateInFlight.current) {
+        timerId = window.setTimeout(() => void pollTelemetry(), TELEMETRY_POLL_INTERVAL_MS);
         return;
       }
 
@@ -1096,11 +1133,12 @@ export default function DashboardPage(): React.JSX.Element {
                 <KryptonToggle
                   aria-label="Audit-Only Mode"
                   checked={auditOnly}
-                  disabled={isAuditModeUpdating}
+                  disabled={isAuditModeUpdating || !modeKnown}
                   id="audit-only-mode"
                   onCheckedChange={handleAuditModeChange}
                   variant="warning"
                 />
+                {!modeKnown && <span role="status">Mode unavailable</span>}
                 <InfoTooltip
                   content="Audit-Only Mode records folder escapes and shows warnings without terminating the process, so you can observe normal workspace activity before enabling enforcement."
                   label="Audit-Only Mode"
@@ -1145,9 +1183,9 @@ export default function DashboardPage(): React.JSX.Element {
               Active Workspace Protection
             </h2>
             <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-              Krypton maps file interactions inside your current folder directory and safely
-              isolates malicious scripts before they can read or write data to other areas of your
-              computer.
+              Krypton observes workspace filesystem activity. Authenticated isolation is limited to
+              registered children whose complete live process identity is revalidated; observations
+              alone do not prove or trigger containment.
             </p>
           </div>
           <div className="w-full lg:max-w-md">

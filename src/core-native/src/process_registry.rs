@@ -22,8 +22,11 @@ pub struct ProcessRegistry {
 }
 
 impl ProcessRegistry {
-    pub fn active_count(&self) -> usize {
-        self.processes.read().map_or(0, |entries| entries.len())
+    pub fn active_count(&self) -> Result<usize, RegistryError> {
+        self.processes
+            .try_read()
+            .map(|entries| entries.len())
+            .map_err(|_| RegistryError::RegistryUnavailable)
     }
 
     pub fn register(
@@ -141,7 +144,7 @@ mod tests {
             registry.register(supplied.clone(), &Inspector(Ok(supplied))),
             Ok(())
         );
-        assert_eq!(registry.active_count(), 1);
+        assert_eq!(registry.active_count(), Ok(1));
     }
 
     #[test]
@@ -164,7 +167,7 @@ mod tests {
             registry.unregister(&identity(11)),
             Err(RegistryError::IdentityMismatch)
         );
-        assert_eq!(registry.active_count(), 1);
+        assert_eq!(registry.active_count(), Ok(1));
     }
 
     #[test]
@@ -188,6 +191,16 @@ mod tests {
                 panic!("must not signal")
             }),
             Err(RegistryError::NotRegistered)
+        );
+    }
+
+    #[test]
+    fn unavailable_registry_count_is_not_zero() {
+        let registry = ProcessRegistry::default();
+        let _guard = registry.processes.write().unwrap();
+        assert_eq!(
+            registry.active_count(),
+            Err(RegistryError::RegistryUnavailable)
         );
     }
 }

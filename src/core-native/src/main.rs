@@ -1,9 +1,12 @@
 mod config;
+mod health;
 mod ipc;
 mod notification;
 mod path_policy;
 mod process_identity;
 mod process_registry;
+#[cfg(test)]
+mod simulation;
 mod telemetry;
 mod watcher;
 
@@ -21,7 +24,8 @@ use process_identity::SystemProcessInspector;
 use process_registry::ProcessRegistry;
 use std::fs;
 use std::io;
-use std::sync::mpsc::channel;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, RwLock};
 use telemetry::{start_writer, TelemetryLedger};
 use watcher::{
@@ -68,19 +72,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.telemetry_max_bytes,
     )?);
     let (telemetry_sender, _telemetry_worker) = start_writer(Arc::clone(&ledger));
-    let (notification_dispatcher, _notification_health, _notification_worker) =
+    let (notification_dispatcher, notification_health, _notification_worker) =
         start_notification_dispatcher(MacOsNotificationDelivery);
+    let components = Arc::new(health::RuntimeHealth::default());
     let control_state = Arc::new(ControlState {
         registry: Arc::new(ProcessRegistry::default()),
         mode: Arc::new(RwLock::new(EnforcementMode::default())),
         ledger_health: ledger.health(),
         inspector: Arc::new(SystemProcessInspector),
         notifier: Arc::new(notification_dispatcher),
+        notification_health,
+        components: Arc::clone(&components),
     });
     let ipc = start_ipc(&config.runtime_root(&repository_root), control_state)?;
     let ignored_components = config.ignored_components();
-    let (event_sender, event_receiver) = channel::<notify::Result<Event>>();
-    let mut native_watcher = notify::recommended_watcher(event_sender)?;
+    let (event_sender, event_receiver) = sync_channel::<notify::Result<Event>>(1024);
+    let callback_health = Arc::clone(&components);
+    let mut native_watcher = notify::recommended_watcher(move |event| {
+        if event_sender.try_send(event).is_err() {
+            callback_health
+                .telemetry_dropped
+                .store(true, Ordering::Relaxed);
+        }
+    })?;
     native_watcher.watch(&protected_root, RecursiveMode::Recursive)?;
     let mut observed_root_count = 0_usize;
     for configured_root in &config.observed_roots {
@@ -92,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         observed_root_count += 1;
     }
 
+    components.watcher_ready.store(true, Ordering::Relaxed);
     println!("[KRYPTON NATIVE] startup verification successful.");
     println!(
         "[KRYPTON NATIVE] authenticated IPC endpoint: {}",
@@ -127,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let decision = match resolve_path(&protected_root, &event_path) {
                         Ok(decision) => decision,
                         Err(error) => {
+                            components.watcher_failed.store(true, Ordering::Relaxed);
                             eprintln!(
                                 "[SECURITY] path evaluation failed closed for {}: {error}",
                                 event_path.display()
@@ -145,12 +161,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         PortableAttributionAdapter.attribution_for_event(&filesystem_event)
                     {
                         eprintln!("[WATCHER ERROR] attribution adapter failed: {error:?}");
+                        components.watcher_failed.store(true, Ordering::Relaxed);
                     }
-                    record_portable_boundary_event(
+                    if !record_portable_boundary_event(
                         &filesystem_event,
                         ledger.next_sequence(),
                         &telemetry_sender,
-                    );
+                    ) {
+                        components.telemetry_dropped.store(true, Ordering::Relaxed);
+                    }
                     println!(
                             "[SECURITY] unattributed workspace-boundary event: kind={:?}, path={}, missing={}",
                             event.kind,
@@ -159,7 +178,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                 }
             }
-            Err(error) => eprintln!("[WATCHER ERROR] {error}"),
+            Err(error) => {
+                components.watcher_failed.store(true, Ordering::Relaxed);
+                eprintln!("[WATCHER ERROR] {error}");
+            }
         }
     }
 

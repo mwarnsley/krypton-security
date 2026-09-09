@@ -7,6 +7,7 @@ import {
   formatAlertTimestamp,
   formatAttemptedAction,
   formatEnforcementStatus,
+  isolationIdentityKey,
   requestProcessIsolation,
   resolveAlertActionMode,
   resolveAlertPageSize,
@@ -20,6 +21,14 @@ const PROCESS_IDENTITY = {
   pid: 4242,
   startTime: 1_784_500_000,
 } as const;
+
+test.each([
+  { ...PROCESS_IDENTITY, startTime: 10 },
+  { ...PROCESS_IDENTITY, parentPid: 10 },
+  { ...PROCESS_IDENTITY, executablePath: '/bin/other' },
+])('does not reuse a success receipt across compound identity changes %j', (process) => {
+  expect(isolationIdentityKey(process)).not.toBe(isolationIdentityKey(PROCESS_IDENTITY));
+});
 
 const ALERT: SecurityAlert = {
   attribution: 'process',
@@ -399,7 +408,7 @@ describe('AlertTable', () => {
   });
 
   it('translates intercepted enforcement', () => {
-    expect(formatEnforcementStatus('INTERCEPTED')).toBe('Blocked & Isolated');
+    expect(formatEnforcementStatus('INTERCEPTED')).toBe('Intercepted (unconfirmed)');
   });
 
   it('translates autonomous rate-limit quarantine', () => {

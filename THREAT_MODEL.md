@@ -54,7 +54,11 @@ bound to loopback and must not be exposed through a public reverse proxy.
 The portable `notify` adapter reports event kinds and paths, not the responsible
 process. Krypton therefore records those events as `unattributed` and never
 increments a per-process breakout threshold or quarantines a child from that
-signal alone. OS-specific attribution adapters are not implemented.
+signal alone. The TypeScript reference watcher also records only `OBSERVED`
+unattributed state, including degraded health on watcher errors; it has no signal
+path. PID-only registration is disabled. Operational TypeScript isolation submits
+a compound identity to authenticated native `IsolateProcess`. OS-specific
+attribution adapters are not implemented.
 
 Portable events are post-event telemetry. Krypton does not claim pre-access
 kernel denial, complete credential-exfiltration prevention, or reliable actor
@@ -82,14 +86,30 @@ directory-handle and kernel permission APIs are future adapter work.
 Native events use monotonically increasing sequence IDs and one JSONL format.
 Writes are newline-delimited and synchronized; retention compaction uses a
 temporary file plus atomic rename. The ledger is capped at 10,000 events and
-8 MiB. A corrupt/incomplete final record is ignored during recovery; a write
+8 MiB. Recovery truncates an EOF-incomplete final JSON record to the last valid
+byte offset before append, and preserves a valid final record missing its newline.
+Interior corruption, malformed complete lines, and non-monotonic or exhausted
+sequences are rejected without rewriting ledger contents. A write
 failure marks daemon health degraded. The ledger is not cryptographically signed
-or encrypted.
+or encrypted. Compaction and private IPC-file publication use exclusively created
+`0600` temporary files, file sync, and directory sync before and after rename.
+Existing temporary paths, including symlinks, fail closed and require operator
+inspection; they are never automatically followed or overwritten.
 
 The alert queue (1,024), IPC queue (32), worker count (4), IPC sizes (16 KiB),
 API page size (250), ledger read window (1 MiB), and client rows (500) are
 bounded. Saturation may drop telemetry or delay clients; it must not expand
 memory without limit.
+
+The watcher-to-main bridge is also bounded to 1,024 events. Saturation uses
+non-blocking dispatch and marks sticky degraded telemetry health; IPC overload
+rejects the connection and marks IPC degraded. Watcher errors and notification
+failures also surface through authenticated health. Registry or mode lock
+failures never become zero processes or active-enforcement defaults. Unknown
+mode denies isolation and disables the dashboard toggle. Component degradation
+does not itself prove that a previously confirmed quarantine failed. Ledger
+observations remain `OBSERVED`; only successful native action receipts authorize
+an `ISOLATED` UI confirmation.
 
 ## Desktop notification boundary
 
@@ -98,13 +118,23 @@ authority or additional quarantine evidence. Only a successfully authenticated
 `IsolateProcess` request that revalidates an owned process identity and confirms
 `SIGKILL` can enqueue an alert; portable watcher events cannot do so. A bounded
 background worker invokes `/usr/bin/osascript` with a constant script and passes
-only a sanitized executable basename and PID as arguments, so raw event paths
-and credential details are excluded from the banner.
+only a trusted agent label and PID as arguments. Known executable names map to
+fixed labels; all others use `Unknown Agent Process`. These labels are explanatory,
+not executable authenticity claims. Raw names, event paths, and credentials are excluded.
+Delivery discards subprocess output and has a two-second execution deadline;
+timeout triggers kill/reap cleanup on the notification worker.
 
 Notification permission denial, a missing desktop session, an unavailable
 delivery command, queue saturation, and process-launch errors degrade only this
-convenience channel. They are logged categorically without sensitive values and
-cannot block, reverse, or weaken the completed quarantine.
+convenience channel. Failures set sticky atomic degraded status without synchronous
+locks or stderr writes on the IPC caller's path and cannot reverse or weaken the
+completed quarantine. A successful osascript exit does not prove a banner was displayed.
+
+The native injection simulation uses a real socket, registry, OS inspector,
+owned-child signal, watcher, and durable ledger in a disposable runtime. Only
+notification delivery is mocked, and only in the Rust test binary. Observational
+ledger evidence and authenticated quarantine receipts remain separate: the test
+does not infer the offending process from a portable filesystem event.
 
 ## Demonstration data
 

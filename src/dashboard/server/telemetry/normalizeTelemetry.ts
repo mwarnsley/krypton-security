@@ -87,7 +87,8 @@ export function normalizePersistedEvent(value: unknown): SecurityAlert {
     attemptedAction: category === 'workspace_boundary' ? 'filesystem_boundary_breakout' : category,
     attemptedPath,
     attribution,
-    enforcementStatus: attribution === 'unattributed' ? 'OBSERVED' : 'INTERCEPTED',
+    // The current native ledger contains observations, not confirmed signal receipts.
+    enforcementStatus: 'OBSERVED',
     id,
     origin_attribution:
       attribution === 'process'

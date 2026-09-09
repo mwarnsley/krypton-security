@@ -8,6 +8,13 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it('explains live mode and observational status boundaries', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
+    expect(screen.getByText(/Unknown mode disables the toggle/)).toBeTruthy();
+    expect(screen.getByText(/OBSERVED events are not confirmed isolation receipts/)).toBeTruthy();
+  });
   it('starts with the guide content closed', () => {
     render(<ExplainerDrawer />);
 
@@ -115,6 +122,17 @@ describe('ExplainerDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
 
     expect(screen.getByRole('heading', { name: 'Frequently asked questions' })).toBeTruthy();
+  });
+
+  it('distinguishes the isolated native test from live dashboard and OS delivery', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+    fireEvent.click(screen.getByText('How do I run the project locally?'));
+    expect(screen.getByText(/real authenticated IPC and SIGKILL/)).toBeTruthy();
+    expect(
+      screen.getByText(/does not update the running dashboard or display an OS banner/)
+    ).toBeTruthy();
   });
 
   it('renders all eleven FAQ questions in order', () => {

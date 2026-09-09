@@ -80,9 +80,7 @@ describe('DashboardPage', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 
     expect(markup).toContain('Active Workspace Protection');
-    expect(markup).toContain(
-      'Krypton maps file interactions inside your current folder directory and safely isolates malicious scripts before they can read or write data to other areas of your computer.'
-    );
+    expect(markup).toContain('observations alone do not prove or trigger containment.');
   });
 
   it('renders the labeled audit-only switch in the command header', () => {
@@ -90,7 +88,7 @@ describe('DashboardPage', () => {
 
     expect(markup).toContain('Audit-Only Mode');
     expect(markup).toContain('role="switch"');
-    expect(markup).toContain('aria-checked="true"');
+    expect(markup).toContain('Mode unavailable');
   });
 
   it('renders the audit-only information control with an accessible label', () => {
@@ -493,7 +491,7 @@ describe('DashboardPage', () => {
 
     expect(toastErrorSpy).toHaveBeenCalledWith('CRITICAL: Boundary Breakout', {
       description:
-        'PID 4242 triggered: Unauthorized Workspace Escape Attempt. Status: Blocked & Isolated.',
+        'PID 4242 triggered: Unauthorized Workspace Escape Attempt. Status: Intercepted (unconfirmed).',
       duration: 8_000,
     });
   });

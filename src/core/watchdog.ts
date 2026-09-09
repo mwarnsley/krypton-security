@@ -1,180 +1,166 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { quarantineRegisteredProcesses } from './processIsolation.cjs';
-
 export {
   getActiveWorkspaceProcessCount,
   quarantineProcess,
-  registerWorkspaceProcess,
-  unregisterWorkspaceProcess,
+  spawnProtectedProcess,
 } from './processIsolation.cjs';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const SANDBOX_ROOT = path.resolve(PROJECT_ROOT, 'sandbox_workspace');
-
 const HIGH_RISK_ENDPOINTS: ReadonlySet<string> = new Set(['.ssh', '.aws', '.env']);
 const WATCH_EVENT_TYPES: ReadonlySet<string> = new Set(['change', 'rename']);
 const activeWorkspaceWatchers = new Map<string, fs.FSWatcher>();
 
+interface WorkspaceObservation {
+  readonly status: 'OBSERVED';
+  readonly attribution: 'unattributed';
+  readonly targetProcessId: null;
+  readonly health: 'ready' | 'degraded';
+}
+let observation: WorkspaceObservation | undefined;
+
 /**
- * Resolves a requested path against the absolute Krypton project root.
- *
- * @param {string} targetPath - The raw absolute or project-relative filesystem path.
- * @returns {string} The normalized absolute filesystem path.
- * @complexity O(1) with respect to policy-set size; O(L) time and space in path length.
+ * Returns the latest bounded reference-watcher state, never process authority.
+ * @returns {WorkspaceObservation | undefined} Observational/degraded state, or undefined before any event.
+ * @complexity O(1) time and space.
  * @example
- * resolveRequestedPath("./sandbox_workspace/file.txt");
- * // => "/absolute/project/root/sandbox_workspace/file.txt"
+ * getWorkspaceObservation(); // => { status: 'OBSERVED', attribution: 'unattributed', targetProcessId: null, health: 'ready' }
  */
-function resolveRequestedPath(targetPath: string): string {
-  return path.resolve(PROJECT_ROOT, targetPath);
+export function getWorkspaceObservation(): WorkspaceObservation | undefined {
+  return observation;
 }
 
 /**
- * Determines whether an absolute path remains within the sandbox boundary.
- *
- * @param {string} resolvedPath - The normalized absolute path to evaluate.
- * @returns {boolean} `true` when the path is the sandbox root or one of its descendants.
- * @complexity O(1) with respect to policy-set size; O(L) time and space in path length.
+ * Resolves existing targets or the canonical nearest existing parent of missing targets.
+ * Explicit parent traversal is denied before normalization can erase symlink semantics.
+ * @param {string} targetPath - Absolute or project-relative path, without parent components.
+ * @returns {string} Canonical path; filesystem uncertainty and dangling symlinks throw.
+ * @complexity O(L) lexical space; up to D filesystem resolutions costing O(D * L) worst-case time for D missing ancestors.
  * @example
- * isInsideSandbox(path.resolve(SANDBOX_ROOT, "input.txt"));
- * // => true
+ * canonicalPath('./sandbox_workspace/new.txt'); // => canonical workspace + '/new.txt'
  */
-function isInsideSandbox(resolvedPath: string): boolean {
-  const relativePath = path.relative(SANDBOX_ROOT, resolvedPath);
-
-  return (
-    relativePath === '' ||
-    (relativePath !== '..' &&
-      !relativePath.startsWith(`..${path.sep}`) &&
-      !path.isAbsolute(relativePath))
-  );
-}
-
-/**
- * Detects sensitive endpoint segments in a normalized filesystem path.
- *
- * @param {string} resolvedPath - The normalized absolute path whose segments will be inspected.
- * @returns {boolean} `true` when the path contains a blocked endpoint such as `.ssh` or `.env`.
- * @complexity O(1) average time per Set lookup; O(L) total time and space in path length.
- * @example
- * containsHighRiskEndpoint("/project/sandbox_workspace/.ssh/id_rsa");
- * // => true
- */
-function containsHighRiskEndpoint(resolvedPath: string): boolean {
-  const pathSegments = resolvedPath.split(path.sep);
-
-  return pathSegments.some((segment) => {
-    const normalizedSegment = segment.toLowerCase();
-
-    return HIGH_RISK_ENDPOINTS.has(normalizedSegment) || normalizedSegment.startsWith('.env.');
-  });
-}
-
-/**
- * Processes one asynchronous workspace event through the path security policy.
- *
- * @param {string} workspacePath - The absolute sandbox directory being watched.
- * @param {string} eventType - The native filesystem event type.
- * @param {string | null} filename - The relative filename reported by `fs.watch`.
- * @returns {void} No value; denied or indeterminate events quarantine tracked children.
- * @complexity O(1) event dispatch and average policy lookup; O(L) path validation and O(P) threat quarantine.
- * @example
- * handleWorkspaceEvent(SANDBOX_ROOT, "change", "input.txt");
- * // => undefined
- */
-function handleWorkspaceEvent(
-  workspacePath: string,
-  eventType: string,
-  filename: string | null
-): void {
-  if (!WATCH_EVENT_TYPES.has(eventType)) {
-    return;
-  }
-
-  let targetPath = workspacePath;
-
-  try {
-    if (filename === null) {
-      throw new Error('The filesystem event did not include a filename.');
+function canonicalPath(targetPath: string): string {
+  if (
+    typeof targetPath !== 'string' ||
+    targetPath.length > 4096 ||
+    targetPath.trim() === '' ||
+    targetPath.includes('\0') ||
+    targetPath.split(/[\\/]/).includes('..')
+  )
+    throw new TypeError('Invalid or traversing path.');
+  let candidate = path.resolve(PROJECT_ROOT, targetPath);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(candidate), ...tail.reverse());
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      // A dangling symlink is not a missing ordinary component.
+      try {
+        fs.lstatSync(candidate);
+        throw new Error('Unresolvable existing path.');
+      } catch (statError: unknown) {
+        if ((statError as NodeJS.ErrnoException).code !== 'ENOENT') throw statError;
+      }
+      const parent = path.dirname(candidate);
+      if (parent === candidate) throw error;
+      tail.push(path.basename(candidate));
+      candidate = parent;
     }
-
-    targetPath = path.resolve(workspacePath, filename);
-
-    if (!verifyPathAccess(targetPath)) {
-      quarantineRegisteredProcesses(targetPath);
-    }
-  } catch {
-    quarantineRegisteredProcesses(targetPath);
   }
 }
 
 /**
- * Verifies that a requested path is contained by the sandbox and is not sensitive.
- *
- * @param {string} targetPath - The raw absolute or project-relative path requested by an agent.
- * @returns {boolean} `true` only when the resolved path is permitted by the sandbox policy.
- * @complexity O(1) average time per policy lookup; O(L) total time and space in path length.
+ * Denies sensitive path components using average-case native Set membership.
+ * @param {string} value - Lexical or canonical path.
+ * @returns {boolean} True when a protected credential component is present.
+ * @complexity O(L) time and space; O(1) average membership per component.
  * @example
- * verifyPathAccess("./sandbox_workspace/input.txt");
- * // => true
+ * sensitive('/workspace/.env.production'); // => true
  */
-export function verifyPathAccess(targetPath: string): boolean {
-  try {
-    const resolvedPath = resolveRequestedPath(targetPath);
+function sensitive(value: string): boolean {
+  return value
+    .split(path.sep)
+    .some(
+      (segment) =>
+        HIGH_RISK_ENDPOINTS.has(segment.toLowerCase()) || segment.toLowerCase().startsWith('.env.')
+    );
+}
 
-    return isInsideSandbox(resolvedPath) && !containsHighRiskEndpoint(resolvedPath);
+/**
+ * Checks canonical containment without granting authority to watcher events.
+ * @param {string} targetPath - Requested target; parent traversal is rejected.
+ * @param {string} workspaceRoot - Explicit trusted boundary; defaults to the repository sandbox.
+ * @returns {boolean} False on unsafe paths, symlink escapes, missing roots, or filesystem errors.
+ * @complexity O(L) lexical space; up to O(D * L) time for D missing ancestors; Set lookup is O(1) average.
+ * @example
+ * verifyPathAccess('./sandbox_workspace/input.txt'); // => true for a safe canonical target
+ */
+export function verifyPathAccess(targetPath: string, workspaceRoot = SANDBOX_ROOT): boolean {
+  try {
+    const root = fs.realpathSync(workspaceRoot);
+    const target = canonicalPath(targetPath);
+    const relative = path.relative(root, target);
+    return (
+      (relative === '' ||
+        (relative !== '..' &&
+          !relative.startsWith(`..${path.sep}`) &&
+          !path.isAbsolute(relative))) &&
+      !sensitive(targetPath) &&
+      !sensitive(target)
+    );
   } catch {
     return false;
   }
 }
 
 /**
- * Starts one persistent native watcher for the quarantined workspace directory.
- *
- * @param {string} workspacePath - The absolute or project-relative sandbox path to monitor.
- * @returns {void} No value; the retained watcher dispatches events asynchronously.
- * @complexity O(1) watcher registration and event dispatch; O(L) path validation per event and O(P) only on quarantine.
+ * Starts an observational reference watcher; native telemetry owns durable evidence.
+ * @param {string} workspacePath - The repository sandbox directory.
+ * @returns {void} Starts at most one watcher; setup errors throw and record degraded observation.
+ * @complexity O(L) canonical setup and O(1) average Map membership; callbacks retain O(1) state.
  * @example
- * startWorkspaceWatcher("./sandbox_workspace");
- * // => undefined
+ * startWorkspaceWatcher('./sandbox_workspace'); // events remain OBSERVED, never signal processes
  */
 export function startWorkspaceWatcher(workspacePath: string): void {
-  const resolvedWorkspacePath = resolveRequestedPath(workspacePath);
-
-  if (resolvedWorkspacePath !== SANDBOX_ROOT) {
+  const resolved = canonicalPath(workspacePath);
+  if (resolved !== fs.realpathSync(SANDBOX_ROOT))
     throw new RangeError('Only the Krypton sandbox workspace may be watched.');
-  }
-
-  if (activeWorkspaceWatchers.has(resolvedWorkspacePath)) {
-    return;
-  }
-
-  let watcher: fs.FSWatcher;
-
+  if (activeWorkspaceWatchers.has(resolved)) return;
   try {
-    watcher = fs.watch(
-      resolvedWorkspacePath,
-      {
-        encoding: 'utf8',
-        persistent: true,
-        recursive: true,
-      },
+    const watcher = fs.watch(
+      resolved,
+      { encoding: 'utf8', persistent: true, recursive: true },
       (eventType, filename) => {
-        handleWorkspaceEvent(resolvedWorkspacePath, eventType, filename);
+        if (!WATCH_EVENT_TYPES.has(eventType)) return;
+        observation = {
+          status: 'OBSERVED',
+          attribution: 'unattributed',
+          targetProcessId: null,
+          health: filename === null ? 'degraded' : 'ready',
+        };
       }
     );
-  } catch (error: unknown) {
-    quarantineRegisteredProcesses(resolvedWorkspacePath);
+    activeWorkspaceWatchers.set(resolved, watcher);
+    watcher.on('error', () => {
+      activeWorkspaceWatchers.delete(resolved);
+      watcher.close();
+      observation = {
+        status: 'OBSERVED',
+        attribution: 'unattributed',
+        targetProcessId: null,
+        health: 'degraded',
+      };
+    });
+  } catch (error) {
+    observation = {
+      status: 'OBSERVED',
+      attribution: 'unattributed',
+      targetProcessId: null,
+      health: 'degraded',
+    };
     throw error;
   }
-
-  activeWorkspaceWatchers.set(resolvedWorkspacePath, watcher);
-
-  watcher.on('error', () => {
-    activeWorkspaceWatchers.delete(resolvedWorkspacePath);
-    watcher.close();
-    quarantineRegisteredProcesses(resolvedWorkspacePath);
-  });
 }

@@ -4,6 +4,11 @@ import { describe, expect, it, test } from 'vitest';
 import { StatusCard, type SystemStatus } from './StatusCard';
 
 describe('StatusCard', () => {
+  it('does not turn an unavailable registry count into zero', () => {
+    expect(
+      renderToStaticMarkup(<StatusCard activeProcessCount={null} systemStatus="degraded" />)
+    ).toContain('Unavailable');
+  });
   test.each<[SystemStatus, string]>([
     ['operational', 'Operational'],
     ['degraded', 'Degraded'],

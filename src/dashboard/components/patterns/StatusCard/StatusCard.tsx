@@ -4,7 +4,7 @@ export type SystemStatus = 'degraded' | 'offline' | 'operational';
 
 export interface StatusCardProps {
   /** The number of agent child processes currently monitored by Krypton. */
-  readonly activeProcessCount: number;
+  readonly activeProcessCount: number | null;
 
   /** The current global health state of the Krypton watchdog runtime. */
   readonly systemStatus: SystemStatus;
@@ -53,7 +53,7 @@ export function StatusCard(props: StatusCardProps): React.JSX.Element {
         <div className="flex items-end justify-between gap-krypton-space-4">
           <dt className="text-sm font-medium text-krypton-fg-muted">Active processes</dt>
           <dd className="font-mono text-3xl font-bold tabular-nums text-krypton-fg-primary">
-            {activeProcessCount}
+            {activeProcessCount ?? 'Unavailable'}
           </dd>
         </div>
       </dl>

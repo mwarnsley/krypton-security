@@ -32,7 +32,7 @@ function mockResponse(
   health?: NativeControlResponse['health']
 ): Response {
   const body: TelemetryResponse = {
-    activeProcessCount: 0,
+    activeProcessCount: null,
     alerts: generateMockTelemetryEvents(),
     fallbackReason,
     generatedAt: new Date().toISOString(),
@@ -75,7 +75,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const page = await readLedgerPage(after, Math.max(1, limit));
     const body: TelemetryResponse = {
-      activeProcessCount: nativeHealth.activeProcessCount ?? 0,
+      activeProcessCount: nativeHealth.activeProcessCount ?? null,
       alerts: page.alerts,
       generatedAt: new Date().toISOString(),
       hasMore: page.hasMore,

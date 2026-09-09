@@ -1,4 +1,5 @@
-use crate::notification::QuarantineNotifier;
+use crate::health::RuntimeHealth;
+use crate::notification::{NotificationStatus, QuarantineNotifier};
 use crate::process_identity::{ProcessIdentity, ProcessInspector};
 use crate::process_registry::{terminate_process, ProcessRegistry, RegistryError};
 use crate::telemetry::LedgerHealth;
@@ -9,6 +10,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
@@ -52,6 +54,8 @@ pub enum NativeControlCommand {
 #[serde(rename_all = "snake_case")]
 pub enum ComponentHealth {
     Ready,
+    Degraded,
+    Starting,
     WriteFailed,
 }
 
@@ -62,7 +66,10 @@ pub struct DaemonHealth {
     pub watcher: ComponentHealth,
     pub ledger: ComponentHealth,
     pub ipc: ComponentHealth,
-    pub mode: EnforcementMode,
+    pub mode: Option<EnforcementMode>,
+    pub registry: ComponentHealth,
+    pub notification: ComponentHealth,
+    pub telemetry_queue: ComponentHealth,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +101,8 @@ pub struct ControlState {
     pub ledger_health: Arc<RwLock<LedgerHealth>>,
     pub inspector: Arc<dyn ProcessInspector>,
     pub notifier: Arc<dyn QuarantineNotifier>,
+    pub notification_health: Arc<NotificationStatus>,
+    pub components: Arc<RuntimeHealth>,
 }
 
 pub struct IpcRuntime {
@@ -168,30 +177,65 @@ where
 
     match request.command {
         NativeControlCommand::Health => {
-            let mode = state
-                .mode
-                .read()
-                .map_or(EnforcementMode::ActiveEnforcement, |mode| *mode);
+            let mode = state.mode.try_read().ok().map(|mode| *mode);
             let ledger = state
                 .ledger_health
-                .read()
+                .try_read()
                 .map_or(LedgerHealth::WriteFailed, |health| *health);
-            let degraded = ledger == LedgerHealth::WriteFailed;
+            let count = state.registry.active_count().ok();
+            let watcher_ready = state.components.watcher_ready.load(Ordering::Relaxed);
+            let watcher_failed = state.components.watcher_failed.load(Ordering::Relaxed);
+            let ipc_failed = state.components.ipc_failed.load(Ordering::Relaxed);
+            let queue_failed = state.components.telemetry_dropped.load(Ordering::Relaxed);
+            let notification_failed = state.notification_health.is_degraded();
+            let degraded = mode.is_none()
+                || count.is_none()
+                || ledger == LedgerHealth::WriteFailed
+                || !watcher_ready
+                || watcher_failed
+                || ipc_failed
+                || queue_failed
+                || notification_failed;
             NativeControlResponse {
                 protocol_version: PROTOCOL_VERSION,
                 request_id,
                 ok: true,
                 code: if degraded { "degraded" } else { "ready" }.to_owned(),
-                active_process_count: Some(state.registry.active_count()),
+                active_process_count: count,
                 health: Some(DaemonHealth {
                     status: if degraded { "degraded" } else { "healthy" }.to_owned(),
-                    watcher: ComponentHealth::Ready,
-                    ledger: if degraded {
+                    watcher: if watcher_failed {
+                        ComponentHealth::Degraded
+                    } else if watcher_ready {
+                        ComponentHealth::Ready
+                    } else {
+                        ComponentHealth::Starting
+                    },
+                    ledger: if ledger == LedgerHealth::WriteFailed {
                         ComponentHealth::WriteFailed
                     } else {
                         ComponentHealth::Ready
                     },
-                    ipc: ComponentHealth::Ready,
+                    ipc: if ipc_failed {
+                        ComponentHealth::Degraded
+                    } else {
+                        ComponentHealth::Ready
+                    },
+                    registry: if count.is_none() {
+                        ComponentHealth::Degraded
+                    } else {
+                        ComponentHealth::Ready
+                    },
+                    notification: if notification_failed {
+                        ComponentHealth::Degraded
+                    } else {
+                        ComponentHealth::Ready
+                    },
+                    telemetry_queue: if queue_failed {
+                        ComponentHealth::Degraded
+                    } else {
+                        ComponentHealth::Ready
+                    },
                     mode,
                 }),
             }
@@ -223,11 +267,11 @@ where
             }
         }
         NativeControlCommand::IsolateProcess { process } => {
-            let audit_only = state
-                .mode
-                .read()
-                .is_ok_and(|mode| *mode == EnforcementMode::AuditOnly);
-            if audit_only {
+            let mode = match state.mode.try_read() {
+                Ok(mode) => *mode,
+                Err(_) => return response(request_id, false, "mode_state_unavailable"),
+            };
+            if mode == EnforcementMode::AuditOnly {
                 return response(request_id, false, "audit_only");
             }
             match state
@@ -323,11 +367,15 @@ fn worker_loop(
     loop {
         let stream = match receiver.lock() {
             Ok(receiver) => receiver.recv(),
-            Err(_) => return,
+            Err(_) => {
+                state.components.ipc_failed.store(true, Ordering::Relaxed);
+                return;
+            }
         };
         match stream {
             Ok(stream) => {
                 if let Err(error) = handle_connection(stream, &capability, &state) {
+                    state.components.ipc_failed.store(true, Ordering::Relaxed);
                     eprintln!("[IPC ERROR] request rejected: {error}");
                 }
             }
@@ -382,11 +430,14 @@ pub fn start_ipc(
         for connection in listener.incoming() {
             match connection {
                 Ok(stream) => {
-                    if sender.send(stream).is_err() {
-                        return;
+                    if sender.try_send(stream).is_err() {
+                        state.components.ipc_failed.store(true, Ordering::Relaxed);
                     }
                 }
-                Err(error) => eprintln!("[IPC ERROR] accept failed: {error}"),
+                Err(error) => {
+                    state.components.ipc_failed.store(true, Ordering::Relaxed);
+                    eprintln!("[IPC ERROR] accept failed: {error}");
+                }
             }
         }
     });
@@ -445,7 +496,8 @@ mod tests {
 
     use super::{
         handle_request, handle_request_with_terminator, ControlState, EnforcementMode,
-        NativeControlCommand, NativeControlRequest, PROTOCOL_VERSION,
+        NativeControlCommand, NativeControlRequest, NotificationStatus, RuntimeHealth,
+        PROTOCOL_VERSION,
     };
     use crate::notification::QuarantineNotifier;
     use crate::process_identity::{ProcessIdentity, ProcessIdentityError, ProcessInspector};
@@ -487,6 +539,8 @@ mod tests {
             ledger_health: Arc::new(RwLock::new(LedgerHealth::Ready)),
             inspector: Arc::new(MissingInspector),
             notifier: Arc::new(RecordingNotifier::default()),
+            notification_health: Arc::new(NotificationStatus::default()),
+            components: Arc::new(RuntimeHealth::default()),
         }
     }
 
@@ -519,6 +573,8 @@ mod tests {
                 ledger_health: Arc::new(RwLock::new(LedgerHealth::Ready)),
                 inspector,
                 notifier: notifier.clone(),
+                notification_health: Arc::new(NotificationStatus::default()),
+                components: Arc::new(RuntimeHealth::default()),
             },
             process,
             notifier,
@@ -545,6 +601,70 @@ mod tests {
         );
         assert!(response.ok);
         assert!(response.health.is_some());
+    }
+
+    #[test]
+    fn poisoned_mode_reports_unknown_and_degraded() {
+        let state = state();
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = state.mode.write().unwrap();
+            panic!("poison mode");
+        });
+        let reply = handle_request(
+            request("secret", NativeControlCommand::Health),
+            "secret",
+            &state,
+        );
+        let health = serde_json::to_value(reply.health).unwrap();
+        assert_eq!(health["status"], "degraded");
+        assert!(health["mode"].is_null());
+    }
+
+    #[test]
+    fn component_failures_are_reported_as_degraded() {
+        for component in ["watcher", "ipc", "telemetryQueue"] {
+            let state = state();
+            state
+                .components
+                .watcher_ready
+                .store(true, Ordering::Relaxed);
+            match component {
+                "watcher" => state
+                    .components
+                    .watcher_failed
+                    .store(true, Ordering::Relaxed),
+                "ipc" => state.components.ipc_failed.store(true, Ordering::Relaxed),
+                _ => state
+                    .components
+                    .telemetry_dropped
+                    .store(true, Ordering::Relaxed),
+            }
+            let reply = handle_request(
+                request("secret", NativeControlCommand::Health),
+                "secret",
+                &state,
+            );
+            let health = serde_json::to_value(reply.health).unwrap();
+            assert_eq!(health["status"], "degraded");
+            assert_eq!(health[component], "degraded");
+        }
+    }
+
+    #[test]
+    fn poisoned_mode_cannot_authorize_a_signal() {
+        let (state, process, notifier) = isolation_state();
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = state.mode.write().unwrap();
+            panic!("poison mode");
+        });
+        let reply = handle_request_with_terminator(
+            request("secret", NativeControlCommand::IsolateProcess { process }),
+            "secret",
+            &state,
+            |_| panic!("must not signal"),
+        );
+        assert_eq!(reply.code, "mode_state_unavailable");
+        assert_eq!(notifier.notifications.load(Ordering::Relaxed), 0);
     }
 
     #[test]

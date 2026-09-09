@@ -6,7 +6,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 
@@ -309,16 +309,11 @@ pub fn start_writer(
     (sender, handle)
 }
 
-pub fn try_enqueue(sender: &SyncSender<PersistedSecurityEvent>, event: PersistedSecurityEvent) {
-    match sender.try_send(event) {
-        Ok(()) => {}
-        Err(TrySendError::Full(event)) => {
-            eprintln!("[TELEMETRY ERROR] queue full; dropped {}", event.id)
-        }
-        Err(TrySendError::Disconnected(event)) => {
-            eprintln!("[TELEMETRY ERROR] writer unavailable; dropped {}", event.id)
-        }
-    }
+pub fn try_enqueue(
+    sender: &SyncSender<PersistedSecurityEvent>,
+    event: PersistedSecurityEvent,
+) -> bool {
+    sender.try_send(event).is_ok()
 }
 
 #[cfg(test)]

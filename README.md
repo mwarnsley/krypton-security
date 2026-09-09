@@ -119,7 +119,8 @@ npm run dev:full
 `dev:full` starts both the Rust daemon and Next.js dashboard. Open
 `http://localhost:3000`. After a confirmed native quarantine, the daemon queues
 a macOS Notification Center banner outside the browser. The banner identifies
-only the sanitized agent executable name and PID; it never includes an event
+only a trusted display label (Claude Code, Codex CLI, Cursor, Aider, or Unknown
+Agent Process) and PID; executable basenames are never echoed. It never includes an event
 path or credential detail. macOS may suppress delivery when notifications are
 denied or no interactive desktop session is available, but that does not alter
 the quarantine result.
@@ -130,34 +131,37 @@ use the dashboard-only demonstration setup below.
 
 ## Running Your First Live Simulation
 
-> **LIVE END-TO-END CHECK:** Keep `npm run dev:full` running while you launch
-> the simulation from a second terminal window.
+> **ISOLATED END-TO-END CHECK:** The simulation starts its own test-only native
+> daemon in a disposable directory. No running dashboard or developer daemon is required.
 
-This live simulation requires a Mac. The current macOS Native Daemon Mode is
-required to intercept the local mock agent breakout event; Linux is still
-experimental, and Windows dashboard-only demonstration mode cannot perform this
-interception.
+macOS is the supported verification platform. The Unix harness also supports
+experimental Linux execution; Windows dashboard-only mode cannot run native isolation.
 
-1. Leave the first terminal running `npm run dev:full`, and keep the Next.js
-   dashboard open at `http://localhost:3000`.
-2. Open a second terminal window, change to the same `krypton-security`
-   directory, and run:
+1. Use the pinned Node and Rust toolchains, install dependencies with `npm ci`,
+   and run from the repository root:
 
    ```sh
    npm run test:sim
    ```
 
-3. Watch the second terminal. The simulation creates a poisoned support ticket
-   that instructs a mock agent to scrape `../.ssh/id_rsa`. Krypton intercepts
-   and blocks the out-of-bounds read before the mock agent can access the key,
-   quarantines the disposable mock process, and confirms that the event was
-   recorded in the telemetry ledger. In an interactive macOS session where
-   notifications are permitted, Krypton also queues an OS-level quarantine
-   banner.
-4. Return to the dashboard. The Next.js UI instantly streams the new
-   **CRITICAL** alert row into its live ledger, giving you visible confirmation
-   that the complete path from attack detection and blocking through telemetry
-   persistence and dashboard delivery is fully operational.
+2. The harness registers an owned disposable child with its complete live identity
+   using authenticated `.krypton/runtime/daemon.sock` IPC. The child submits a
+   traversal intent; the path policy denies it. A harmless fixture write produces
+   separate portable watcher evidence with no attributed PID.
+3. The harness verifies that Audit-Only Mode refuses isolation and produces no
+   notification, then enables enforcement and verifies authenticated `IsolateProcess`,
+   actual child exit via `SIGKILL`, durable `.krypton/telemetry/alerts.jsonl`, and
+   a redacted mocked notification receipt. Expect a terminal `[PASS]` line.
+4. Disposable children and fixture files are cleaned up. Mock notification delivery
+   exists only in the Rust test binary, not the production daemon. The simulation
+   does not test macOS Notification Center display or update the developer's dashboard.
+   Sandboxed environments must permit Unix sockets and owned-child signaling.
+
+The TypeScript reference watchdog is observational only: events and errors never
+broadcast signals. Legacy PID-only registration is disabled. Operational isolation
+uses `quarantineProcess(compoundIdentity)` and authenticated native IPC; cleanup of
+a newly spawned child whose registration failed is a separate owned-child lifecycle
+action, not a successful quarantine. Runtime deadline isolation also uses native IPC.
 
 ### Dashboard-only demonstration mode
 
@@ -235,8 +239,10 @@ const child = await spawnProtectedProcess('node', ['agent.js'], {
 ```
 
 The launcher spawns the child, reads its PID/start time/executable/parent,
-registers that exact generation, and unregisters it on exit, error, signal, or
-timeout. If registration fails, it kills only the child it just spawned. Manual
+registers that exact generation, and unregisters it on terminal exit/error. A
+runtime deadline requests authenticated native isolation; rejection leaves the
+child registered and reports failure, with no local signaling fallback. If
+registration fails, it kills only the child it just spawned. Manual
 dashboard isolation also requires the compound identity; PID-only requests are
 rejected.
 
@@ -257,6 +263,15 @@ curl --fail --silent http://localhost:3000/api/telemetry
 Relevant fields are `source`, `nativeDaemonReachable`, `fallbackReason`,
 `health`, `generatedAt`, `nextAfter`, and `hasMore`. Only `source: "native"`
 events are native evidence.
+
+Live `health.mode` drives the native dashboard toggle; unknown mode disables it
+and displays “Mode unavailable”. Registry read failures produce an unavailable
+count, never a fabricated zero. Health aggregates watcher readiness, IPC, ledger,
+registry, notification delivery, and telemetry queue loss. Watcher/IPC errors and
+queue or notification failures remain degraded until daemon restart. A successful
+quarantine is not reversed by notification degradation. Portable ledger events
+remain `OBSERVED`, even when an identity is present: identity is not a signal
+receipt. `ISOLATED` is displayed only after authenticated isolation succeeds.
 
 ## Security boundary
 
@@ -448,8 +463,11 @@ remains between validation and the operating-system action.
 
 Clone the repository, enter `krypton-security`, run `npm ci`, and use
 `npm run dev:full` for the actively supported macOS native daemon and dashboard.
-In a second terminal, run `npm run test:sim`. For a cross-platform mock dashboard
-without native isolation, run `npm run dev:dashboard`.
+Run `npm run test:sim` for an isolated native end-to-end check using disposable
+children, real authenticated IPC and SIGKILL, durable observational JSONL, and
+mocked desktop delivery. It does not update the running dashboard or display an
+OS banner. For a cross-platform mock dashboard without native isolation, run
+`npm run dev:dashboard`.
 
 </details>
 
@@ -479,7 +497,9 @@ enforcement boundary.
 1. **Phase 1 — Native macOS Hardening & Public Launch (v1.0):** the native
    daemon, `.krypton/runtime/daemon.sock` IPC, bounded local telemetry dashboard,
    offline policy loop, GitHub Pages demonstration, and redacted OS-level macOS
-   quarantine alerts are implemented. Phase 1 is complete and launch-ready.
+   quarantine alerts are implemented. Phase 1 is complete and verified for its
+   scoped macOS runtime boundary; native end-to-end tests mock desktop delivery,
+   and portable watcher evidence remains non-authoritative.
 2. **Phase 2 — Transparent Developer Experience & Zero-Config CLI (v1.1):**
    planned `krypton exec -- <command>` protected launching and capability-aware
    Safe Auto-Pilot host integrations, plus standalone Homebrew and verified
