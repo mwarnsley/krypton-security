@@ -61,6 +61,12 @@ in `ROADMAP.md`.
   Claude Code and Cline storage; atomically back up and merge bounded settings
   with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Other servers
   remain intact; malformed files, symlinks and conflicting Krypton entries fail.
+- `npm run build:mcpb` generates an unsigned, deterministic MCPB 0.3 archive at
+  `dist/krypton-protected-fs.mcpb`, with the server, supervisor, a portable Node
+  launcher and only their runtime dependencies. Installed dependency versions
+  must match the lockfile; runtime state and dev packages are excluded. The
+  macOS install form requires a checkout directory and a separately running
+  native daemon. Archive validation does not establish live desktop UI readiness.
 - Error handling follows the mandatory three-tier contract in `AGENTS.md`:
   typed native errors, 1500 ms absolute authenticated IPC deadlines, immediate
   disconnect denial, bounded stdio output waits, and redacted CLI failures on
@@ -184,6 +190,21 @@ in `ROADMAP.md`.
   contact with the repository is unambiguous.
 - Packages tracked files only, runs release preflight before archive generation,
   and rejects forbidden or traversal-capable ZIP entries before distribution.
+
+## Capability: Release hardening contracts
+
+- `.github/workflows/ci.yml` defines the reusable macOS **Phase 1 verification**
+  gate for main PRs/pushes: lint/typechecks, format, Clippy, Vitest/native tests,
+  simulation/E2E, builds and a zero-vulnerability npm audit including dev packages.
+- `.github/workflows/release.yml` validates matching SemVer tags and main ancestry,
+  runs the same gates, builds optimized Intel/Apple Silicon macOS daemons and
+  drafts a release with the tested MCPB, per-asset SHA-256 and `SHA256SUMS`.
+  Existing releases are not overwritten; publication remains manual.
+- `scripts/release-artifacts.cjs` bounds and verifies the exact release inventory,
+  rejects redirected/modified assets and emits typed failure diagnostics.
+- `docs/RELEASE.md` specifies required main checks, owner approval/signature rules
+  and least-privilege fine-grained GitHub MCP/`gh` token handling. Branch protection,
+  hosted runs, release signing and desktop QA require separate verification.
 
 ## Planned-direction boundary
 

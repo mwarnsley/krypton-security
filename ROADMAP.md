@@ -38,7 +38,7 @@ syscall containment remain planned and other host tools are not intercepted.
 
 ---
 
-## Phase 1: Local Developer Verification & Containment Core (HackerNoon Target / v1.0)
+## Phase 1: Local Developer Verification, Containment Core & Release Hardening (Target: HackerNoon Release / v1.0.0)
 
 **Status:** In Progress (Active Release Milestone).
 
@@ -52,7 +52,7 @@ macOS desktop QA remain release gates.
 
 - [x] **Mandatory Error-Handling Audit Gate:** Document the three-tier contract, audit all native/core/CLI entry points, remediate failures and record fresh verification in `AGENTS.md` before further Phase 1 features.
 - [x] **Universal Single-Command Client Config (`krypton setup`):** Detect existing Claude Desktop, Cursor, Claude Code, and Cline storage on macOS/Linux; atomically back up existing JSON, preserve other servers, and install `krypton-protected-fs` with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Malformed files and conflicting entries fail closed. `npm run setup` works without global linking.
-- [ ] **Bundled Local `.mcpb` Generator:** A packaging task (`npm run build:mcpb`) that outputs a self-contained local extension for drag-and-drop loading in Claude Desktop.
+- [x] **Bundled Local `.mcpb` Generator:** `npm run build:mcpb` outputs `dist/krypton-protected-fs.mcpb`, a deterministic MCPB 0.3 archive containing the production server, supervisor and required JavaScript dependencies. Installation selects an existing checkout and requires its running native daemon. The unsigned macOS archive excludes local runtime state; live drag-and-drop client QA remains a separate release gate.
 - [x] **Deterministic Local Test Harness (`npm run test:e2e`):** Boots a disposable native daemon fixture, exercises production MCP stdio read/write and traversal denial, verifies durable native receipts mapped to `INTERCEPTED`, fail-closed socket loss and owned-child `SIGKILL`, then cleans up and prints a pass/fail terminal report. Desktop notification delivery is mocked; live client and dashboard QA remain separate.
 
 ### 2. Containment Engine & Native IPC (Must-Have)
@@ -67,6 +67,17 @@ macOS desktop QA remain release gates.
 - [x] **Live Local Telemetry Stream:** Next.js dashboard parsing `.krypton/telemetry/alerts.jsonl` with clear distinctions between confirmed native receipts and unconfirmed observations.
 - [ ] **Intercepted Breach Visualizer:** Verify that whenever Claude Desktop or an agent attempts a path escape, the exact timestamp, blocked path, weaponized tool name, and enforcement action immediately render on the dashboard UI.
 - [x] **Desktop OS Notification Integration:** Trigger macOS Notification Center alerts via `/usr/bin/osascript` upon confirmed child process isolation.
+
+### 4. Release Hardening & Automated Delivery (Must-Have)
+
+- [x] **GitHub Actions CI/CD Pipeline:** `.github/workflows/ci.yml` defines a reusable `macos-14` gate for PRs and pushes to `main`: locked installation, lint, both TypeScript projects, formatting, Rust Clippy, Vitest, native unit tests, socket simulation, E2E containment, dashboard build, MCPB build and security audit. Hosted execution remains to be verified after merge.
+- [ ] **Strict Branch Protection & Automated PR Gates:** Activate owner-managed `main` rules requiring the `Phase 1 verification` status, up-to-date branches, human/code-owner approval, signed commits and resolved conversations; prohibit force pushes, deletion and routine bypasses. Workflow files and CODEOWNERS alone do not activate these rules.
+- [x] **Automated SemVer Release Packaging:** `.github/workflows/release.yml` validates a matching package version and main ancestry for `v*.*.*` tags, reuses CI gates, builds `x86_64-apple-darwin` and `aarch64-apple-darwin` optimized binaries, and drafts a GitHub Release containing those binaries, the verified `.mcpb` and SHA-256 checksums. Signing, notarization, hosted execution and final publication remain separate gates.
+- [x] **Agent GitHub Integration Contracts:** Document repository-scoped fine-grained PAT permissions for GitHub MCP and `gh`, secret storage, read-only defaults, explicit authorization for remote writes and prohibition of protection bypasses. Workflows use job-scoped `GITHUB_TOKEN`, never a personal PAT.
+- [x] **Dependency Supply-Chain Auditing:** PR CI enforces zero npm vulnerabilities at every severity through `npm run security:audit`, including dev dependencies. Existing Rust advisory/license checks and SBOM generation remain supplementary gates; network or audit errors fail the check.
+
+See [release and repository contracts](docs/RELEASE.md) for artifact names,
+required check contexts, credential boundaries and activation verification.
 
 ---
 

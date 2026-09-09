@@ -218,6 +218,24 @@ client UI, or Linux native-enforcement readiness is asserted by this gate.
 
 ## 2. Mandatory Verification Contract
 
+### GitHub automation and release authorization
+
+Follow `docs/RELEASE.md` for CI check names, owner-managed main protection,
+SemVer/artifact validation and GitHub MCP/`gh` credentials. Fine-grained PATs
+must be repository-scoped, expiring and least-privilege; keep them in external
+secret storage. Never place tokens in files, logs or tool arguments. Default
+reviews to read-only tools. Token availability does not authorize comments,
+commits, pushes, merges, tags, rule changes or publication. Agents must not
+self-approve or bypass required checks or code-owner review.
+
+PR workflows use read-only tokens and no personal secrets. Only the isolated
+draft-release job receives contents-write permission; full checks and exact
+artifact/checksum verification must succeed first. Do not rename the required
+`Phase 1 verification` job without coordinating the owner-managed branch rule.
+Source files cannot establish that remote protections or hosted workflows are
+active; verify and report those states separately. GitHub APIs never belong in
+Krypton's local enforcement path.
+
 Every pass that changes source, configuration, tests, or documentation must end
 with fresh runs of all commands below from the repository root. Every command
 must exit with status zero and without unresolved warnings:

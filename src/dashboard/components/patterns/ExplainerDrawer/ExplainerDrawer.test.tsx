@@ -8,6 +8,26 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it('separates checksum integrity from signing and owner-managed release gates', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByText('How do I verify a Krypton release?'));
+    const answer = screen.getByText(/Tagged-release automation drafts/);
+    expect(answer.textContent).toContain('shasum -a 256 -c SHA256SUMS');
+    expect(answer.textContent).toContain('checksums do not authenticate the publisher');
+    expect(answer.textContent).toContain('Main branch protection requires owner activation');
+  });
+  it('explains the bundle command and separate native daemon requirement', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(
+      screen.getByText('How do I connect Claude Desktop, Cursor, Claude Code or Cline?')
+    );
+    const answer = screen.getByText(/Alternatively, npm run build:mcpb/);
+    expect(answer.textContent).toContain('dist/krypton-protected-fs.mcpb');
+    expect(answer.textContent).toContain('keep its native daemon running');
+    expect(answer.textContent).toContain('desktop installation still requires manual QA');
+  });
   it('explains bounded IPC failure and uncertain write recovery', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
@@ -161,6 +181,7 @@ describe('ExplainerDrawer', () => {
     );
 
     expect(questions).toEqual([
+      'How do I verify a Krypton release?',
       'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
       'What happens when a Krypton MCP file tool crosses the boundary?',
       'What is Krypton in simple terms?',

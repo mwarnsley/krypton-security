@@ -1,4 +1,9 @@
 /.github/workflows/ @mwarnsley
+/.github/CODEOWNERS @mwarnsley
+/docs/RELEASE.md @mwarnsley
+/scripts/release-artifacts.* @mwarnsley
+/src/packaging/ @mwarnsley
+/rust-toolchain.toml @mwarnsley
 /src/core-native/ @mwarnsley
 /src/core/ @mwarnsley
 /src/dashboard/app/api/ @mwarnsley

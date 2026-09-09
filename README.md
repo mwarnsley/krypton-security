@@ -257,7 +257,41 @@ For disposable real-IPC verification, run `npm run test:e2e`. It
 launches the production MCP server through the supervisor, checks read/write,
 traversal denial in both modes, durable native receipts and clean stdio shutdown.
 Real client UI onboarding and the 60-second release target still require manual
-macOS verification. `.mcpb` packaging remains planned.
+macOS verification. The local `.mcpb` generator is available below.
+
+### Build a local MCP extension
+
+```sh
+npm run build:mcpb
+```
+
+This writes `dist/krypton-protected-fs.mcpb`, a deterministic ZIP containing the
+production MCP server, supervisor, portable Node launcher and only their required
+JavaScript runtime dependencies and licenses. Repeated builds with unchanged
+source and locked dependencies produce the same SHA-256. The offline builder
+checks installed dependency versions against `package-lock.json`, limits the
+archive to 2048 entries and 16 MiB of input, and publishes atomically. A failed
+pre-publication build preserves the previous archive; a post-publication sync
+failure reports uncertain durability. Generated artifacts remain gitignored.
+
+The manifest follows [MCPB 0.3](https://github.com/anthropics/mcpb/blob/main/MANIFEST.md)
+using the required `manifest_version` field. It declares both Krypton file tools.
+Open the archive in a compatible macOS MCPB client, select your **Krypton checkout
+directory**, and start that checkout's native daemon with `npm run dev:full`
+before enabling the extension. The selected directory supplies
+`KRYPTON_PROJECT_ROOT`; the launcher uses the MCP host's own Node executable.
+Avoid enabling a duplicate setup-generated Krypton server in the same client.
+
+The extension includes its JavaScript dependencies. It requires a separately
+running compatible native daemon and configured checkout; it does not bundle
+Rust, Node, workspace files, telemetry, sockets or capabilities. Native IPC stays
+authenticated and fail-closed. Linux native control remains experimental and is
+not advertised in this macOS bundle. The archive is unsigned; drag-and-drop
+installation and live desktop UI behavior still require manual QA.
+
+To inspect locally, run `unzip -t dist/krypton-protected-fs.mcpb` and
+`unzip -p dist/krypton-protected-fs.mcpb manifest.json`. Archive regression tests
+use `unzip` and Python 3 for independent ZIP conformance checks.
 
 ## Running Your First Live Simulation
 
@@ -678,6 +712,19 @@ growth for 100, 1,000, and 10,000 deterministic events.
 ## Frequently Asked Questions (FAQ)
 
 <details>
+<summary>How do I verify a Krypton release?</summary>
+
+Tagged-release automation drafts Intel and Apple Silicon daemon binaries, the
+MCPB bundle and SHA-256 checksum files after CI succeeds. Download the assets and
+`SHA256SUMS` into one directory, then run `shasum -a 256 -c SHA256SUMS` before use.
+The assets remain unsigned; checksums do not authenticate the publisher. Releases
+require maintainer review and manual publication. Main branch protection is an
+owner-managed setting, not something workflow files activate automatically.
+See [release contracts](docs/RELEASE.md) for full instructions and remaining QA.
+
+</details>
+
+<details>
 <summary>How do I connect Claude Desktop, Cursor, Claude Code or Cline?</summary>
 
 Close clients, run `npm run setup` (or `krypton setup` after `npm link`), start
@@ -688,6 +735,13 @@ diagnostics to stderr with nonzero status. Cleanup or durability failures requir
 review before retrying; the setup summary never silently reports them as success. Only the two Krypton MCP file tools gain native
 path containment; other client tools are not intercepted. See the onboarding
 section above for paths, limits, conflicts and backup restoration.
+
+For a compatible macOS MCPB client, alternatively run `npm run build:mcpb` and
+open `dist/krypton-protected-fs.mcpb`. Select the Krypton checkout directory and
+keep its native daemon running. The unsigned bundle contains the JavaScript
+runtime dependencies, not the daemon or local runtime state. Avoid enabling a
+duplicate setup-generated Krypton server. Live desktop installation remains a
+manual QA gate; see the local extension build instructions above.
 
 </details>
 
@@ -846,11 +900,12 @@ The authoritative milestones and security acceptance criteria live in
 [ROADMAP.md](ROADMAP.md). Planned features below do not expand Krypton's current
 enforcement boundary.
 
-1. **Phase 1 — Local Developer Verification & Containment Core (v1.0):**
+1. **Phase 1 — Local Verification, Containment & Release Hardening (v1.0.0):**
    active release milestone prioritizing `krypton setup`, production native MCP
    IPC and live denial telemetry. The daemon, supervisor, local dashboard and
    redacted OS-level alerts and the dedicated `npm run test:e2e` report are
-   implemented. `.mcpb` packaging and real desktop-client verification remain planned.
+   implemented, including `npm run build:mcpb` for a local extension archive.
+   Real desktop-client verification remains outstanding.
    The 60-second onboarding objective is not yet measured or guaranteed.
 2. **Phase 2 — Transparent Developer Experience & Distribution (v1.1):**
    planned Homebrew and hardened shell distribution, descendant containment and
@@ -893,10 +948,31 @@ availability or a published commercial offer.
 - [ROADMAP.md](ROADMAP.md) — planned engineering and research objectives.
 - [VC.md](VC.md) — venture and product strategy material.
 
-## Release archive
+## Automated CI and draft releases
 
-**Do not manually compress the repository folder. Use
-`npm run release:package` and distribute only the generated archive.**
+PRs and pushes to `main` run the macOS **Phase 1 verification** workflow:
+locked installation, zero-vulnerability npm audit, lint, both TypeScript checks,
+formatting, Rust Clippy, Vitest/native tests, socket simulation, E2E containment,
+dashboard and MCPB builds. The existing quality workflow retains supplementary
+coverage, Rust advisory/license checks and SBOM generation. Workflow YAML is
+included in `npm run format:check`.
+
+A matching SemVer tag such as `v1.0.0`, pointing to a commit on `main`, runs these
+checks again before building optimized Intel/Apple Silicon native binaries. The
+release workflow attaches those binaries, its tested MCPB and SHA-256 checksum
+files to a **draft** GitHub Release. It never automatically publishes or overwrites
+a release. Checksums establish byte integrity; artifacts remain unsigned.
+
+See [release and repository contracts](docs/RELEASE.md) for artifact names,
+checksum verification, strict main protection and fine-grained GitHub MCP/`gh`
+permissions. Branch rules require owner activation, and hosted workflow execution
+must be verified after these files are pushed. No PAT is required by CI; only the
+isolated draft job receives a contents-write `GITHUB_TOKEN`.
+
+## Source release archive
+
+**For source-only distribution, do not manually compress the repository folder.
+Use `npm run release:package` and distribute its inspected archive.**
 
 After committing the verified tree:
 

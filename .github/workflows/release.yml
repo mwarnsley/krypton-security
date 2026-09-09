@@ -1,0 +1,152 @@
+name: Krypton release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: krypton-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - name: Check out complete tag history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Configure pinned Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+      - name: Require a matching SemVer tag from main
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          npm run release:validate
+          if [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" != "$(git rev-parse HEAD)" ]]; then
+            echo 'Release tag no longer matches the verified commit.' >&2
+            exit 1
+          fi
+          prerelease_args=()
+          version_without_metadata="${RELEASE_TAG%%+*}"
+          if [[ "$version_without_metadata" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+
+  verification:
+    name: Release gates
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  native:
+    name: Native ${{ matrix.target }}
+    needs: verification
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            architecture: arm64
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            architecture: x86_64
+    env:
+      NATIVE_TARGET: ${{ matrix.target }}
+      NATIVE_ARCHITECTURE: ${{ matrix.architecture }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Configure pinned Rust target
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --no-self-update
+          rustup target add "$NATIVE_TARGET" --toolchain 1.97.0
+      - name: Build optimized native daemon from locked dependencies
+        run: cargo build --release --locked --manifest-path src/core-native/Cargo.toml --target "$NATIVE_TARGET"
+      - name: Verify binary architecture and stage artifact
+        run: |
+          binary="src/core-native/target/$NATIVE_TARGET/release/krypton-core-native"
+          test "$(lipo -archs "$binary")" = "$NATIVE_ARCHITECTURE"
+          mkdir -p dist/native
+          cp "$binary" "dist/native/krypton-core-native-$NATIVE_TARGET"
+      - name: Retain native release binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: krypton-native-${{ matrix.target }}
+          path: dist/native/krypton-core-native-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
+
+  draft:
+    name: Draft verified release
+    needs: [verification, native]
+    runs-on: macos-14
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release contracts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Configure pinned Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+      - name: Download binaries from this workflow run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: krypton-native-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Download bundle tested by release gates
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: krypton-mcpb
+          path: release-artifacts
+      - name: Generate and verify checksums for the exact artifact set
+        run: |
+          npm run release:checksums -- release-artifacts
+          npm run release:verify-artifacts -- release-artifacts
+      - name: Create draft release without replacing existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          npm run release:validate
+          cat > release-notes.md <<'NOTES'
+          Unsigned macOS native binaries and the Krypton MCP extension.
+          Verify downloaded assets using SHA256SUMS. Checksums verify integrity, not publisher identity.
+          The MCPB extension requires an existing Krypton checkout and its running native daemon.
+          Maintainer review, desktop-client QA, and publication remain manual release gates.
+          NOTES
+          gh release create "$RELEASE_TAG" \
+            release-artifacts/krypton-core-native-aarch64-apple-darwin \
+            release-artifacts/krypton-core-native-x86_64-apple-darwin \
+            release-artifacts/krypton-protected-fs.mcpb \
+            release-artifacts/krypton-core-native-aarch64-apple-darwin.sha256 \
+            release-artifacts/krypton-core-native-x86_64-apple-darwin.sha256 \
+            release-artifacts/krypton-protected-fs.mcpb.sha256 \
+            release-artifacts/SHA256SUMS \
+            --draft --verify-tag --title "Krypton $RELEASE_TAG" \
+            --notes-file release-notes.md --generate-notes "${prerelease_args[@]}"

@@ -29,6 +29,7 @@ Before requesting review:
 npm run verify
 npm run test:coverage
 npm run security:audit
+npm run format:check
 git diff --check
 ```
 
@@ -36,6 +37,12 @@ Security-sensitive paths are listed in `.github/CODEOWNERS`. Repository files
 route review but do not enable branch rules, required signed commits, secret
 scanning, or mandatory approvals; maintainers configure those controls in
 GitHub.
+
+PRs targeting `main` run the macOS **Phase 1 verification** gate plus the existing
+supplementary quality jobs. `npm run security:audit` rejects every reported npm
+vulnerability, including development dependencies. See [release and repository
+contracts](docs/RELEASE.md) for exact required checks, strict main protection,
+fine-grained GitHub MCP/`gh` credentials and owner activation steps.
 
 Tests that exercise isolation must spawn disposable owned children. Never send a
 signal to an arbitrary PID, the invoking shell, or another user's process. Never

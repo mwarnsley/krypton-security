@@ -31,7 +31,10 @@ availability; no guaranteed response SLA is currently published.
 
 ## Release integrity
 
-The repository can create clean tracked-file archives, but signed releases and
-published checksums are not yet implemented. Until signing credentials and a
-documented key-rotation process exist, consumers must not treat an unsigned
-archive as an authenticated Krypton release.
+The repository defines tagged draft-release automation for Intel/Apple Silicon
+native binaries and the MCPB bundle, with verified per-file SHA-256 checksums and
+`SHA256SUMS`. See [release contracts](docs/RELEASE.md). Hosted execution and final
+publication must be verified separately. Checksums detect changed bytes; they
+do not authenticate the publisher. Until signing credentials and a documented
+key-rotation process exist, consumers must not treat an unsigned archive or
+binary as an authenticated Krypton release.

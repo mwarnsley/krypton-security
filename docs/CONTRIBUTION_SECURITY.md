@@ -23,10 +23,12 @@ artifacts, or the runtime boundary itself.
 
 ### Cryptographic Identity Verification
 
-Strictly require GPG- or SSH-signed commits on protected branches to completely
-eliminate author identity spoofing. Branch protection must reject unsigned or
-unverified contributions regardless of whether the contributor is a human,
-bot, or service account.
+Require GPG- or SSH-signed commits on protected branches to verify signing-key
+provenance. A verified signature does not establish code safety or the author's
+trustworthiness. Branch protection must reject unsigned or unverified
+contributions regardless of whether the contributor is a human, bot or service
+account. See [release and repository contracts](RELEASE.md) for the exact required
+checks, owner activation steps and agent credential boundaries.
 
 ### Hermetic CI/CD Test Isolation
 

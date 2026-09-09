@@ -139,8 +139,8 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
     status: 'In progress',
     summary:
-      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. Bundled .mcpb packaging, real client UI verification and the 60-second evaluation target remain outstanding; portable watcher evidence remains observational.',
-    title: 'Phase 1 · Local Developer Verification & Containment Core (v1.0)',
+      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. The npm run build:mcpb generator creates a local extension archive. CI and tagged draft-release workflows are defined for macOS binaries, MCPB and checksums; hosted execution, owner-managed branch protection, real client UI verification and the 60-second evaluation target remain outstanding. Portable watcher evidence remains observational.',
+    title: 'Phase 1 · Local Verification, Containment & Release Hardening (v1.0.0)',
   },
   {
     status: 'Planned',
@@ -173,13 +173,19 @@ const SETUP_STEPS = [
   ['8. Expose the source-checkout CLI', 'npm link'],
   ['9. Configure detected AI clients, then restart them', 'krypton setup'],
   ['10. Supervise an agent in another terminal', 'krypton run -- claude'],
+  ['11. Build an optional local macOS MCP extension', 'npm run build:mcpb'],
 ] as const;
 
 const FAQ_ITEMS: readonly FaqItem[] = [
   {
+    question: 'How do I verify a Krypton release?',
+    answer:
+      'Tagged-release automation drafts Intel and Apple Silicon daemon binaries, the MCPB bundle and SHA-256 checksum files after CI succeeds. Download the assets and SHA256SUMS into one directory, then run shasum -a 256 -c SHA256SUMS before use. Artifacts remain unsigned; checksums do not authenticate the publisher. Maintainer review and final publication remain manual. Main branch protection requires owner activation; workflow files alone do not enable it. Hosted workflow execution and live desktop QA still need verification. The MCPB requires a configured checkout and running native daemon.',
+  },
+  {
     question: 'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
     answer:
-      'Close clients and run npm run setup, or krypton setup after npm link. Setup detects existing client storage on macOS/Linux, atomically backs up existing JSON to .bak, preserves other servers and installs krypton-protected-fs through the supervisor with canonical paths and KRYPTON_PROJECT_ROOT. Invalid JSON, symlinks and conflicting Krypton entries fail per client; identical entries are skipped. Start or restart the updated daemon with npm run dev:full, ensure node is on the GUI client PATH, and restart configured clients. Linux storage detection does not imply supported native Linux enforcement. Only krypton_read_file and krypton_write_file are contained; built-in tools are not intercepted.',
+      'Close clients and run npm run setup, or krypton setup after npm link. Setup detects existing client storage on macOS/Linux, atomically backs up existing JSON to .bak, preserves other servers and installs krypton-protected-fs through the supervisor with canonical paths and KRYPTON_PROJECT_ROOT. Invalid JSON, symlinks and conflicting Krypton entries fail per client; identical entries are skipped. Start or restart the updated daemon with npm run dev:full, ensure node is on the GUI client PATH, and restart configured clients. Linux storage detection does not imply supported native Linux enforcement. Alternatively, npm run build:mcpb creates dist/krypton-protected-fs.mcpb for a compatible macOS client. Select the Krypton checkout directory during installation and keep its native daemon running. The unsigned bundle includes JavaScript dependencies, not the daemon or local runtime state; desktop installation still requires manual QA. Its launcher uses the host Node executable. Avoid enabling duplicate Krypton servers. Only krypton_read_file and krypton_write_file are contained; built-in tools are not intercepted.',
   },
   {
     question: 'What happens when a Krypton MCP file tool crosses the boundary?',
