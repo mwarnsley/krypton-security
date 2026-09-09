@@ -208,6 +208,35 @@ describe('ExplainerDrawer', () => {
     expect(repositoryLink.getAttribute('rel')).toBe('noreferrer');
   });
 
+  it('documents the validated native toolchains in setup', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+
+    expect(screen.getByRole('tabpanel').textContent).toContain('Node.js v20.19.4');
+    expect(screen.getByRole('tabpanel').textContent).toContain('npm 10.x');
+    expect(screen.getByRole('tabpanel').textContent).toContain('1.97.0-aarch64-apple-darwin');
+  });
+
+  it('documents full-stack port recovery without changing native IPC', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+
+    expect(screen.getByText('PORT=3001 npm run dev:full')).toBeTruthy();
+    expect(screen.getByText(/The override changes only the dashboard/).textContent).toContain(
+      'not the native Unix socket'
+    );
+  });
+
+  it('keeps the local-run FAQ aligned with the port override', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByText('How do I run the project locally?'));
+
+    expect(screen.getByText(/Use Node.js v20.19.4/).textContent).toContain(
+      'PORT=3001 npm run dev:full'
+    );
+  });
+
   it('confirms when the native setup command is copied', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -220,5 +249,8 @@ describe('ExplainerDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy native setup command' }));
 
     expect(await screen.findByText('Setup command copied')).toBeTruthy();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && cargo check --manifest-path src/core-native/Cargo.toml && npm run build && npm run dev:full'
+    );
   });
 });

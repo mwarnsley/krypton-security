@@ -66,7 +66,7 @@ interface ReleasePhase {
 
 const REPOSITORY_URL = 'https://github.com/mwarnsley/krypton-security';
 const NATIVE_SETUP_COMMAND =
-  'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && npm run dev:full';
+  'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && cargo check --manifest-path src/core-native/Cargo.toml && npm run build && npm run dev:full';
 
 const TABS: readonly ExplainerTabDefinition[] = [
   { id: 'overview', label: 'Overview' },
@@ -165,8 +165,11 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
 const SETUP_STEPS = [
   ['1. Clone the repository', 'git clone https://github.com/mwarnsley/krypton-security.git'],
   ['2. Enter the project and install dependencies', 'cd krypton-security && npm ci'],
-  ['3. Run the native daemon and dashboard', 'npm run dev:full'],
-  ['4. Run the isolated native simulation (desktop delivery mocked)', 'npm run test:sim'],
+  ['3. Check native compilation', 'cargo check --manifest-path src/core-native/Cargo.toml'],
+  ['4. Verify the Next.js production build (Turbopack)', 'npm run build'],
+  ['5. Run the native daemon and dashboard', 'npm run dev:full'],
+  ['6. Run the test gates in another terminal', 'npm test -- --run && npm run rust:test'],
+  ['7. Run the isolated native simulation (desktop delivery mocked)', 'npm run test:sim'],
 ] as const;
 
 const FAQ_ITEMS: readonly FaqItem[] = [
@@ -217,7 +220,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Clone the repository, enter krypton-security, run npm ci, and use npm run dev:full for the actively supported macOS native daemon and dashboard. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
   {
@@ -525,6 +528,14 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                 <h2 className="mt-2 text-xl font-bold text-krypton-fg-primary">
                   Install and run Krypton locally
                 </h2>
+                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  Validated on clean macOS Apple Silicon (aarch64): use Node.js v20.19.4 (Node 20
+                  LTS baseline), npm 10.x, and Rust 1.97.0 via rustup and cargo. Accept
+                  version-manager prompts for .node-version or .nvmrc when available.
+                  rust-toolchain.toml pins and syncs the host toolchain during builds:
+                  1.97.0-aarch64-apple-darwin on Apple Silicon. macOS native builds also require
+                  Apple command-line developer tools.
+                </p>
                 <ol className="mt-5 space-y-krypton-space-3">
                   {SETUP_STEPS.map(([title, command]) => (
                     <li
@@ -538,6 +549,23 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     </li>
                   ))}
                 </ol>
+
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Runtime and port handling
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    <code>npm run dev:full</code> uses concurrently to run the native Rust daemon at
+                    <code> .krypton/runtime/daemon.sock</code> and the Next.js 16 Turbopack
+                    dashboard at <code>http://localhost:3000</code>. Keep the terminal running;
+                    Ctrl+C stops the session, and a failed child stops the other service. Keep port
+                    3000 free: an occupied port blocked dashboard startup inside concurrently during
+                    macOS QA. Free the port or use <code>PORT=3001 npm run dev:full</code> and open
+                    <code> http://localhost:3001</code>. The override changes only the dashboard
+                    HTTP port, not the native Unix socket. GitHub Pages remains a static
+                    demonstration; run this stack locally for native telemetry.
+                  </p>
+                </aside>
 
                 <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
                   <h2 className="text-sm font-bold text-krypton-fg-primary">Platform notes</h2>

@@ -103,6 +103,13 @@ in `ROADMAP.md`.
   checks and future signed-release provenance.
 - Provides a clean-install lockfile verified with Node.js 20.19.4 and npm 10.8.2
   and records the exact package-manager version used to produce it.
+- Documents clean-macOS Apple Silicon onboarding with Node 20 LTS v20.19.4,
+  npm 10.x, and Rust 1.97.0 selected by rustup for the host architecture.
+  The sequence is `npm ci`, `cargo check --manifest-path src/core-native/Cargo.toml`,
+  and `npm run build`. `npm run dev:full` concurrently starts the native Unix
+  socket daemon and Next.js 16 Turbopack dashboard. Keep port 3000 free or use
+  `PORT=3001 npm run dev:full` after the port collision observed during QA.
+  The README and public Explainer Drawer share this runtime guidance.
 - Uses conventional `tests/` and `docs/CONTRIBUTION_SECURITY.md` paths so first
   contact with the repository is unambiguous.
 - Packages tracked files only, runs release preflight before archive generation,

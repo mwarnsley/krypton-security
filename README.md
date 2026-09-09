@@ -95,15 +95,25 @@ rustc --version
 cargo --version
 ```
 
-- Node.js 20.19.4 is pinned by `.node-version`; use the matching npm shipped
-  with that runtime.
-- Rust 1.97.0 is pinned by `rust-toolchain.toml`. Install Rust through
-  [rustup](https://rustup.rs/) so the repository toolchain is selected correctly.
+- **Node.js v20.19.4 (Node 20 LTS baseline) and npm 10.x:** `.node-version`
+  pins Node; `package.json` records npm 10.8.2. Accept runtime version-manager
+  prompts (including `.nvmrc` prompts if available in your environment).
+- **Rust toolchain manager (`rustup`) and Cargo:** `rust-toolchain.toml` pins
+  Rust 1.97.0 and automatically selects and syncs the host toolchain during
+  builds. On macOS Apple Silicon, this is `1.97.0-aarch64-apple-darwin`;
+  other hosts use their matching architecture.
 - macOS native builds require Apple command-line developer tools.
 - Experimental Linux native builds require a working C compiler and linker
   appropriate to the distribution.
 - Windows is strictly dashboard-only demonstration mode and does not require
   Rust.
+
+If Rust is not installed, run:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+```
 
 ## Setup
 
@@ -112,12 +122,44 @@ cargo --version
 ```sh
 git clone https://github.com/mwarnsley/krypton-security.git
 cd krypton-security
+
+# 1. Install pinned dependencies
 npm ci
+
+# 2. Check native core compilation
+cargo check --manifest-path src/core-native/Cargo.toml
+
+# 3. Verify Next.js production build (Turbopack)
+npm run build
+```
+
+This onboarding sequence was validated on clean macOS Apple Silicon (aarch64).
+
+### Running the full stack
+
+```bash
 npm run dev:full
 ```
 
-`dev:full` starts both the Rust daemon and Next.js dashboard. Open
-`http://localhost:3000`. After a confirmed native quarantine, the daemon queues
+`dev:full` uses `concurrently` to start the native Rust daemon, bound to
+`.krypton/runtime/daemon.sock`, and the Next.js 16 Turbopack dashboard at
+[http://localhost:3000](http://localhost:3000). Keep this terminal running;
+Ctrl+C stops the development session. A failed child causes `concurrently` to
+stop the other service.
+
+**Port collision fallback:** Keep port 3000 free for the standard command.
+During clean-macOS QA, an occupied port 3000 blocked dashboard startup under
+Turbopack inside `concurrently`. Do not depend on automatic port retry: free
+port 3000 or explicitly select an available alternative for the full stack:
+
+```bash
+PORT=3001 npm run dev:full
+```
+
+Then open [http://localhost:3001](http://localhost:3001). The `PORT` override
+changes the dashboard HTTP port; native IPC still uses the workspace Unix socket.
+
+After a confirmed native quarantine, the daemon queues
 a macOS Notification Center banner outside the browser. The banner identifies
 only a trusted display label (Claude Code, Codex CLI, Cursor, Aider, or Unknown
 Agent Process) and PID; executable basenames are never echoed. It never includes an event
@@ -298,6 +340,16 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for trust assumptions and limitations.
 
 ## Verification
 
+Run the test gates from the repository root:
+
+```bash
+npm test -- --run     # Vitest dashboard & integration test suite (331 tests at QA baseline)
+npm run rust:test     # Cargo native test suite (56 unit tests at QA baseline)
+```
+
+These counts record the clean-macOS QA baseline; new tests can increase them.
+The Vitest suite also covers TypeScript core policy and utilities.
+
 ```sh
 npm run verify
 npm run test:coverage
@@ -332,8 +384,10 @@ growth for 100, 1,000, and 10,000 deterministic events.
 - **Unsupported Windows native mode:** use `npm run dev:dashboard`. Windows is
   strictly dashboard-only demonstration mode; native isolation is intentionally
   unavailable today.
-- **Port 3000 already in use:** stop the process using the port or start the
-  demonstration dashboard with `npm run dev:dashboard -- -p 3001`.
+- **Port 3000 already in use:** an occupied port blocked Turbopack dashboard
+  startup inside `concurrently` during macOS QA. Free port 3000 or run
+  `PORT=3001 npm run dev:full` and open `http://localhost:3001`. For the
+  dashboard alone, use `npm run dev:dashboard -- -p 3001`.
 - **Stale Unix socket:** stop old daemon processes. Startup removes a socket only
   after a connection check proves it is stale; never delete a socket belonging
   to a running daemon.
@@ -461,8 +515,13 @@ remains between validation and the operating-system action.
 <details>
 <summary>10. How do I run the project locally?</summary>
 
-Clone the repository, enter `krypton-security`, run `npm ci`, and use
-`npm run dev:full` for the actively supported macOS native daemon and dashboard.
+Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via
+`rustup`. Clone the repository, enter `krypton-security`, run `npm ci`, then
+`cargo check --manifest-path src/core-native/Cargo.toml` and `npm run build`.
+Use `npm run dev:full` to start the macOS native daemon at
+`.krypton/runtime/daemon.sock` and Next.js 16 Turbopack dashboard concurrently.
+Keep port 3000 free and open `http://localhost:3000`; if occupied, free it or
+use `PORT=3001 npm run dev:full` and open `http://localhost:3001`.
 Run `npm run test:sim` for an isolated native end-to-end check using disposable
 children, real authenticated IPC and SIGKILL, durable observational JSONL, and
 mocked desktop delivery. It does not update the running dashboard or display an

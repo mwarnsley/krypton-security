@@ -112,6 +112,13 @@ the browser.
   daemon, or relabel unattributed watcher evidence as a confirmed actor event.
 - macOS installation, permissions, disablement, and troubleshooting guidance is
   synchronized across the README and dashboard guide.
+- Clean macOS Apple Silicon QA established the onboarding baseline: Node.js
+  v20.19.4 (Node 20 LTS), npm 10.x, and Rust 1.97.0 via rustup, with `npm ci`,
+  `cargo check --manifest-path src/core-native/Cargo.toml`, and `npm run build`.
+  `npm run dev:full` orchestrates the native socket daemon and Next.js 16
+  Turbopack dashboard; keep port 3000 free or use `PORT=3001 npm run dev:full`
+  for the observed port collision. The recorded test baseline is 331 Vitest
+  tests and 56 Rust unit tests; subsequent coverage may increase these counts.
 
 ## Phase 2: Transparent Developer Experience & Zero-Config CLI (v1.1)
 
