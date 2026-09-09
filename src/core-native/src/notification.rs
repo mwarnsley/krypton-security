@@ -28,6 +28,8 @@ pub struct DesktopNotification {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
+// macOS delivery failures remain part of the shared status model on other platforms.
+#[allow(dead_code)]
 pub enum NotificationFailure {
     DeliveryFailed = 1,
     PermissionDenied,
