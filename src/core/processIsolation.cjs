@@ -181,6 +181,8 @@ async function readNativeFile(file) {
 
 /**
  * Dispatches one authenticated, versioned command to the workspace daemon.
+ * Discovery accepts redundant dot segments only for the exact expected absolute
+ * runtime files; parent traversal and redirects are rejected before any IPC.
  *
  * @param {Record<string, unknown>} command - The narrow native command payload.
  * @param {string} projectRoot - Explicit trusted project root; defaults to startup working directory.
@@ -198,12 +200,23 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
     typeof endpoint !== 'object' ||
     endpoint.protocolVersion !== NATIVE_PROTOCOL_VERSION ||
     typeof endpoint.endpoint !== 'string' ||
-    endpoint.endpoint !== path.join(runtimeRoot, 'daemon.sock') ||
-    endpoint.capabilityFile !== path.join(runtimeRoot, 'capability')
+    typeof endpoint.capabilityFile !== 'string' ||
+    !path.isAbsolute(endpoint.endpoint) ||
+    !path.isAbsolute(endpoint.capabilityFile) ||
+    endpoint.endpoint.split(path.sep).includes('..') ||
+    endpoint.capabilityFile.split(path.sep).includes('..') ||
+    path.resolve(endpoint.endpoint) !== path.resolve(runtimeRoot, 'daemon.sock') ||
+    path.resolve(endpoint.capabilityFile) !== path.resolve(runtimeRoot, 'capability')
   ) {
     throw new Error('The native endpoint discovery record is invalid.');
   }
-  const capability = (await readNativeFile(endpoint.capabilityFile)).trim();
+  // Use trusted normalized destinations, not the raw discovery strings, for I/O.
+  const socketPath = path.resolve(runtimeRoot, 'daemon.sock');
+  const capabilityPath = path.resolve(runtimeRoot, 'capability');
+  if (!(await fs.promises.lstat(socketPath)).isSocket()) {
+    throw new Error('The native endpoint must be a workspace Unix socket, not a symlink.');
+  }
+  const capability = (await readNativeFile(capabilityPath)).trim();
   if (capability.length === 0) throw new Error('The native capability is empty.');
   const requestId = `req-${randomUUID()}`;
   const request = JSON.stringify({
@@ -215,7 +228,7 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
   if (Buffer.byteLength(request, 'utf8') > NATIVE_RESPONSE_MAX_BYTES)
     throw new Error('Native request is oversized.');
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection(endpoint.endpoint);
+    const socket = net.createConnection(socketPath);
     let responseText = '';
     let settled = false;
 

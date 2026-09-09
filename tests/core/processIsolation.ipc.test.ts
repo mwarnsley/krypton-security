@@ -29,6 +29,8 @@ beforeEach(async () => {
     { mode: 0o600 }
   );
   await fs.writeFile(path.join(runtime, 'capability'), 'fake-test-capability', { mode: 0o600 });
+  const socketMetadata = Object.assign(await fs.stat(runtime), { isSocket: () => true });
+  vi.spyOn(fs, 'lstat').mockResolvedValue(socketMetadata);
   socket = Object.assign(new EventEmitter(), {
     setEncoding: vi.fn(),
     setTimeout: vi.fn(),
@@ -66,6 +68,70 @@ function reply(overrides: Record<string, unknown> = {}) {
 }
 
 describe('native launcher IPC wire', () => {
+  it('accepts redundant dot segments and connects using the exact normalized runtime path', async () => {
+    await fs.writeFile(
+      path.join(runtime, 'daemon.json'),
+      JSON.stringify({
+        protocolVersion: 1,
+        endpoint: `${root}/./.krypton/./runtime/daemon.sock`,
+        capabilityFile: `${root}/./.krypton/runtime/./capability`,
+      })
+    );
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    const result = pending.catch((error: unknown) => error);
+    await connected();
+    reply();
+    expect(await result).toMatchObject({ ok: true });
+    expect(net.createConnection).toHaveBeenCalledWith(path.join(runtime, 'daemon.sock'));
+  });
+  it.each(['endpoint', 'capabilityFile'] as const)(
+    'rejects invalid discovery field %s before connecting',
+    async (field) => {
+      for (const value of [
+        null,
+        42,
+        '',
+        'relative/path',
+        '/elsewhere/file',
+        `${runtime}/../outside`,
+        `${runtime}/../runtime/${field === 'endpoint' ? 'daemon.sock' : 'capability'}`,
+      ]) {
+        await fs.writeFile(
+          path.join(runtime, 'daemon.json'),
+          JSON.stringify({
+            protocolVersion: 1,
+            endpoint: path.join(runtime, 'daemon.sock'),
+            capabilityFile: path.join(runtime, 'capability'),
+            [field]: value,
+          })
+        );
+        await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow(
+          'discovery record'
+        );
+      }
+      expect(net.createConnection).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['symlink', 'file'])('rejects a socket %s instead of following it', async (kind) => {
+    vi.mocked(fs.lstat).mockRestore();
+    if (kind === 'symlink')
+      await fs.symlink('/untrusted/socket', path.join(runtime, 'daemon.sock'));
+    else await fs.writeFile(path.join(runtime, 'daemon.sock'), 'not a socket');
+    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow('Unix socket');
+    expect(net.createConnection).not.toHaveBeenCalled();
+  });
+  it('rejects a missing socket before connecting', async () => {
+    vi.mocked(fs.lstat).mockRejectedValue(
+      Object.assign(new Error('missing socket'), { code: 'ENOENT' })
+    );
+    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow('missing socket');
+    expect(net.createConnection).not.toHaveBeenCalled();
+  });
+  it('rejects a missing capability before connecting', async () => {
+    await fs.unlink(path.join(runtime, 'capability'));
+    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow();
+    expect(net.createConnection).not.toHaveBeenCalled();
+  });
   it('sends the authenticated nested identity frame with a unique request id', async () => {
     const command = {
       type: 'register_process',

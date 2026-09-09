@@ -392,12 +392,20 @@ fn worker_loop(
     }
 }
 
+/// Creates the private runtime directory and canonicalizes it before publishing
+/// discovery paths, removing dot segments and resolving the existing directory.
+fn prepare_runtime_directory(runtime_directory: &Path) -> Result<PathBuf, io::Error> {
+    fs::create_dir_all(runtime_directory)?;
+    let runtime_directory = fs::canonicalize(runtime_directory)?;
+    fs::set_permissions(&runtime_directory, fs::Permissions::from_mode(0o700))?;
+    Ok(runtime_directory)
+}
+
 pub fn start_ipc(
     runtime_directory: &Path,
     state: Arc<ControlState>,
 ) -> Result<IpcRuntime, io::Error> {
-    fs::create_dir_all(runtime_directory)?;
-    fs::set_permissions(runtime_directory, fs::Permissions::from_mode(0o700))?;
+    let runtime_directory = prepare_runtime_directory(runtime_directory)?;
     let endpoint = runtime_directory.join("daemon.sock");
     let capability_file = runtime_directory.join("capability");
     let endpoint_record = runtime_directory.join("daemon.json");
@@ -458,6 +466,33 @@ pub fn start_ipc(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn runtime_directory_normalization_removes_dot_segments_before_publication() {
+        let directory =
+            std::env::temp_dir().join(format!("krypton-normalize-{}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let runtime = directory
+            .join(".")
+            .join(".krypton")
+            .join(".")
+            .join("runtime");
+        let actual = super::prepare_runtime_directory(&runtime).unwrap();
+        let expected = std::fs::canonicalize(&directory)
+            .unwrap()
+            .join(".krypton/runtime");
+        let endpoint = actual.join("daemon.sock");
+        let capability = actual.join("capability");
+        std::fs::remove_dir_all(&directory).unwrap();
+        assert_eq!(
+            endpoint.as_os_str(),
+            expected.join("daemon.sock").as_os_str()
+        );
+        assert_eq!(
+            capability.as_os_str(),
+            expected.join("capability").as_os_str()
+        );
+    }
+
     #[test]
     fn private_runtime_publication_rejects_symlink_temporary() {
         use std::fs;

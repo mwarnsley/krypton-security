@@ -222,7 +222,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Desktop MCP hosts can set an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Desktop MCP hosts can set an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
   {
@@ -593,6 +593,37 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     for 60 seconds. Missing, expired, evicted, or unavailable receipts leave
                     attribution unconfirmed. If registration fails and the OS refuses cleanup, the
                     CLI exits nonzero and reports that the child may still be running.
+                  </p>
+                </aside>
+
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Verify local supervision
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    Start or restart the updated daemon with <code>krypton daemon:start</code> or
+                    <code> npm run dev:full</code>. In another checkout terminal, run
+                    <code>{" krypton run -- node -e 'console.log(process.cwd())'"}</code>. Expect
+                    the configured protected workspace path. A very short command may exit before
+                    registration completes; that limitation appears on stderr.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    <code>{`krypton run -- node -e 'require("fs").readFileSync("/etc/passwd")'`}</code>{' '}
+                    is a limitation probe, not a containment test. The read may succeed when OS
+                    permissions allow it; arbitrary Node reads are not intercepted and portable
+                    watcher events cannot reliably attribute the actor. No automatic quarantine or
+                    receipt is promised for this command.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    Run <code>npm run test:sim</code> for disposable containment verification and
+                    expect [PASS] lines. The supervisor captures the child PID and inspects its
+                    start time, executable and parent. Rust validates that complete identity at
+                    registration and before isolation. Successful native SIGKILL creates an
+                    authenticated in-memory receipt; observational violations are separately
+                    recorded as unattributed JSONL events. Desktop delivery is mocked in the test.
+                    Discovery accepts redundant dot segments only for the exact expected absolute
+                    runtime files; relative paths, traversal, redirects and socket symlinks remain
+                    rejected. Rust normalizes runtime paths before publishing daemon.json.
                   </p>
                 </aside>
 

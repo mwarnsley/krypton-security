@@ -170,6 +170,10 @@ developer workflows while preserving verifiable process ownership.
       the checkout root use the protected root; inside it preserve the canonical
       invocation directory. `KRYPTON_PROJECT_ROOT` selects a checkout for desktop hosts.
       `krypton daemon:start` starts the foreground source daemon through Cargo.
+- [x] Normalize Rust discovery publication and Node endpoint comparisons while
+      retaining exact workspace destinations and rejecting parent traversal and
+      socket symlinks. Regression coverage exercises dotted runtime paths through
+      the disposable native daemon and documents direct reads as a limitation probe.
 - [x] Preserve literal arguments, inherited stdio and child exit codes, keep supervisor
       diagnostics on stderr, forward SIGINT/SIGTERM, and perform bounded native cleanup.
       Early exit and refused owned-child cleanup report their actual limitations.

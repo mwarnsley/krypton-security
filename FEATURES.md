@@ -27,6 +27,11 @@ in `ROADMAP.md`.
 - Discovers the configured checkout, checks authenticated healthy daemon status
   before spawning, and launches in its canonical protected workspace. Explicit
   `KRYPTON_PROJECT_ROOT` supports desktop hosts without working-directory control.
+- Normalizes redundant discovery dot segments while requiring the exact absolute
+  workspace socket/capability paths, rejecting traversal and socket symlinks.
+  Rust canonicalizes its runtime directory before publishing discovery metadata.
+  Local verification separates benign CLI startup, direct-read limitations, and
+  the disposable authenticated-isolation simulation.
 - Preserves literal arguments without a shell and inherits terminal streams;
   supervisor diagnostics use stderr, preserving MCP stdout.
 - Registers complete initial-child identity, captures early exits, forwards

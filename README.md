@@ -357,6 +357,58 @@ blocking. IDE commands that hand off to an existing application are not evidence
 that the existing application's processes were registered. macOS is supported;
 Linux remains experimental and Windows remains dashboard-only.
 
+### Local supervisor verification
+
+1. In the checkout, use the pinned toolchains and run `npm ci` and `npm link`.
+   Start or restart the updated daemon with `krypton daemon:start`, or use
+   `npm run dev:full` to include the dashboard. Keep that terminal running.
+2. In another terminal in the same checkout, run:
+
+   ```sh
+   krypton run -- node -e 'console.log(process.cwd())'
+   ```
+
+   Expect the canonical configured protected workspace path on stdout. A short
+   command can exit before registration completes; the CLI reports that limitation
+   on stderr and preserves its exit code. This checks discovery and command launch,
+   not enforcement.
+
+3. The following is a **limitation probe, not a containment test**:
+
+   ```sh
+   krypton run -- node -e 'require("fs").readFileSync("/etc/passwd")'
+   ```
+
+   On a host where that file is readable, the read can succeed. The command does
+   not print the returned bytes. Krypton does not intercept arbitrary Node file
+   reads, and portable filesystem notifications cannot reliably identify their
+   actor or guarantee that this read produces a violation event. Do not expect
+   automatic quarantine or an enforcement receipt from this command.
+
+4. Run the reproducible containment check from the repository root:
+
+   ```sh
+   npm run test:sim
+   ```
+
+   Expect `[PASS]` lines for the CLI and authenticated native isolation. The harness
+   creates its own temporary daemon and owned children, verifies denial of an
+   integrated traversal intent, records a separate unattributed fixture event,
+   and explicitly requests isolation of a registered complete identity. The Node
+   supervisor obtains the spawned child's PID and inspects its start time,
+   executable and parent; the Rust daemon validates that identity at registration
+   and again immediately before signaling. Only successful native SIGKILL delivery
+   publishes an in-memory authenticated termination receipt. Receipt creation is
+   distinct from recording observational violations in the JSONL ledger. The test
+   mocks desktop notification delivery and never depends on the developer's daemon.
+
+Discovery validation normalizes redundant `./` segments in both endpoint paths,
+then requires the exact expected absolute socket and capability file within
+`.krypton/runtime`. Relative paths, parent traversal, redirected files, and socket
+symlinks are rejected. Rust canonicalizes the runtime directory before publishing
+`daemon.json`; restart old daemons to regenerate normalized discovery metadata.
+Never print or copy capability contents while diagnosing discovery.
+
 ## Protected child lifecycle
 
 Use `spawnProtectedProcess` from `src/core/processIsolation.cjs` for the native
@@ -629,6 +681,10 @@ protected workspace. `krypton daemon:start` starts only the foreground daemon.
 For desktop MCP hosts, set an absolute `KRYPTON_PROJECT_ROOT` and use literal
 argument arrays; supervisor diagnostics use stderr. Only the initial child is
 registered, and SIGKILL attribution requires an authenticated native receipt.
+Use `krypton run -- node -e 'console.log(process.cwd())'` for a benign launch check;
+a direct `/etc/passwd` read is not a containment test because arbitrary reads are
+not intercepted. Discovery tolerates redundant dot segments only for the exact
+expected runtime files.
 Run `npm run test:sim` for an isolated native end-to-end check using disposable
 children, real authenticated IPC and SIGKILL, durable observational JSONL, and
 mocked desktop delivery. It does not update the running dashboard or display an

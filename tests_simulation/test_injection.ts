@@ -240,6 +240,11 @@ async function runInjectionSimulation(): Promise<void> {
       if (daemon?.exitCode !== null) throw new Error('Native fixture exited: ' + daemonOutput);
       return daemonOutput.includes('KRYPTON_SIMULATION_READY') ? true : undefined;
     });
+    const discovery = JSON.parse(
+      await fs.readFile(path.join(root, '.krypton/runtime/daemon.json'), 'utf8')
+    ) as { endpoint: string; capabilityFile: string };
+    assert.equal(discovery.endpoint, path.join(root, '.krypton/runtime/daemon.sock'));
+    assert.equal(discovery.capabilityFile, path.join(root, '.krypton/runtime/capability'));
     const dispatch = (command: Record<string, unknown>) => dispatchNativeControl(command, root);
     child = spawn(
       process.execPath,

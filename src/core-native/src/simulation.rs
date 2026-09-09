@@ -58,7 +58,8 @@ fn daemon_fixture() {
         notification_health,
         components: Arc::clone(&components),
     });
-    let _ipc = start_ipc(&root.join(".krypton/runtime"), state).expect("authenticated IPC");
+    let _ipc =
+        start_ipc(&root.join(".").join(".krypton/runtime"), state).expect("authenticated IPC");
     let protected = root.join("sandbox_workspace");
     let events = sender.clone();
     let watcher_health = Arc::clone(&components);

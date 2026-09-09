@@ -254,6 +254,14 @@ describe('ExplainerDrawer', () => {
     expect(phase.textContent).toContain('remain planned');
   });
 
+  it('separates benign local verification from direct-read containment limitations', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(screen.getByText("krypton run -- node -e 'console.log(process.cwd())'")).toBeTruthy();
+    expect(screen.getByText(/is a limitation probe, not a containment test/)).toBeTruthy();
+    expect(screen.getByText(/Successful native SIGKILL creates an/)).toBeTruthy();
+  });
+
   it('confirms when the native setup command is copied', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
