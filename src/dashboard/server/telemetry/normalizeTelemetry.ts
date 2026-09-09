@@ -80,27 +80,45 @@ export function normalizePersistedEvent(value: unknown): SecurityAlert {
     throw new TypeError('Process-attributed telemetry requires a compound identity.');
   }
   const category = boundedString(value.category, 'category', MAX_ALERT_CATEGORY_LENGTH);
+  const mcp = category === 'mcp_boundary';
+  const details = value.details;
+  if (
+    mcp &&
+    (attribution !== 'unattributed' ||
+      !isRecord(details) ||
+      details.action !== 'denied' ||
+      (details.tool !== 'krypton_read_file' && details.tool !== 'krypton_write_file'))
+  ) {
+    throw new TypeError('Native MCP receipt is invalid.');
+  }
+  const tool = mcp && isRecord(details) ? String(details.tool) : undefined;
   const attemptedPath = boundedString(value.path, 'path', MAX_ALERT_FIELD_LENGTH);
   const capturedAt = boundedString(value.capturedAt, 'timestamp', 64);
   const id = boundedString(value.id, 'id', 256);
   return {
-    attemptedAction: category === 'workspace_boundary' ? 'filesystem_boundary_breakout' : category,
+    attemptedAction:
+      tool ?? (category === 'workspace_boundary' ? 'filesystem_boundary_breakout' : category),
     attemptedPath,
     attribution,
-    // The current native ledger contains observations, not confirmed signal receipts.
-    enforcementStatus: 'OBSERVED',
+    // A native tool denial proves interception, never process isolation.
+    enforcementStatus: mcp ? 'INTERCEPTED' : 'OBSERVED',
     id,
-    origin_attribution:
-      attribution === 'process'
+    origin_attribution: mcp
+      ? 'Native MCP request (actor unattributed)'
+      : attribution === 'process'
         ? (process?.executablePath ?? 'Unknown process')
         : 'Unattributed portable watcher event',
     ...(process === undefined ? {} : { process }),
-    processName: process?.executablePath.split('/').at(-1) ?? 'Unattributed filesystem event',
+    processName:
+      tool ?? process?.executablePath.split('/').at(-1) ?? 'Unattributed filesystem event',
     sequence,
     severity: severity(value.severity),
     targetProcessId: process?.pid ?? null,
     timestamp: capturedAt,
-    triggerSignature:
-      attribution === 'process' ? 'NATIVE_PROCESS_ADAPTER' : 'NATIVE_PORTABLE_WATCHER',
+    triggerSignature: mcp
+      ? 'NATIVE_MCP_BOUNDARY'
+      : attribution === 'process'
+        ? 'NATIVE_PROCESS_ADAPTER'
+        : 'NATIVE_PORTABLE_WATCHER',
   };
 }

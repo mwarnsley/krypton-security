@@ -119,3 +119,44 @@ describe('observational portable watcher', () => {
     expect(watchdog.getWorkspaceObservation()?.health).toBe('degraded');
   });
 });
+
+describe('watcher failure boundaries', () => {
+  it('records degraded health when canonical setup fails', () => {
+    vi.mocked(fs.realpathSync).mockImplementation(() => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    });
+    expect(() => watchdog.startWorkspaceWatcher(ROOT)).toThrow('denied');
+    expect(watchdog.getWorkspaceObservation()?.health).toBe('degraded');
+  });
+  it('records degraded health even if watcher cleanup throws', () => {
+    const stub = Object.assign(new EventEmitter(), {
+      close: vi.fn(() => {
+        throw new Error('cleanup failed');
+      }),
+    });
+    vi.spyOn(fs, 'watch').mockReturnValue(stub as unknown as fs.FSWatcher);
+    watchdog.startWorkspaceWatcher(ROOT);
+    expect(() => stub.emit('error', new Error('watch failed'))).not.toThrow();
+    expect(watchdog.getWorkspaceObservation()?.health).toBe('degraded');
+  });
+});
+
+describe('safe watcher failure classification', () => {
+  it('records denied path resolution as degraded permission failure', () => {
+    vi.mocked(fs.realpathSync).mockImplementation(() => {
+      throw Object.assign(new Error('private path'), { code: 'EPERM' });
+    });
+    expect(watchdog.verifyPathAccess(ROOT + '/safe')).toBe(false);
+    expect(watchdog.getWorkspaceObservation()).toMatchObject({
+      health: 'degraded',
+      failureCode: 'permission_denied',
+    });
+  });
+  it('normalizes unknown setup failures without losing degraded health', () => {
+    vi.spyOn(fs, 'watch').mockImplementation(() => {
+      throw null;
+    });
+    expect(() => watchdog.startWorkspaceWatcher(ROOT)).toThrow('Workspace watcher setup failed.');
+    expect(watchdog.getWorkspaceObservation()?.failureCode).toBe('filesystem_failed');
+  });
+});

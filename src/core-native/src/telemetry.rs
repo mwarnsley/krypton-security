@@ -3,7 +3,7 @@ use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fs::{self, OpenOptions};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
@@ -14,6 +14,8 @@ use std::thread::{self, JoinHandle};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 pub const ALERT_QUEUE_CAPACITY: usize = 1_024;
+pub const MAX_LEDGER_EVENTS: usize = 10_000;
+pub const MAX_LEDGER_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -98,6 +100,16 @@ pub struct TelemetryLedger {
 
 impl TelemetryLedger {
     pub fn open(path: PathBuf, max_events: usize, max_bytes: u64) -> Result<Self, io::Error> {
+        if max_events == 0
+            || max_events > MAX_LEDGER_EVENTS
+            || max_bytes == 0
+            || max_bytes > MAX_LEDGER_BYTES
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "ledger limits exceed supported bounds",
+            ));
+        }
         if let Some(parent) = path.parent() {
             let parent_existed = parent.exists();
             fs::create_dir_all(parent)?;
@@ -109,7 +121,9 @@ impl TelemetryLedger {
         let mut options = OpenOptions::new();
         options.create(true).append(true);
         #[cfg(unix)]
-        options.mode(0o600);
+        options
+            .mode(0o600)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
         drop(options.open(&path)?);
         #[cfg(unix)]
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
@@ -128,7 +142,7 @@ impl TelemetryLedger {
         let next_sequence = last_sequence
             .checked_add(1)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "sequence exhausted"))?;
-        Ok(Self {
+        let ledger = Self {
             path,
             max_events,
             max_bytes,
@@ -136,7 +150,11 @@ impl TelemetryLedger {
             event_count: AtomicUsize::new(events.len()),
             last_sequence: Mutex::new(last_sequence),
             health: Arc::new(RwLock::new(LedgerHealth::Ready)),
-        })
+        };
+        if events.len() > max_events || fs::metadata(&ledger.path)?.len() > max_bytes {
+            ledger.compact(events)?;
+        }
+        Ok(ledger)
     }
 
     pub fn next_sequence(&self) -> u64 {
@@ -165,47 +183,74 @@ impl TelemetryLedger {
         let mut line = serde_json::to_vec(event)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         line.push(b'\n');
-        let mut file = OpenOptions::new().append(true).open(&self.path)?;
-        file.write_all(&line)?;
-        file.sync_data()?;
+        if line.len() as u64 > self.max_bytes {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "event exceeds ledger byte limit",
+            ));
+        }
+        let mut file = OpenOptions::new()
+            .append(true)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
+            .open(&self.path)?;
+        let original_bytes = file.metadata()?.len();
+        let count = self.event_count.load(Ordering::Relaxed);
+        if count >= self.max_events
+            || original_bytes.saturating_add(line.len() as u64) > self.max_bytes
+        {
+            // Compact the next complete state before publication; a failed staging
+            // write leaves the previous ledger within its bounds and unchanged.
+            let mut events = read_events(&self.path)?;
+            events.push(event.clone());
+            self.compact(events)?;
+        } else {
+            let result = file.write_all(&line).and_then(|()| file.sync_data());
+            if let Err(error) = result {
+                if let Err(rollback) = file.set_len(original_bytes).and_then(|()| file.sync_data())
+                {
+                    return Err(io::Error::other(format!(
+                        "ledger append failed: {error}; rollback failed: {rollback}"
+                    )));
+                }
+                return Err(error);
+            }
+            self.event_count
+                .store(count.saturating_add(1), Ordering::Relaxed);
+        }
         *last = event.sequence;
         self.next_sequence
             .fetch_max(event.sequence + 1, Ordering::Relaxed);
-        let count = self.event_count.fetch_add(1, Ordering::Relaxed) + 1;
-        let bytes = file.metadata()?.len();
-        if count > self.max_events || bytes > self.max_bytes {
-            self.compact()?;
-        }
         Ok(())
     }
 
-    fn compact(&self) -> Result<(), io::Error> {
-        let mut events = read_events(&self.path)?;
-        if events.len() > self.max_events {
-            events.drain(..events.len() - self.max_events);
+    /// Serializes each retained candidate once, then drops an oldest prefix in a
+    /// single pass. O(B + N) time and space for bounded bytes B and records N.
+    fn compact(&self, events: Vec<PersistedSecurityEvent>) -> Result<(), io::Error> {
+        let skip = events.len().saturating_sub(self.max_events);
+        let mut lines = std::collections::VecDeque::new();
+        let mut bytes = 0_u64;
+        for event in events.into_iter().skip(skip) {
+            let mut line = serde_json::to_vec(&event)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            line.push(b'\n');
+            bytes = bytes.saturating_add(line.len() as u64);
+            lines.push_back(line);
         }
-        while serialized_size(&events)? > self.max_bytes && events.len() > 1 {
-            events.remove(0);
+        while bytes > self.max_bytes {
+            let line = lines
+                .pop_front()
+                .ok_or_else(|| io::Error::other("invalid compaction size"))?;
+            bytes = bytes.saturating_sub(line.len() as u64);
         }
         write_private_atomic(&self.path, |file| {
-            for event in &events {
-                serde_json::to_writer(&mut *file, event)
-                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-                file.write_all(b"\n")?;
+            for line in &lines {
+                file.write_all(line)?;
             }
             Ok(())
         })?;
-        self.event_count.store(events.len(), Ordering::Relaxed);
+        self.event_count.store(lines.len(), Ordering::Relaxed);
         Ok(())
     }
-}
-
-fn serialized_size(events: &[PersistedSecurityEvent]) -> Result<u64, io::Error> {
-    events.iter().try_fold(0_u64, |size, event| {
-        let bytes = serde_json::to_vec(event)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        Ok(size + bytes.len() as u64 + 1)
-    })
 }
 
 /// Publishes a private replacement; pre-existing temporary files (including symlinks)
@@ -228,7 +273,9 @@ pub(crate) fn write_private_atomic(
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
-    options.mode(0o600);
+    options
+        .mode(0o600)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
     let mut file = options.open(&temporary)?;
     let result = (|| {
         write(&mut file)?;
@@ -239,7 +286,18 @@ pub(crate) fn write_private_atomic(
     })();
     if result.is_err() {
         // Only our exclusively created temporary file may be removed.
-        let _ = fs::remove_file(&temporary);
+        if let Err(cleanup) = fs::remove_file(&temporary) {
+            if cleanup.kind() != io::ErrorKind::NotFound {
+                return Err(io::Error::other(format!(
+                    "atomic publication failed: {}; cleanup failed: {cleanup}",
+                    result
+                        .as_ref()
+                        .err()
+                        .map(ToString::to_string)
+                        .unwrap_or_default()
+                )));
+            }
+        }
     }
     result
 }
@@ -249,13 +307,18 @@ type LedgerScan = (Vec<PersistedSecurityEvent>, Option<(u64, bool)>);
 /// Scans the entire ledger before permitting repair. Only EOF-truncated JSON is
 /// recoverable; complete malformed lines and non-monotonic evidence are rejected.
 fn scan_events(path: &Path) -> Result<LedgerScan, io::Error> {
-    let file = match OpenOptions::new().read(true).open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), None)),
-        Err(error) => return Err(error),
-    };
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() || file.metadata()?.len() > MAX_LEDGER_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "ledger size limit exceeded or non-regular ledger",
+        ));
+    }
     let mut events = Vec::new();
-    let mut reader = BufReader::new(file);
+    let mut reader = BufReader::new(file.take(MAX_LEDGER_BYTES + 1));
     let mut offset = 0_u64;
     let mut last = 0;
     loop {
@@ -263,6 +326,14 @@ fn scan_events(path: &Path) -> Result<LedgerScan, io::Error> {
         let count = reader.read_until(b'\n', &mut line)?;
         if count == 0 {
             return Ok((events, None));
+        }
+        if offset.saturating_add(count as u64) > MAX_LEDGER_BYTES
+            || events.len() >= MAX_LEDGER_EVENTS
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "ledger size limit exceeded",
+            ));
         }
         let terminated = line.last() == Some(&b'\n');
         match serde_json::from_slice::<PersistedSecurityEvent>(&line) {
@@ -294,19 +365,26 @@ pub fn read_events(path: &Path) -> Result<Vec<PersistedSecurityEvent>, io::Error
 
 pub fn start_writer(
     ledger: Arc<TelemetryLedger>,
-) -> (SyncSender<PersistedSecurityEvent>, JoinHandle<()>) {
-    let (sender, receiver) = sync_channel(ALERT_QUEUE_CAPACITY);
-    let handle = thread::spawn(move || {
-        for event in receiver {
-            if let Err(error) = ledger.append(&event) {
-                if let Ok(mut health) = ledger.health.write() {
-                    *health = LedgerHealth::WriteFailed;
+) -> io::Result<(SyncSender<PersistedSecurityEvent>, JoinHandle<()>)> {
+    let (sender, receiver) = sync_channel::<PersistedSecurityEvent>(ALERT_QUEUE_CAPACITY);
+    let handle = thread::Builder::new()
+        .name("krypton-telemetry".to_owned())
+        .spawn(move || {
+            for mut event in receiver {
+                // Concurrent producers may enqueue in a different order from allocation.
+                // Assign durable sequence at the single persistence boundary.
+                event.sequence = ledger.next_sequence();
+                if ledger.append(&event).is_err() {
+                    if let Ok(mut health) = ledger.health.write() {
+                        *health = LedgerHealth::WriteFailed;
+                    }
+                    // Stop persistence after a failed append: subsequent data must not
+                    // extend a partial record or hide the loss behind later success.
+                    return;
                 }
-                eprintln!("[TELEMETRY ERROR] ledger write failed: {error}");
             }
-        }
-    });
-    (sender, handle)
+        })?;
+    Ok((sender, handle))
 }
 
 pub fn try_enqueue(
@@ -323,6 +401,32 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn concurrent_producer_order_cannot_corrupt_persisted_sequences() {
+        let path =
+            std::env::temp_dir().join(format!("krypton-writer-order-{}.jsonl", std::process::id()));
+        let ledger =
+            std::sync::Arc::new(TelemetryLedger::open(path.clone(), 100, 1_048_576).unwrap());
+        let (sender, writer) = super::start_writer(ledger).unwrap();
+        for sequence in [20, 3, 0] {
+            sender
+                .send(PersistedSecurityEvent::unattributed_filesystem(
+                    sequence,
+                    Path::new("/fake"),
+                    true,
+                ))
+                .unwrap();
+        }
+        drop(sender);
+        writer.join().unwrap();
+        let rows = read_events(&path).unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(
+            rows.iter().map(|row| row.sequence).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+    }
 
     #[test]
     fn serializes_complete_process_identity() {
@@ -363,6 +467,71 @@ mod tests {
 
     fn event(sequence: u64) -> PersistedSecurityEvent {
         PersistedSecurityEvent::unattributed_filesystem(sequence, Path::new("/tmp/outside"), false)
+    }
+
+    #[test]
+    fn missing_ledger_is_an_explicit_error() {
+        let p = path("missing");
+        assert_eq!(
+            read_events(&p).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+
+    #[test]
+    fn oversized_event_is_rejected_without_mutating_ledger() {
+        let p = path("oversized");
+        let ledger = TelemetryLedger::open(p.clone(), 10, 1).unwrap();
+        let result = ledger.append(&event(1));
+        let bytes = fs::read(&p).unwrap();
+        fs::remove_file(p).unwrap();
+        assert!(result.is_err());
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn failed_atomic_cleanup_retains_original_and_reports_both_errors() {
+        let p = path("cleanup-failure");
+        let temporary =
+            p.with_file_name(format!("{}.tmp", p.file_name().unwrap().to_str().unwrap()));
+        fs::write(&p, b"original").unwrap();
+        let result = super::write_private_atomic(&p, |_| {
+            fs::remove_file(&temporary)?;
+            fs::create_dir(&temporary)?;
+            Err(std::io::Error::other("injected write failure"))
+        });
+        fs::remove_dir(temporary).unwrap();
+        let bytes = fs::read(&p).unwrap();
+        fs::remove_file(p).unwrap();
+        assert!(result.unwrap_err().to_string().contains("cleanup failed"));
+        assert_eq!(bytes, b"original");
+    }
+
+    #[test]
+    fn compaction_failure_preserves_previous_complete_ledger() {
+        let p = path("atomic-compact");
+        let ledger = TelemetryLedger::open(p.clone(), 1, 100_000).unwrap();
+        ledger.append(&event(1)).unwrap();
+        let before = fs::read(&p).unwrap();
+        let temporary =
+            p.with_file_name(format!("{}.tmp", p.file_name().unwrap().to_str().unwrap()));
+        fs::write(&temporary, b"occupied").unwrap();
+        let result = ledger.append(&event(2));
+        let after = fs::read(&p).unwrap();
+        fs::remove_file(p).unwrap();
+        fs::remove_file(temporary).unwrap();
+        assert!(result.is_err());
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn excessive_ledger_size_is_rejected_before_allocating_records() {
+        let p = path("huge-ledger");
+        let file = fs::File::create(&p).unwrap();
+        file.set_len(8 * 1024 * 1024 + 1).unwrap();
+        let result = read_events(&p);
+        fs::remove_file(p).unwrap();
+        assert!(result.unwrap_err().to_string().contains("size limit"));
     }
 
     #[test]

@@ -59,7 +59,16 @@ pub fn resolve_path(protected_root: &Path, target: &Path) -> Result<PathDecision
         ));
     }
 
-    if normalized_target.exists() {
+    if fs::symlink_metadata(&normalized_target)
+        .map(|_| true)
+        .or_else(|error| {
+            if error.kind() == io::ErrorKind::NotFound {
+                Ok(false)
+            } else {
+                Err(error)
+            }
+        })?
+    {
         let resolved_path = fs::canonicalize(&normalized_target)?;
         return Ok(PathDecision {
             within_protected_root: resolved_path.starts_with(&canonical_root),
@@ -71,7 +80,11 @@ pub fn resolve_path(protected_root: &Path, target: &Path) -> Result<PathDecision
     let mut ancestor = normalized_target.as_path();
     let mut missing_names = Vec::new();
 
-    while !ancestor.exists() {
+    while match fs::symlink_metadata(ancestor) {
+        Ok(_) => false,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => true,
+        Err(error) => return Err(error),
+    } {
         let name = ancestor.file_name().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -134,6 +147,16 @@ mod tests {
             Path::new("/project/not_node_modules/pkg"),
             &ignored
         ));
+    }
+
+    #[test]
+    fn broken_symlink_is_not_treated_as_a_safe_missing_target() {
+        let root = fixture_root("broken-symlink");
+        fs::create_dir(&root).unwrap();
+        std::os::unix::fs::symlink(root.join("missing"), root.join("link")).unwrap();
+        let result = resolve_path(&root, &root.join("link"));
+        fs::remove_dir_all(root).unwrap();
+        assert!(result.is_err());
     }
 
     #[test]

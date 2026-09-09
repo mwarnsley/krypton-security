@@ -421,7 +421,10 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         cell: ({ getValue, row }) => (
           <code className="font-mono font-semibold tracking-krypton-mono text-krypton-accent-cyan">
             {row.original.attribution === 'unattributed'
-              ? 'Observed (unattributed)'
+              ? row.original.triggerSignature === 'NATIVE_MCP_BOUNDARY' &&
+                row.original.enforcementStatus === 'INTERCEPTED'
+                ? 'Denied (actor unattributed)'
+                : 'Observed (unattributed)'
               : getValue<number | null>()}
             {row.original.attribution === 'process' && row.original.enforcementStatus === 'OBSERVED'
               ? ' — OBSERVED'

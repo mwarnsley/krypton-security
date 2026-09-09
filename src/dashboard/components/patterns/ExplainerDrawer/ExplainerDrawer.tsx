@@ -137,16 +137,16 @@ const CORE_FEATURES: readonly GuideItem[] = [
 
 const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
-    status: 'Completed',
-    summary:
-      'The supported macOS daemon, local telemetry dashboard, offline policy loop, public simulation, and redacted OS-level alerts for confirmed native quarantines are implemented. The scoped v1.0 boundary is verified by native end-to-end tests with mocked desktop delivery; watcher events remain observational, never containment authority.',
-    title: 'Phase 1 · Native macOS Hardening & Public Launch (v1.0)',
-  },
-  {
     status: 'In progress',
     summary:
+      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. Bundled .mcpb packaging, real client UI verification and the 60-second evaluation target remain outstanding; portable watcher evidence remains observational.',
+    title: 'Phase 1 · Local Developer Verification & Containment Core (v1.0)',
+  },
+  {
+    status: 'Planned',
+    summary:
       'The krypton run initial-child supervisor and authenticated termination receipts are implemented. Descendant containment, bounded Safe Auto-Pilot host adapters, and standalone Homebrew or verified shell installation with a sub-30-second time-to-first-containment target remain planned. A separate vulnerable-agent playground is also planned; none of these install paths or companion assets are available today.',
-    title: 'Phase 2 · Transparent DX & Zero-Config CLI (v1.1)',
+    title: 'Phase 2 · Transparent Developer Experience & Distribution (v1.1)',
   },
   {
     status: 'Planned',
@@ -169,12 +169,23 @@ const SETUP_STEPS = [
   ['4. Verify the Next.js production build (Turbopack)', 'npm run build'],
   ['5. Run the native daemon and dashboard', 'npm run dev:full'],
   ['6. Run the test gates in another terminal', 'npm test -- --run && npm run rust:test'],
-  ['7. Run the isolated native simulation (desktop delivery mocked)', 'npm run test:sim'],
+  ['7. Run isolated native E2E checks (desktop delivery mocked)', 'npm run test:e2e'],
   ['8. Expose the source-checkout CLI', 'npm link'],
-  ['9. Supervise an agent in another terminal', 'krypton run -- claude'],
+  ['9. Configure detected AI clients, then restart them', 'krypton setup'],
+  ['10. Supervise an agent in another terminal', 'krypton run -- claude'],
 ] as const;
 
 const FAQ_ITEMS: readonly FaqItem[] = [
+  {
+    question: 'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
+    answer:
+      'Close clients and run npm run setup, or krypton setup after npm link. Setup detects existing client storage on macOS/Linux, atomically backs up existing JSON to .bak, preserves other servers and installs krypton-protected-fs through the supervisor with canonical paths and KRYPTON_PROJECT_ROOT. Invalid JSON, symlinks and conflicting Krypton entries fail per client; identical entries are skipped. Start or restart the updated daemon with npm run dev:full, ensure node is on the GUI client PATH, and restart configured clients. Linux storage detection does not imply supported native Linux enforcement. Only krypton_read_file and krypton_write_file are contained; built-in tools are not intercepted.',
+  },
+  {
+    question: 'What happens when a Krypton MCP file tool crosses the boundary?',
+    answer:
+      'Ajv validates JSON Schema 2020-12 locally. The server sends authenticated mcp_file IPC to Rust, which checks paths and performs descriptor-relative file access. Unsafe requests return isError: true inside result with native receipts, in both Audit-Only and Enforcement modes. Denials queue native JSONL with tool, path and timestamp; queued is not a durable-write acknowledgment. Dashboard evidence is INTERCEPTED without an actor PID or confirmed process isolation. The server remains alive to return the error. Missing or incompatible daemons and unavailable telemetry fail closed. Socket exchanges have a 1500 ms absolute deadline and disconnects deny immediately. Stalled MCP output ends the session after 1500 ms. Tool failures remain inside result.isError; malformed protocol requests use standard JSON-RPC errors. Uncertain write durability requires inspecting the destination before retrying. Frames are bounded to 32 KiB, paths to 1 KiB and UTF-8 content to 2 KiB; parent directories must exist. Basenames starting with .krypton-mcp- and case variants are reserved for native staging. Symlinks, hardlinks and special files are rejected. Same-user host tampering and directory relocation remain outside kernel isolation.',
+  },
   {
     answer:
       "Krypton is a lightweight local runtime boundary for developers using AI tools, package scripts, and automated commands. Integrations that use Krypton's policy and protected launcher can keep approved file mutations within the configured workspace; actions outside those integration points are not automatically contained.",
@@ -222,7 +233,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Desktop MCP hosts can set an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Node and Rust resolve version-manager executable symlinks to the same canonical target; resolution failures deny inspection and PID, start time and parent checks remain strict. Restart the updated daemon. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Run npm run setup or krypton setup after npm link to configure detected MCP clients, then restart them. Desktop MCP hosts use an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Node and Rust resolve version-manager executable symlinks to the same canonical target; resolution failures deny inspection and PID, start time and parent checks remain strict. Restart the updated daemon. Run npm run test:e2e for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable native JSONL including INTERCEPTED MCP denials, fail-closed socket loss, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
   {
@@ -581,7 +592,13 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     Relative paths resolve there. Desktop MCP hosts can select the checkout with an
                     absolute <code>KRYPTON_PROJECT_ROOT</code> and pass a literal argument array.
                     Stdio is inherited, no shell expansion is performed, and supervisor diagnostics
-                    use stderr so MCP stdout remains intact.
+                    use stderr so MCP stdout remains intact. Close clients and run{' '}
+                    <code>npm run setup</code> or <code>krypton setup</code>
+                    to configure detected Claude Desktop, Cursor, Claude Code and Cline storage.
+                    Existing JSON receives a private atomic .bak backup; other servers remain intact
+                    and conflicts fail per client. Restart configured clients and ensure node is
+                    available on their PATH. Only the two Krypton MCP file tools gain native path
+                    containment; built-in host tools are not intercepted.
                   </p>
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
                     Executable symlinks used by version managers such as fnm, nvm and Homebrew
@@ -594,14 +611,15 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   </p>
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
                     The supervisor registers only the initial child, forwards SIGINT/SIGTERM, and
-                    preserves exit codes after bounded cleanup. Child execution starts before
-                    registration completes; very short commands may exit before supervision is
-                    established. Descendant containment and universal filesystem/network blocking
-                    remain unavailable. A confirmed enforcement message requires an authenticated
-                    complete-identity receipt after SIGKILL; at most 1,024 receipts remain available
-                    for 60 seconds. Missing, expired, evicted, or unavailable receipts leave
-                    attribution unconfirmed. If registration fails and the OS refuses cleanup, the
-                    CLI exits nonzero and reports that the child may still be running.
+                    preserves nonzero exit codes after bounded cleanup. Lifecycle failure upgrades a
+                    zero child status to 1. Child execution starts before registration completes;
+                    very short commands may exit before supervision is established. Descendant
+                    containment and universal filesystem/network blocking remain unavailable. A
+                    confirmed enforcement message requires an authenticated complete-identity
+                    receipt after SIGKILL; at most 1,024 receipts remain available for 60 seconds.
+                    Missing, expired, evicted, or unavailable receipts leave attribution
+                    unconfirmed. If registration fails and the OS refuses cleanup, the CLI exits
+                    nonzero and reports that the child may still be running.
                   </p>
                 </aside>
 
@@ -624,7 +642,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     receipt is promised for this command.
                   </p>
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    Run <code>npm run test:sim</code> for disposable containment verification and
+                    Run <code>npm run test:e2e</code> for disposable containment verification and
                     expect [PASS] lines. The supervisor captures the child PID and inspects its
                     start time, executable and parent. Rust validates that complete identity at
                     registration and before isolation. Successful native SIGKILL creates an

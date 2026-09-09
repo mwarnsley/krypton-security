@@ -40,7 +40,10 @@ describe('native-only isolation', () => {
       const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
       await expect(
         quarantineProcess(identity, { dispatch: vi.fn().mockResolvedValue({ ok: false, code }) })
-      ).rejects.toThrow(code);
+      ).rejects.toMatchObject({
+        code: 'isolation_rejected',
+        message: 'Native isolation rejected.',
+      });
       expect(kill).not.toHaveBeenCalled();
     }
   );
@@ -215,5 +218,62 @@ describe('failed owned-child cleanup', () => {
     expect(result.childMayBeRunning).toBe(true);
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'unregister_process', process: identity });
     expect(child.unref).toHaveBeenCalled();
+  });
+});
+
+describe('safe lifecycle failure categories', () => {
+  it('redacts untrusted native isolation rejection text', async () => {
+    await expect(
+      quarantineProcess(identity, {
+        dispatch: vi.fn().mockResolvedValue({ ok: false, code: 'secret-capability' }),
+      })
+    ).rejects.toMatchObject({ code: 'isolation_rejected', message: 'Native isolation rejected.' });
+  });
+  it('records unavailable receipt and permission-denied unregister separately', async () => {
+    const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn(), pid: identity.pid });
+    const dispatch = vi.fn().mockImplementation(async ({ type }: { type: string }) => {
+      if (type === 'register_process') return { ok: true, code: 'process_registered' };
+      throw Object.assign(new Error('secret-path'), {
+        code: type === 'termination_receipt' ? 'ENOENT' : 'EPERM',
+      });
+    });
+    const session = startProtectedProcess(
+      'node',
+      [],
+      {},
+      { spawn: () => child, inspect: async () => identity, dispatch }
+    );
+    await session.registered;
+    child.emit('exit', null, 'SIGKILL');
+    expect(await session.completed).toMatchObject({
+      enforcementConfirmed: false,
+      cleanupFailed: true,
+      receiptError: { code: 'unavailable' },
+      cleanupError: { code: 'permission_denied' },
+    });
+  });
+  it('records a thrown owned-child cleanup error without claiming exit', async () => {
+    const { startProtectedProcess } = await import('../../src/core/processIsolation.cjs');
+    const child = Object.assign(new EventEmitter(), {
+      kill: vi.fn(() => {
+        throw null;
+      }),
+      pid: identity.pid,
+    });
+    const session = startProtectedProcess(
+      'node',
+      [],
+      {},
+      {
+        spawn: () => child,
+        inspect: async () => identity,
+        dispatch: vi.fn().mockRejectedValue(new Error('registration failed')),
+      }
+    );
+    expect(await session.completed).toMatchObject({
+      childMayBeRunning: true,
+      terminationError: { code: 'transport_failed' },
+    });
   });
 });

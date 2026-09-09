@@ -78,12 +78,61 @@ sibling-prefix confusion, dangerously broad protected roots, and symlinks that
 resolve outside the workspace are unsafe.
 
 Canonicalization and live identity checks reduce alias and PID-reuse attacks but
-cannot eliminate races between validation and operating-system action. Stronger
-directory-handle and kernel permission APIs are future adapter work.
+cannot eliminate races between validation and operating-system action. The MCP
+file tools now use directory-handle access as described below; broader kernel
+permission adapters remain future work.
+
+## MCP tools and client configuration
+
+`krypton setup` is an explicit operator action outside the enforcement loop.
+It detects existing client storage, bounds settings JSON to 4 MiB, creates
+private atomic `.bak` backups, and merges one supervisor-backed MCP entry.
+Malformed JSON, symlinked settings and conflicting entries fail per client.
+An exclusive setup lock prevents simultaneous Krypton writers. A content check
+detects ordinary intervening client edits, but it is not a lock against third-party
+writers; close clients before setup or backup restoration.
+
+Concurrent daemon startup is serialized by a private regular `startup.lock`
+held with a nonblocking kernel file lock for the runtime lifetime. Leave the
+lock file in place: deleting a live lock pathname would defeat serialization.
+Kernel close releases the lock after exit or crash; stale file contents do not
+mean the lock is held.
+
+All native control clients use a 1500 ms absolute exchange deadline; native
+socket deadlines include queue residence and cannot be renewed by slow reads.
+A timed-out write may already have been published: denial of further operations
+does not imply rollback. Kernel filesystem operations and scheduler stalls are
+outside hard real-time guarantees. Stalled or disconnected MCP output is fatal
+to that session, and CLI diagnostics remain redacted on stderr.
+
+The stdio server treats all MCP JSON as untrusted, validates fixed JSON Schema
+2020-12 schemas locally, serializes requests and retains constant session state.
+It limits frames to 32 KiB, paths to 1 KiB and UTF-8 content to 2 KiB. Only
+`krypton_read_file` and `krypton_write_file` reach authenticated `mcp_file` IPC.
+The native daemon owns both path evaluation and file access using a pinned root
+descriptor, no-follow directory traversal, regular-file checks and private
+atomic write replacement. Hardlinks, special files and invalid UTF-8 reads are
+rejected. Parent directories must already exist. MCP callers cannot read or
+write the reserved `.krypton-mcp-` basename namespace, including case variants,
+so concurrent requests cannot replace each other's staging files. Concurrent directory relocation,
+mount changes and same-user host tampering remain outside this protection.
+
+Unsafe file calls are denied in both runtime modes. Denials return native
+receipts inside an MCP `result` with `isError: true`; they do not request signals
+or claim an actor identity. The client can continue using the server after a
+denial. Missing/incompatible native IPC and failed telemetry health deny access.
+Native denial events retain tool, requested path, timestamp and action, never
+file content or capability material. A queued receipt is not a durable-write
+acknowledgment; persistence errors and queue saturation degrade health. MCP
+records can display `INTERCEPTED` without granting process-control authority.
+Other host tools, arbitrary shell commands, network access and descendant
+processes are not intercepted by installing this MCP server.
 
 ## Telemetry integrity and availability
 
 Native events use monotonically increasing sequence IDs and one JSONL format.
+The single writer assigns persistence sequences after queue admission so
+concurrent watcher and MCP producers cannot reorder the durable cursor.
 Writes are newline-delimited and synchronized; retention compaction uses a
 temporary file plus atomic rename. The ledger is capped at 10,000 events and
 8 MiB. Recovery truncates an EOF-incomplete final JSON record to the last valid
@@ -122,7 +171,9 @@ only a trusted agent label and PID as arguments. Known executable names map to
 fixed labels; all others use `Unknown Agent Process`. These labels are explanatory,
 not executable authenticity claims. Raw names, event paths, and credentials are excluded.
 Delivery discards subprocess output and has a two-second execution deadline;
-timeout triggers kill/reap cleanup on the notification worker.
+timeout triggers kill/reap polling with a separate two-second cleanup bound on
+the notification worker. An unreapable child degrades notification health; the
+worker does not block forever.
 
 Notification permission denial, a missing desktop session, an unavailable
 delivery command, queue saturation, and process-launch errors degrade only this

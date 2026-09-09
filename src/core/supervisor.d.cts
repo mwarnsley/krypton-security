@@ -7,6 +7,7 @@ export interface SupervisorWorkspace {
   cwd: string;
 }
 export interface SupervisorDependencies {
+  setup?: (argv: readonly string[]) => Promise<number>;
   resolveWorkspace?: () => Promise<SupervisorWorkspace>;
   dispatch?: typeof dispatchNativeControl;
   start?: typeof startProtectedProcess;
@@ -17,7 +18,7 @@ export interface SupervisorDependencies {
 }
 export function parseInvocation(
   argv: readonly string[]
-): { type: 'run'; command: string; args: string[] } | { type: 'daemon:start' };
+): { type: 'run'; command: string; args: string[] } | { type: 'daemon:start' } | { type: 'setup' };
 export function resolveWorkspace(cwd?: string): Promise<SupervisorWorkspace>;
 export function main(
   argv: readonly string[],

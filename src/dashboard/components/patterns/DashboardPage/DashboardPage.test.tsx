@@ -12,6 +12,7 @@ import DashboardPage, {
   EnforcementLedgerActions,
   isStandaloneDemoLocation,
   mergeTelemetryAlerts,
+  normalizeTelemetryPayload,
   routeAuditModeChange,
   scrollDashboardToTop,
   selectFreshBreakoutAlerts,
@@ -64,6 +65,21 @@ afterEach(() => {
 });
 
 describe('DashboardPage', () => {
+  it('preserves only native MCP denial status for null-PID records', () => {
+    const alert = {
+      ...BREAKOUT_ALERT,
+      targetProcessId: null,
+      attribution: 'unattributed',
+      triggerSignature: 'NATIVE_MCP_BOUNDARY',
+    };
+    const denied = normalizeTelemetryPayload({ source: 'native', alerts: [alert] });
+    expect(denied.alerts[0]?.enforcementStatus).toBe('INTERCEPTED');
+    const claimedIsolation = normalizeTelemetryPayload({
+      source: 'native',
+      alerts: [{ ...alert, enforcementStatus: 'ISOLATED' }],
+    });
+    expect(claimedIsolation.alerts[0]?.enforcementStatus).toBe('OBSERVED');
+  });
   it('renders the security command heading', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 

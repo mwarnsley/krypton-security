@@ -25,7 +25,7 @@ pub enum RegistryError {
 #[derive(Debug)]
 struct TerminationReceipts {
     index: HashMap<ProcessIdentity, usize>,
-    slots: Vec<Option<(ProcessIdentity, Instant)>>,
+    slots: HashMap<usize, (ProcessIdentity, Instant)>,
     next: usize,
 }
 
@@ -33,7 +33,7 @@ impl Default for TerminationReceipts {
     fn default() -> Self {
         Self {
             index: HashMap::with_capacity(RECEIPT_CAPACITY),
-            slots: vec![None; RECEIPT_CAPACITY],
+            slots: HashMap::with_capacity(RECEIPT_CAPACITY),
             next: 0,
         }
     }
@@ -42,24 +42,24 @@ impl Default for TerminationReceipts {
 impl TerminationReceipts {
     fn remove(&mut self, identity: &ProcessIdentity) {
         if let Some(slot) = self.index.remove(identity) {
-            self.slots[slot] = None;
+            self.slots.remove(&slot);
         }
     }
 
     fn record(&mut self, identity: ProcessIdentity, now: Instant) {
         self.remove(&identity);
-        if let Some((evicted, _)) = self.slots[self.next].take() {
+        if let Some((evicted, _)) = self.slots.remove(&self.next) {
             self.index.remove(&evicted);
         }
         self.index.insert(identity.clone(), self.next);
-        self.slots[self.next] = Some((identity, now));
+        self.slots.insert(self.next, (identity, now));
         self.next = (self.next + 1) % RECEIPT_CAPACITY;
     }
 
     fn contains(&self, identity: &ProcessIdentity, now: Instant) -> bool {
         self.index
             .get(identity)
-            .and_then(|slot| self.slots[*slot].as_ref())
+            .and_then(|slot| self.slots.get(slot))
             .and_then(|(_, recorded)| now.checked_duration_since(*recorded))
             .is_some_and(|age| age < RECEIPT_TTL)
     }

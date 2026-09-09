@@ -45,11 +45,16 @@ fn daemon_fixture() {
         TelemetryLedger::open(root.join(".krypton/telemetry/alerts.jsonl"), 100, 1_048_576)
             .expect("ledger"),
     );
-    let (sender, writer) = start_writer(Arc::clone(&ledger));
+    let (sender, writer) = start_writer(Arc::clone(&ledger)).expect("writer startup");
     let (notifier, notification_health, _notification_worker) =
-        start_notification_dispatcher(ReceiptDelivery(root.join("notification-receipt.jsonl")));
+        start_notification_dispatcher(ReceiptDelivery(root.join("notification-receipt.jsonl")))
+            .expect("notification startup");
     let components = Arc::new(crate::health::RuntimeHealth::default());
     let state = Arc::new(ControlState {
+        mcp: Some(
+            crate::mcp::McpBoundary::new(&root.join("sandbox_workspace"), sender.clone())
+                .expect("MCP boundary"),
+        ),
         registry: Arc::new(ProcessRegistry::default()),
         mode: Arc::new(RwLock::new(EnforcementMode::AuditOnly)),
         ledger_health: ledger.health(),
@@ -96,5 +101,7 @@ fn daemon_fixture() {
         .expect("driver shutdown");
     drop(watcher);
     drop(sender);
-    writer.join().expect("flush durable writer");
+    // IPC workers retain the MCP sender until this disposable daemon exits.
+    // The driver waits for durable receipts before requesting shutdown.
+    drop(writer);
 }

@@ -41,7 +41,8 @@ in `ROADMAP.md`.
   Cleanup and receipt lookup retain the original registered client identity even
   if the alias disappears; a changed live target cannot inherit the registration.
 - Registers complete initial-child identity, captures early exits, forwards
-  SIGINT/SIGTERM, waits for bounded unregister, and preserves child exit codes.
+  SIGINT/SIGTERM, waits for bounded unregister, and preserves nonzero child exit
+  codes. Lifecycle failure upgrades a zero child status to 1.
   Rejected registration triggers owned-child cleanup; refused or timed-out cleanup
   is reported without falsely claiming termination or unregistering a live child.
 - Confirms enforcement only through authenticated `termination_receipt` lookup.
@@ -50,6 +51,42 @@ in `ROADMAP.md`.
   remains explicit, including daemon restart, contention, eviction, and old daemons.
 - Does not gate child execution until registration succeeds, automatically register
   descendant trees, attribute portable watcher events, or add kernel/network blocking.
+
+## Capability 1b: Universal setup and native MCP file tools
+
+- **Status:** Implemented in the source checkout; real client UI onboarding still
+  requires manual macOS QA. Linux client-path detection is supported but native
+  Linux control remains experimental.
+- `npm run setup` and `krypton setup` detect existing Claude Desktop, Cursor,
+  Claude Code and Cline storage; atomically back up and merge bounded settings
+  with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Other servers
+  remain intact; malformed files, symlinks and conflicting Krypton entries fail.
+- Error handling follows the mandatory three-tier contract in `AGENTS.md`:
+  typed native errors, 1500 ms absolute authenticated IPC deadlines, immediate
+  disconnect denial, bounded stdio output waits, and redacted CLI failures on
+  stderr with nonzero status. Uncertain write durability requires review.
+- The stdio MCP server uses local Ajv JSON Schema 2020-12 validation, bounded
+  32 KiB frames, constant session state and serialized native dispatch. It
+  exposes only `krypton_read_file` and `krypton_write_file`, with 1 KiB paths and
+  2 KiB UTF-8 content. There is no shell or remote policy evaluation.
+- Authenticated native `mcp_file` IPC performs path checks and directory-relative
+  no-follow file access in Rust. Reads reject special files, hardlinks and
+  invalid UTF-8; writes atomically replace regular files with private defaults.
+  Parent directories must exist; `.krypton-mcp-` basenames and case variants
+  are reserved for native staging. Host tampering and concurrent directory moves
+  are not covered by kernel isolation.
+- Both runtime modes deny unsafe MCP file operations with `isError: true`
+  inside the JSON-RPC result. Denials return native receipts and enqueue bounded
+  telemetry, without terminating the server or inventing a process identity.
+  Queue admission is distinct from durability; queue/write failures degrade health.
+- Native MCP dashboard evidence displays `INTERCEPTED`, the requested path,
+  timestamp and tool name. Portable watcher evidence remains `OBSERVED`.
+- `npm run test:e2e` (also available as `npm run test:sim`) verifies production
+  stdio through the supervisor, real native reads/writes, traversal denial in both
+  modes, durable receipts mapped to `INTERCEPTED`, and fail-closed socket loss.
+  A disposable native fixture owns all runtime files and children; desktop
+  notification delivery is mocked. Client installation does not intercept
+  built-in tools or provide descendant control.
 
 ## Capability 2: Native workspace telemetry and ownership
 

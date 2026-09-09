@@ -63,3 +63,43 @@ describe('native event schema across dashboard boundaries', () => {
     ).toThrow();
   });
 });
+
+const mcpEvent = {
+  sequence: 1,
+  id: 'native-mcp-fixture',
+  capturedAt: '2026-09-09T12:00:00.000Z',
+  severity: 'high',
+  category: 'mcp_boundary',
+  path: '../outside',
+  attribution: 'unattributed',
+  source: 'native',
+  details: { tool: 'krypton_write_file', action: 'denied' },
+};
+describe('native MCP evidence', () => {
+  it('preserves a native denial through dashboard client normalization and table rendering', () => {
+    const alert = normalizePersistedEvent(mcpEvent);
+    const payload = normalizeTelemetryPayload({ source: 'native', alerts: [alert] });
+    expect(payload.alerts[0]?.enforcementStatus).toBe('INTERCEPTED');
+    const markup = renderToStaticMarkup(<AlertTable alerts={payload.alerts} />);
+    expect(markup).toContain('krypton_write_file');
+    expect(markup).toContain('Denied (actor unattributed)');
+  });
+  it('shows the denied tool and interception without inventing process isolation', () => {
+    const row = normalizePersistedEvent(mcpEvent);
+    expect(row).toMatchObject({
+      attemptedAction: 'krypton_write_file',
+      attemptedPath: '../outside',
+      enforcementStatus: 'INTERCEPTED',
+      targetProcessId: null,
+    });
+    expect(row.origin_attribution).not.toContain('watcher');
+    expect(row.timestamp).toBe(mcpEvent.capturedAt);
+  });
+  it.each([
+    { tool: 'shell', action: 'denied' },
+    { tool: 'krypton_read_file', action: 'isolated' },
+    null,
+  ])('rejects malformed MCP evidence %j', (details) => {
+    expect(() => normalizePersistedEvent({ ...mcpEvent, details })).toThrow();
+  });
+});

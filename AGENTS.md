@@ -69,6 +69,153 @@ fail-closed.
     Documentation and FAQs must never be allowed to drift or contradict the
     live codebase.
 
+14. **Error handling is part of every change.** Every feature fixed, added,
+    updated, refactored, or removed MUST include, update, or remove its
+    corresponding error handling and failure-path tests. Zero code may be
+    generated or merged without explicit, typed, resilient error handling in
+    accordance with the systems and security contract below. Pure functions
+    may propagate documented typed failures to an owning boundary; this rule
+    does not require redundant catch blocks around every statement.
+
+### Mandatory three-tier error contract
+
+- **Native Core (Rust):** Production code must not panic: eliminate explicit panics and reachable
+  implicit panic paths.
+  Use `Result<T, E>` and typed error variants for fallible operations; never use
+  `unwrap`, `expect`, `panic!`, `todo!`, or `unimplemented!` in production paths.
+  Test assertions may panic. Unexpected invariants deny the operation and
+  latch degraded health or terminate startup with a nonzero exit. Use atomic fallbacks: stage writes
+  privately, sync and atomically publish them; preserve the previous file on
+  pre-publication failure. After publication, report uncertain durability
+  explicitly: never promise rollback or blindly retry an uncertain write.
+  Handle worker creation, poisoned locks, queue closure, cleanup, and diagnostic
+  output failures. Do not catch a panic and continue enforcement as healthy.
+- **IPC Transport:** Authenticated `.krypton/runtime/daemon.sock` exchanges
+  have a maximum **1500 ms** socket deadline, measured absolutely rather than
+  extended by each byte. Missing sockets, disconnects, timeouts, malformed
+  responses, or authentication failures immediately deny the pending operation
+  when detected and produce a bounded, redacted diagnostic. Settle each request
+  once, cancel timers, destroy sockets, and handle late stream errors. Never
+  fall back to unauthenticated transport, local permissive checks, or retry
+  writes whose completion is unknown. Kernel filesystem calls and scheduler
+  stalls are not hard real-time guarantees; document those limits accurately.
+- **MCP Protocol:** Keep stdout exclusively newline-delimited JSON-RPC. Every
+  tool execution failure, unavailable native dependency, and boundary policy
+  violation returns a correlated `CallToolResult` of the following form, with
+  a validated native receipt included when available:
+
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "content": [{ "type": "text", "text": "Safe diagnostic or native receipt" }],
+      "isError": true
+    }
+  }
+  ```
+
+  Protocol/request-schema violations use `-32600` (invalid request), `-32601`
+  (unknown method), `-32602` (invalid parameters), or `-32603` (internal
+  protocol error). Malformed JSON uses the separately standardized `-32700`
+  parse error. Tool-specific input validation errors remain tool results; malformed
+  `tools/call` structure is an invalid-parameters protocol error. Never put both `result` and `error` in a response. Never reply
+  to valid notifications. Bound input, output, backpressure waits, and retained
+  session state; a broken output channel must terminate cleanly instead of
+  hanging or attempting another protocol write.
+
+JavaScript/TypeScript catches accept `unknown` and narrow it before inspecting
+fields. Use stable error codes and documented result unions or Error subclasses;
+never expose arbitrary exception messages, settings, paths, or capabilities.
+No bare `catch {}`, floating rejection, silent cleanup failure, unchecked
+fallible synchronous I/O, or unbounded retry is acceptable. Each long-lived
+service loop must identify its shutdown and degradation behavior. CLI entry
+points own terminal promise/stream failures, write diagnostics to stderr, and
+return a nonzero exit status on failure (2 for invalid usage, 1 for operational
+failure, with documented child-status propagation). If stderr itself fails,
+set failure status without recursively writing another diagnostic.
+
+These rules follow [JSON-RPC 2.0](https://www.jsonrpc.org/specification) and the
+[MCP tool error contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+
+### Error-handling audit gate (2026-09-09)
+
+Further Phase 1 feature work is gated on this audit and its fresh verification.
+The audit inspected every operational file in the requested source trees:
+
+- Core: `processIsolation.cjs`, `supervisor.cjs`, `watchdog.ts`,
+  `mcp/server.cjs`, and their declarations.
+- CLI: `src/cli.cjs`, `src/cli/setup.cjs`, and the shared terminal boundary
+  `src/cli/runtime.cjs`, including declarations.
+- Native: `config.rs`, `health.rs`, `ipc.rs`, `main.rs`, `mcp.rs`,
+  `notification.rs`, `path_policy.rs`, `process_identity.rs`,
+  `process_registry.rs`, `simulation.rs`, `telemetry.rs`, and `watcher.rs`.
+- Related transport: `src/dashboard/server/telemetry/nativeClient.ts`;
+  cross-boundary verification: `tests_simulation/test_injection.ts`.
+  Dashboard presentation barrels are not executable CLI entry points.
+
+| Finding                                                                                                                     | Remediated boundary                                                                                                                                                                 | Regression evidence                                                         |
+| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Two-second or inactivity-only IPC waits; empty close could hang; dashboard metadata reads were unbounded                    | Shared typed transport, 1500 ms absolute deadline including discovery, bounded frames, immediate disconnect settlement, safe late-error handling                                    | `tests/core/processIsolation.ipc.test.ts`, dashboard `nativeClient.test.ts` |
+| Slow-drip native input renewed timeouts; partial EOF could execute; queued sockets outlived request budgets                 | Deadline starts at accept, accepted sockets restore blocking mode on macOS, bounded socket leases close expired streams, unterminated frames never dispatch, lock contention denies | Native `ipc.rs` tests                                                       |
+| Concurrent native starters could unlink a newly bound live socket                                                           | Private `startup.lock` uses a nonblocking kernel lock held for runtime lifetime; never unlink that lock while daemons may run                                                       | Native IPC startup contention test                                          |
+| Setup lock cleanup could abort all client reporting; atomic failures obscured publication state                             | Each client receives a failure summary; typed cleanup and durability diagnostics preserve uncertainty and other client progress                                                     | `tests/cli/setup.test.ts`                                                   |
+| Stalled MCP writes, idle stdout closure and terminal stderr backpressure could hang                                         | 1500 ms output deadline, persistent close/error ownership, bounded terminal diagnostic flush, nonzero exit                                                                          | `tests/core/mcp/server.test.ts`, `tests/cli/runtime.test.ts`                |
+| Missing terminal rejection ownership or failed lifecycle cleanup could report success                                       | Shared CLI terminal boundary; supervisor reports redacted categories and nonzero registration/unregister/cleanup failures                                                           | CLI runtime and supervisor tests                                            |
+| Native thread creation and print/index operations could panic; shutdown joined an immortal worker                           | Fallible thread creation, checked access/output, production Clippy panic/unwrap/expect/index/print prohibitions; failed service loops terminate or latch degraded state             | Native Clippy, native tests                                                 |
+| Native configuration/ledger reads could allocate without hard bounds; ledger append/compaction failure left uncertain state | Regular bounded config/ledger inputs, atomic pre-publication compaction, append rollback attempt, stop/degrade writer on persistence failure                                        | Native `config.rs` and `telemetry.rs` tests                                 |
+| Broken symlinks looked like absent paths; watcher synchronous setup errors escaped                                          | Metadata failures deny; guarded canonicalization and watcher close record degraded status                                                                                           | Native `path_policy.rs` and `tests/core/watchdog.test.ts`                   |
+| Notification cleanup waited indefinitely; staging cleanup errors were discarded                                             | Bounded kill/reap polling, typed staging cleanup and post-publication durability failures                                                                                           | Native notification, MCP and atomic-write tests                             |
+
+Verified design boundaries: bounded read loops advance a byte count or stop at
+EOF; ancestor walks strictly ascend and stop at filesystem root. Native queues
+and socket leases have fixed caps. Foreground child and watcher lifetimes are
+intentional services with terminal event/error ownership, not unbounded retries.
+All remaining core synchronous filesystem calls sit inside guarded path-policy
+boundaries. Pure validation, identity, health, and watcher modules retain their
+existing typed rejection/degraded-state contracts; test-only assertions may panic.
+
+Known limits: deadlines are enforced when the OS schedules the timer/worker;
+blocking kernel I/O cannot be forcibly cancelled. A timed-out or post-rename
+write may have taken effect, so inspect its destination before retrying.
+Notification delivery has its own two-second execution and two-second cleanup
+bounds; those are separate from the 1500 ms IPC contract. Native macOS execution
+is verified locally; Linux native enforcement remains experimental. No live AI
+client settings are modified by this audit's disposable tests.
+
+**Audit gate: satisfied for this working-tree change.** On 2026-09-09, the
+following verification passed with Node 20.19.4 and Rust 1.97.0 on macOS:
+
+| Command                                                                                               | Verified result                                                                                         |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `npm run lint`                                                                                        | PASS                                                                                                    |
+| `npx tsc --noEmit`                                                                                    | PASS                                                                                                    |
+| `npx tsc --noEmit --project src/dashboard/tsconfig.json`                                              | PASS                                                                                                    |
+| `npm run format:check`                                                                                | PASS                                                                                                    |
+| `cargo fmt --manifest-path src/core-native/Cargo.toml --check`                                        | PASS                                                                                                    |
+| `cargo clippy --manifest-path src/core-native/Cargo.toml --all-targets --all-features -- -D warnings` | PASS                                                                                                    |
+| `npm test -- --run`                                                                                   | PASS: 484 tests across 38 files                                                                         |
+| `npm run design-system:check`                                                                         | PASS                                                                                                    |
+| `npm run rust:test`                                                                                   | PASS: 105 tests; one test-only daemon fixture intentionally ignored here and executed by the simulation |
+| `npm run build`                                                                                       | PASS                                                                                                    |
+| `npm run test:sim`                                                                                    | PASS on three consecutive post-fix runs, including unavailable-socket tool errors and recovery          |
+| Explicit Prettier checks for changed `.cjs` / `.cts` files and `git diff --check`                     | PASS                                                                                                    |
+
+The simulation initially exposed an intermittent empty-response failure from
+macOS accepted sockets inheriting `O_NONBLOCK`. A delayed-first-write regression
+reproduced it before the fix; restoring blocking mode on accepted streams fixed
+it without extending the deadline. Initial failure evidence is retained here;
+it was not dismissed as pre-existing or masked by retries in production.
+
+To reproduce: use the pinned Node/Rust toolchains, install with `npm ci`, run
+the commands above from the repository root, then run `npm run test:sim` on
+macOS with local Unix sockets/process execution permitted. Expect the three
+simulation `[PASS]` lines and automatic cleanup of owned disposable state.
+`node src/cli.cjs setup unexpected` must exit 2 with stderr usage text and must
+not edit client settings. The socket tests may require execution outside an
+agent sandbox that prohibits Unix socket binding. No feature-release, live
+client UI, or Linux native-enforcement readiness is asserted by this gate.
+
 ## 2. Mandatory Verification Contract
 
 Every pass that changes source, configuration, tests, or documentation must end

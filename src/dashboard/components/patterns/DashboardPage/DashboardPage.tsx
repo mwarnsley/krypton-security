@@ -390,8 +390,13 @@ function normalizeAlert(value: unknown, alertIndex: number): SecurityAlert | und
   const recordId = readString(value, 'id');
   const originAttribution = readString(value, 'origin_attribution') ?? 'Ephemeral Shell Task';
   const processName = readString(value, 'processName') ?? originAttribution;
+  // Native MCP denials prove a tool interception without proving an actor PID.
+  const nativeMcpDenial =
+    value.triggerSignature === 'NATIVE_MCP_BOUNDARY' &&
+    value.enforcementStatus === 'INTERCEPTED' &&
+    value.attribution === 'unattributed';
   const enforcementStatus =
-    targetProcessId === null ? 'OBSERVED' : normalizeEnforcementStatus(value);
+    targetProcessId === null && !nativeMcpDenial ? 'OBSERVED' : normalizeEnforcementStatus(value);
   const severity = normalizeTelemetrySeverity(value, enforcementStatus);
   const triggerSignature = readString(value, 'triggerSignature') ?? 'PATH_BOUNDARY_ESCAPE';
   const rawProcess = isTelemetryRecord(value.process) ? value.process : undefined;

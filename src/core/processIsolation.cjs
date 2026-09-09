@@ -8,9 +8,56 @@ const { randomUUID } = require('node:crypto');
 const PROJECT_ROOT = process.cwd();
 const NATIVE_PROTOCOL_VERSION = 1;
 const NATIVE_RESPONSE_MAX_BYTES = 16 * 1024;
-const NATIVE_TIMEOUT_MS = 2_000;
+const NATIVE_TIMEOUT_MS = 1_500;
 const monitoredProcesses = new Map();
 const executeFile = util.promisify(childProcess.execFile);
+
+/** @typedef {'unavailable'|'permission_denied'|'invalid_response'|'transport_failed'|'timeout'|'disconnected'|'isolation_rejected'} NativeControlErrorCode */
+
+/** A safe, machine-readable failure at the native transport boundary. */
+class NativeControlError extends Error {
+  /**
+   * Constructs a diagnostic that never includes capability or raw wire contents.
+   * @param {NativeControlErrorCode} code - Stable failure category.
+   * @param {string} message - Safe operator-facing explanation.
+   * @returns {NativeControlError} Typed transport error.
+   * @complexity O(L) time and space for diagnostic length L.
+   * @example new NativeControlError('timeout', 'Native request timed out.');
+   */
+  constructor(code, message) {
+    super(message);
+    this.name = 'NativeControlError';
+    this.code = code;
+  }
+}
+
+/**
+ * Normalizes arbitrary failures without exposing native metadata or response contents.
+ * @param {unknown} error - Filesystem, parser, or socket failure.
+ * @returns {NativeControlError} Safe typed error for callers.
+ * @complexity O(1) time and space.
+ * @example nativeFailure(null); // code transport_failed
+ */
+function nativeFailure(error) {
+  if (error instanceof NativeControlError) return error;
+  if (error instanceof SyntaxError)
+    return new NativeControlError('invalid_response', 'Native JSON data is invalid.');
+  const code = error && typeof error === 'object' ? error.code : undefined;
+  if (code === 'ENOENT' || code === 'ECONNREFUSED')
+    return new NativeControlError(
+      'unavailable',
+      'Native daemon is unavailable; start the daemon and retry.'
+    );
+  if (code === 'EACCES' || code === 'EPERM')
+    return new NativeControlError(
+      'permission_denied',
+      'Native runtime access was denied; check workspace permissions.'
+    );
+  return new NativeControlError(
+    'transport_failed',
+    'Native transport failed; verify daemon health and retry.'
+  );
+}
 
 /**
  * Validates that a process identifier can be safely tracked or signaled.
@@ -97,8 +144,8 @@ async function quarantineProcess(identity, dependencies = {}) {
     process: identity,
     type: 'isolate_process',
   });
-  if (receipt.ok !== true || receipt.code !== 'process_isolated') {
-    throw new Error('Native isolation rejected: ' + String(receipt.code));
+  if (!receipt || receipt.ok !== true || receipt.code !== 'process_isolated') {
+    throw new NativeControlError('isolation_rejected', 'Native isolation rejected.');
   }
   return receipt;
 }
@@ -162,7 +209,10 @@ async function readNativeFile(file) {
       (stat.mode & 0o077) !== 0 ||
       (process.getuid && stat.uid !== process.getuid())
     ) {
-      throw new Error('Native runtime metadata must be a private, owned regular file.');
+      throw new NativeControlError(
+        'invalid_response',
+        'Native runtime metadata must be a private, owned regular file.'
+      );
     }
     const buffer = Buffer.alloc(NATIVE_RESPONSE_MAX_BYTES + 1);
     let length = 0;
@@ -172,7 +222,7 @@ async function readNativeFile(file) {
       length += bytesRead;
     }
     if (length > NATIVE_RESPONSE_MAX_BYTES)
-      throw new Error('Native runtime metadata is oversized.');
+      throw new NativeControlError('invalid_response', 'Native runtime metadata is oversized.');
     return buffer.subarray(0, length).toString('utf8');
   } finally {
     await handle.close();
@@ -193,31 +243,88 @@ async function readNativeFile(file) {
  * // => { ok: true, code: "ready" }
  */
 async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
-  const runtimeRoot = path.resolve(projectRoot, '.krypton/runtime');
-  const endpoint = JSON.parse(await readNativeFile(path.join(runtimeRoot, 'daemon.json')));
-  if (
-    endpoint === null ||
-    typeof endpoint !== 'object' ||
-    endpoint.protocolVersion !== NATIVE_PROTOCOL_VERSION ||
-    typeof endpoint.endpoint !== 'string' ||
-    typeof endpoint.capabilityFile !== 'string' ||
-    !path.isAbsolute(endpoint.endpoint) ||
-    !path.isAbsolute(endpoint.capabilityFile) ||
-    endpoint.endpoint.split(path.sep).includes('..') ||
-    endpoint.capabilityFile.split(path.sep).includes('..') ||
-    path.resolve(endpoint.endpoint) !== path.resolve(runtimeRoot, 'daemon.sock') ||
-    path.resolve(endpoint.capabilityFile) !== path.resolve(runtimeRoot, 'capability')
-  ) {
-    throw new Error('The native endpoint discovery record is invalid.');
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new NativeControlError('timeout', 'The native request timed out.'));
+    }, NATIVE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      dispatchNativeRequest(command, projectRoot, controller.signal),
+      deadline,
+    ]);
+  } catch (error) {
+    throw nativeFailure(error);
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/**
+ * Reads and validates bounded workspace-specific discovery metadata.
+ * @param {string} projectRoot - Trusted workspace root.
+ * @returns {Promise<Record<string, unknown>>} Validated discovery record or typed rejection.
+ * @complexity O(L) time and space for bounded paths and metadata L.
+ * @example await discoverNativeEndpoint('/project');
+ */
+async function discoverNativeEndpoint(projectRoot = PROJECT_ROOT) {
+  try {
+    const runtimeRoot = path.resolve(projectRoot, '.krypton/runtime');
+    const endpoint = JSON.parse(await readNativeFile(path.join(runtimeRoot, 'daemon.json')));
+    if (
+      endpoint === null ||
+      typeof endpoint !== 'object' ||
+      endpoint.protocolVersion !== NATIVE_PROTOCOL_VERSION ||
+      typeof endpoint.endpoint !== 'string' ||
+      typeof endpoint.capabilityFile !== 'string' ||
+      !path.isAbsolute(endpoint.endpoint) ||
+      !path.isAbsolute(endpoint.capabilityFile) ||
+      endpoint.endpoint.split(path.sep).includes('..') ||
+      endpoint.capabilityFile.split(path.sep).includes('..') ||
+      path.resolve(endpoint.endpoint) !== path.resolve(runtimeRoot, 'daemon.sock') ||
+      path.resolve(endpoint.capabilityFile) !== path.resolve(runtimeRoot, 'capability')
+    ) {
+      throw new NativeControlError(
+        'invalid_response',
+        'The native endpoint discovery record is invalid.'
+      );
+    }
+    return endpoint;
+  } catch (error) {
+    throw nativeFailure(error);
+  }
+}
+
+/**
+ * Performs one cancellable native exchange under the caller's absolute deadline.
+ * @param {Record<string, unknown>} command - Native command payload.
+ * @param {string} projectRoot - Trusted workspace root.
+ * @param {AbortSignal} signal - Deadline cancellation signal.
+ * @returns {Promise<Record<string, unknown>>} Validated response or rejection.
+ * @complexity O(L) time and space for bounded metadata and wire length L.
+ * @example await dispatchNativeRequest({ type: 'health' }, '/project', signal);
+ */
+async function dispatchNativeRequest(command, projectRoot, signal) {
+  const runtimeRoot = path.resolve(projectRoot, '.krypton/runtime');
+  await discoverNativeEndpoint(projectRoot);
+  signal.throwIfAborted();
   // Use trusted normalized destinations, not the raw discovery strings, for I/O.
   const socketPath = path.resolve(runtimeRoot, 'daemon.sock');
   const capabilityPath = path.resolve(runtimeRoot, 'capability');
   if (!(await fs.promises.lstat(socketPath)).isSocket()) {
-    throw new Error('The native endpoint must be a workspace Unix socket, not a symlink.');
+    throw new NativeControlError(
+      'invalid_response',
+      'The native endpoint must be a workspace Unix socket, not a symlink.'
+    );
   }
+  signal.throwIfAborted();
   const capability = (await readNativeFile(capabilityPath)).trim();
-  if (capability.length === 0) throw new Error('The native capability is empty.');
+  if (capability.length === 0)
+    throw new NativeControlError('invalid_response', 'The native capability is empty.');
+  signal.throwIfAborted();
   const requestId = `req-${randomUUID()}`;
   const request = JSON.stringify({
     capability,
@@ -226,10 +333,11 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
     requestId,
   });
   if (Buffer.byteLength(request, 'utf8') > NATIVE_RESPONSE_MAX_BYTES)
-    throw new Error('Native request is oversized.');
+    throw new NativeControlError('invalid_response', 'Native request is oversized.');
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath);
     let responseText = '';
+    let responseBytes = 0;
     let settled = false;
 
     /**
@@ -245,11 +353,15 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
     const complete = (error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(deadline);
-      socket.removeAllListeners();
+      signal.removeEventListener('abort', abort);
+      socket.removeAllListeners('data');
+      socket.removeAllListeners('connect');
+      socket.removeAllListeners('timeout');
+      socket.removeAllListeners('end');
+      socket.removeAllListeners('close');
       socket.destroy();
       if (error !== undefined) {
-        reject(error);
+        reject(nativeFailure(error));
         return;
       }
       try {
@@ -262,33 +374,65 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
           response.requestId !== requestId ||
           response.protocolVersion !== NATIVE_PROTOCOL_VERSION
         ) {
-          throw new Error('The native response does not match the request.');
+          throw new NativeControlError(
+            'invalid_response',
+            'The native response does not match the request.'
+          );
         }
         resolve(response);
       } catch (parseError) {
-        reject(parseError);
+        reject(
+          parseError instanceof SyntaxError
+            ? new NativeControlError(
+                'invalid_response',
+                responseText.length === 0
+                  ? 'Native daemon returned an empty response.'
+                  : 'Native daemon returned malformed response JSON.'
+              )
+            : nativeFailure(parseError)
+        );
       }
     };
-    const deadline = setTimeout(
-      () => complete(new Error('The native request timed out.')),
-      NATIVE_TIMEOUT_MS
-    );
+    /**
+     * Stops this socket when the whole-request deadline expires.
+     * @returns {void} Rejects once and destroys the owned connection.
+     * @complexity O(1) time and space.
+     * @example abort(); // typed timeout rejection
+     */
+    const abort = () =>
+      complete(new NativeControlError('timeout', 'The native request timed out.'));
+    signal.addEventListener('abort', abort, { once: true });
     socket.setEncoding('utf8');
     socket.setTimeout(NATIVE_TIMEOUT_MS);
-    socket.once('connect', () => socket.end(`${request}\n`, 'utf8'));
+    socket.once('connect', () => {
+      try {
+        socket.end(`${request}\n`, 'utf8');
+      } catch (error) {
+        complete(nativeFailure(error));
+      }
+    });
     socket.on('data', (chunk) => {
-      if (
-        Buffer.byteLength(responseText, 'utf8') + Buffer.byteLength(chunk, 'utf8') >
-        NATIVE_RESPONSE_MAX_BYTES
-      ) {
-        complete(new Error('The native response is oversized.'));
+      const chunkBytes = Buffer.byteLength(chunk, 'utf8');
+      if (chunkBytes > NATIVE_RESPONSE_MAX_BYTES - responseBytes) {
+        complete(new NativeControlError('invalid_response', 'The native response is oversized.'));
         return;
       }
+      responseBytes += chunkBytes;
       responseText += chunk;
     });
     socket.once('end', () => complete());
-    socket.once('timeout', () => complete(new Error('The native request timed out.')));
-    socket.once('error', complete);
+    socket.once('close', () =>
+      complete(
+        new NativeControlError(
+          'disconnected',
+          'Native daemon disconnected before completing its response.'
+        )
+      )
+    );
+    socket.once('timeout', () =>
+      complete(new NativeControlError('timeout', 'The native request timed out.'))
+    );
+    socket.on('error', complete);
   });
 }
 
@@ -313,6 +457,8 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
   let exited = false;
   let spawnError;
   let registrationError;
+  let terminationError;
+  let isolationError;
   let exitedBeforeRegistrationFailure = false;
   let identity;
   let attemptedRegistration = false;
@@ -355,9 +501,10 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
       if (!exited) monitoredProcesses.set(child.pid, identity);
       if (!exited && Number.isSafeInteger(maxRuntimeMs) && maxRuntimeMs > 0) {
         timeout = setTimeout(() => {
-          void quarantineProcess(identity, { dispatch }).catch(() => {
+          void quarantineProcess(identity, { dispatch }).catch((error) => {
+            isolationError = nativeFailure(error);
             console.error(
-              '[KRYPTON] Native runtime deadline isolation failed; process remains registered.'
+              `[KRYPTON] Native runtime deadline isolation failed (${isolationError.code}); process remains registered.`
             );
           });
         }, maxRuntimeMs);
@@ -365,7 +512,7 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
       }
       return identity;
     } catch (error) {
-      registrationError = error;
+      registrationError = error instanceof Error ? error : new Error('Native registration failed.');
       exitedBeforeRegistrationFailure = exited;
       if (!exited && child.pid !== undefined) {
         /**
@@ -387,21 +534,26 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
             clearTimeout(cleanupDeadline);
             unconfirmed();
           }
-        } catch {
+        } catch (error) {
+          terminationError = nativeFailure(error);
           clearTimeout(cleanupDeadline);
           unconfirmed();
         }
       }
-      throw error;
+      throw registrationError;
     }
   })();
   // Completion consumes registration failure even when a caller only awaits exit.
-  const registrationSettled = registered.catch(() => undefined);
+  const registrationSettled = registered.catch((error) => {
+    registrationError ??= nativeFailure(error);
+  });
   const completed = (async () => {
     const outcome = await exit;
     await registrationSettled;
     let enforcementConfirmed = false;
     let cleanupFailed = false;
+    let cleanupError;
+    let receiptError;
     if (timeout !== undefined) clearTimeout(timeout);
     if (identity !== undefined && attemptedRegistration && !childMayBeRunning) {
       monitoredProcesses.delete(identity.pid);
@@ -409,8 +561,9 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
         try {
           const receipt = await dispatch({ type: 'termination_receipt', process: identity });
           enforcementConfirmed = receipt.ok === true && receipt.code === 'process_isolated';
-        } catch {
-          // An unavailable, expired, or malformed receipt never proves attribution.
+        } catch (error) {
+          receiptError = nativeFailure(error);
+          enforcementConfirmed = false; // Failed receipt lookup never proves attribution.
         }
       }
       try {
@@ -418,7 +571,8 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
         cleanupFailed =
           !(cleanup.ok === true && cleanup.code === 'process_unregistered') &&
           !(cleanup.ok === false && cleanup.code === 'process_not_registered');
-      } catch {
+      } catch (error) {
+        cleanupError = nativeFailure(error);
         cleanupFailed = true;
       }
     }
@@ -431,6 +585,10 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
       enforcementConfirmed,
       cleanupFailed,
       childMayBeRunning,
+      terminationError,
+      isolationError,
+      cleanupError,
+      receiptError,
     };
   })();
   return { child, registered, completed };
@@ -454,6 +612,9 @@ async function spawnProtectedProcess(command, args = [], options = {}, dependenc
 }
 
 module.exports = {
+  NativeControlError,
+  NATIVE_TIMEOUT_MS,
+  discoverNativeEndpoint,
   dispatchNativeControl,
   getActiveWorkspaceProcessCount,
   inspectProcessIdentity,

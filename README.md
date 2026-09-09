@@ -171,6 +171,94 @@ Linux native support is planned and currently experimental; it is not yet part
 of the actively supported and tested Native Daemon Mode rollout. Windows must
 use the dashboard-only demonstration setup below.
 
+### One-command AI client onboarding
+
+After `npm ci`, close your AI clients and run `npm run setup` from the checkout.
+After `npm link`, the same command is available as `krypton setup` from any
+directory. Setup does not require a running daemon. It detects existing storage
+for Claude Desktop, Cursor, Claude Code and the Cline VS Code extension:
+
+| Client         | macOS settings file                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json`                                               |
+| Cursor         | `~/.cursor/mcp.json`                                                                                            |
+| Claude Code    | `~/.claude.json` (an existing `~/.claude/` also counts as detected)                                             |
+| Cline          | `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` |
+
+On Linux, Claude Desktop-compatible and VS Code storage use `$XDG_CONFIG_HOME`
+(default `~/.config`) in place of `~/Library/Application Support`; detection
+does not imply official Claude Desktop or native Linux support. Cursor and
+Claude Code retain their home-directory paths. Other editor distributions,
+profiles, containers and remote extension hosts are not auto-detected.
+
+Setup creates missing configuration files only for detected clients. Existing
+JSON is bounded to 4 MiB, backed up atomically to `<settings-file>.bak` with
+private `0600` permissions, and safely merged. Other settings and MCP servers
+remain intact. Invalid JSON, settings symlinks, an existing conflicting
+`krypton-protected-fs` entry, and concurrent setup locks fail per client.
+An identical entry is skipped without changing the backup. A stale
+`<settings-file>.krypton-setup.lock` after a crash must be reviewed and removed
+only after confirming no setup is running. Close clients to avoid concurrent
+settings edits; the pre-replacement check cannot lock third-party writers.
+
+Each entry launches `node` with the literal argument array
+`["<PROJECT_ROOT>/src/cli.cjs", "run", "--", "node", "<PROJECT_ROOT>/src/core/mcp/server.cjs"]`
+and `env: { "KRYPTON_PROJECT_ROOT": "<PROJECT_ROOT>" }`, using the canonical
+checkout path. Node must be on the GUI client's PATH. Setup prints
+`CONFIGURED`, `SKIPPED`, or `FAILED` per client and exits nonzero for failures.
+Restart configured clients after starting or restarting the updated daemon with
+`npm run dev:full`. To undo setup, close the client and restore its reviewed
+`.bak` file, or remove only `mcpServers.krypton-protected-fs` if no original
+configuration existed.
+
+### Protected MCP file tools
+
+`src/core/mcp/server.cjs` exposes `krypton_read_file({path})` and
+`krypton_write_file({path, content})` over newline-delimited UTF-8 stdio.
+It validates JSON Schema 2020-12 locally with Ajv, negotiates supported MCP
+protocol versions, retains constant-size session state, serializes requests,
+and bounds each incoming frame to 32 KiB. Paths are limited to 1 KiB and
+UTF-8 file content to 2 KiB. Parent directories must already exist. Basenames beginning with
+`.krypton-mcp-` (including case variants) are reserved for native write staging.
+
+Calls use `dispatchNativeControl` and the existing authenticated discovery,
+capability, peer-user and 1500 ms absolute IPC deadline contracts. The additive
+native command is `mcp_file` with `tool`, `path`, and optional `content` fields.
+Rust evaluates against the configured protected workspace and performs the
+file access itself. Reads use no-follow directory-relative opens and reject
+non-regular files, hardlinks, oversized files and invalid UTF-8. Writes use
+private exclusive temporary files and atomic replacement; they replace file
+metadata with private defaults rather than preserving executable bits.
+Missing, incompatible or degraded telemetry/daemon state fails closed. Socket disconnects settle immediately; slow incoming bytes never extend the
+1500 ms deadline. Stalled MCP stdout writes also terminate after 1500 ms.
+Tool execution failures remain inside `result.isError`; malformed request
+schemas use JSON-RPC `-32600` through `-32603`, and malformed JSON uses `-32700`.
+Tool-specific input validation returns `isError: true`; invalid `tools/call`
+request structure returns `-32602`. No response contains both `result` and `error`.
+
+Rejected calls return a JSON-RPC `result` containing `isError: true` and text
+with the native code and receipt. Native receipts identify the tool, requested
+path and denial action; queued denial events add an ID and timestamp in
+`.krypton/telemetry/alerts.jsonl`. `telemetry: "queued"` acknowledges queue
+admission, not durable persistence. Queue/write failures report degraded health.
+The dashboard displays these rows as `INTERCEPTED` and retains no actor PID.
+Both Audit-Only and Enforcement modes deny unsafe MCP file calls. MCP denials
+do not request SIGKILL, so the client can receive the error and continue safely.
+
+This boundary covers these two tools only. It does not intercept a client's
+built-in filesystem tools, shell, network calls or descendant processes.
+Descriptor-relative access prevents symlink substitution, but same-user host
+tampering, mount changes and concurrent directory relocation remain outside a
+kernel isolation boundary. Storage errors can make write completion uncertain;
+inspect the destination before retrying after an I/O failure. File contents and
+capabilities are never included in denial telemetry.
+
+For disposable real-IPC verification, run `npm run test:e2e`. It
+launches the production MCP server through the supervisor, checks read/write,
+traversal denial in both modes, durable native receipts and clean stdio shutdown.
+Real client UI onboarding and the 60-second release target still require manual
+macOS verification. `.mcpb` packaging remains planned.
+
 ## Running Your First Live Simulation
 
 > **ISOLATED END-TO-END CHECK:** The simulation starts its own test-only native
@@ -183,7 +271,7 @@ experimental Linux execution; Windows dashboard-only mode cannot run native isol
    and run from the repository root:
 
    ```sh
-   npm run test:sim
+   npm run test:e2e
    ```
 
 2. The harness registers an owned disposable child with its complete live identity
@@ -238,7 +326,9 @@ npm run dev:daemon
 
 ## Runtime configuration
 
-`krypton.config.json` separates the relevant roots and bounds:
+`krypton.config.json` must be a regular file no larger than 1 MiB. Invalid or
+oversized configuration stops native startup with a redacted stderr diagnostic
+and nonzero status. It separates the relevant roots and bounds:
 
 ```json
 {
@@ -325,16 +415,17 @@ are not interpreted by Krypton. Invoke a shell explicitly only if you intend tha
 **Lifecycle:** The supervisor registers the initial child's complete PID, start
 time, canonical executable, and parent identity through version 1 authenticated
 IPC. It captures exits before waiting for registration, forwards SIGINT/SIGTERM
-to that owned child, and attempts unregister once before exiting. Numeric exit
-codes are preserved; signal exits use `128 + signal number` (SIGKILL is 137).
+to that owned child, and attempts unregister once before exiting. Nonzero child
+exit codes are preserved; a zero status becomes 1 if registration, signal forwarding,
+or cleanup fails. Signal exits use `128 + signal number` (SIGKILL is 137).
 Spawn-not-found exits 127, invalid invocation exits 2, and setup failures exit 1.
-A command that exits before registration finishes retains its exit code with an
-explicit stderr notice that supervision was not established. Rejected registration
+A command that exits before registration finishes follows these exit-status rules,
+with an explicit stderr notice that supervision was not established. Rejected registration
 requests stop only the newly spawned child; if the OS refuses cleanup or exit is
-not confirmed within two seconds, the supervisor reports that the child may still
+not confirmed within 1500 ms, the supervisor reports that the child may still
 be running and exits nonzero without removing a potentially live registration.
-Each IPC request has an absolute two-second deadline and a 16 KiB frame limit.
-Unregister failure is reported without replacing the child's completed exit code.
+Each IPC request has an absolute 1500 ms deadline and a 16 KiB frame limit.
+Unregister failure is reported and upgrades a zero child status to 1.
 
 **Executable identity:** Node and Rust resolve executable symlinks to their
 canonical on-disk target, including version-manager paths used by fnm, nvm, and
@@ -400,7 +491,7 @@ Linux remains experimental and Windows remains dashboard-only.
 4. Run the reproducible containment check from the repository root:
 
    ```sh
-   npm run test:sim
+   npm run test:e2e
    ```
 
    Expect `[PASS]` lines for the CLI and authenticated native isolation. The harness
@@ -497,6 +588,15 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for trust assumptions and limitations.
 
 ## Verification
 
+`npm run test:e2e` builds a native test fixture and exercises the production MCP
+server through its supervisor in a fresh temporary workspace. It checks in-bounds
+read/write, `../outside.txt` denial, durable native receipts normalized as
+`INTERCEPTED`, and fail-closed socket loss. It also verifies owned-child SIGKILL.
+The existing `npm run test:sim` runs the same checks. Both commands clean up their
+owned processes and files, report `[PASS]` on success and exit nonzero on failure.
+Desktop delivery is mocked; live client UI, dashboard polling and macOS banners
+remain manual QA. Keep local notes in gitignored `QA_TESTING.md`.
+
 Run the test gates from the repository root:
 
 ```bash
@@ -554,7 +654,9 @@ growth for 100, 1,000, and 10,000 deterministic events.
   startup inside `concurrently` during macOS QA. Free port 3000 or run
   `PORT=3001 npm run dev:full` and open `http://localhost:3001`. For the
   dashboard alone, use `npm run dev:dashboard -- -p 3001`.
-- **Stale Unix socket:** stop old daemon processes. Startup removes a socket only
+- **Stale Unix socket:** stop old daemon processes. The private `startup.lock`
+  file can remain after a crash; kernel locks release on exit. Do not unlink
+  this lock file while a daemon could still be running. Startup removes a socket only
   after a connection check proves it is stale; never delete a socket belonging
   to a running daemon.
 - **Daemon endpoint missing:** start `npm run dev:daemon` and confirm
@@ -574,6 +676,20 @@ growth for 100, 1,000, and 10,000 deterministic events.
   diff, remove `node_modules`, and confirm `npm ci` succeeds afterward.
 
 ## Frequently Asked Questions (FAQ)
+
+<details>
+<summary>How do I connect Claude Desktop, Cursor, Claude Code or Cline?</summary>
+
+Close clients, run `npm run setup` (or `krypton setup` after `npm link`), start
+the updated daemon with `npm run dev:full`, and restart configured clients.
+The command preserves other servers, atomically backs up existing JSON and
+reports each client separately. Failed clients and invalid usage write redacted
+diagnostics to stderr with nonzero status. Cleanup or durability failures require
+review before retrying; the setup summary never silently reports them as success. Only the two Krypton MCP file tools gain native
+path containment; other client tools are not intercepted. See the onboarding
+section above for paths, limits, conflicts and backup restoration.
+
+</details>
 
 <details>
 <summary>1. What is Krypton in simple terms?</summary>
@@ -699,7 +815,7 @@ not intercepted. Discovery tolerates redundant dot segments only for the exact
 expected runtime files. Executable symlinks from version managers resolve to the
 same canonical target in Node and Rust; unresolved paths deny inspection, and
 PID, start time, and parent checks remain strict. Restart the updated daemon.
-Run `npm run test:sim` for an isolated native end-to-end check using disposable
+Run `npm run test:e2e` for an isolated native end-to-end check using disposable
 children, real authenticated IPC and SIGKILL, durable observational JSONL, and
 mocked desktop delivery. It does not update the running dashboard or display an
 OS banner. For a cross-platform mock dashboard without native isolation, run
@@ -730,20 +846,17 @@ The authoritative milestones and security acceptance criteria live in
 [ROADMAP.md](ROADMAP.md). Planned features below do not expand Krypton's current
 enforcement boundary.
 
-1. **Phase 1 — Native macOS Hardening & Public Launch (v1.0):** the native
-   daemon, `.krypton/runtime/daemon.sock` IPC, bounded local telemetry dashboard,
-   offline policy loop, GitHub Pages demonstration, and redacted OS-level macOS
-   quarantine alerts are implemented. Phase 1 is complete and verified for its
-   scoped macOS runtime boundary; native end-to-end tests mock desktop delivery,
-   and portable watcher evidence remains non-authoritative.
-2. **Phase 2 — Transparent Developer Experience & Zero-Config CLI (v1.1):**
-   `krypton run -- <command>` initial-child supervision and authenticated termination
-   receipts are implemented. Descendant containment, capability-aware Safe
-   Auto-Pilot host integrations, standalone Homebrew and verified
-   shell-script distribution with a sub-30-second time-to-first-containment
-   target remain planned. `brew install krypton-security/tap/krypton` and
-   `curl -fsSL https://get.krypton.dev | sh` are planned commands and are not
-   available installation paths today.
+1. **Phase 1 — Local Developer Verification & Containment Core (v1.0):**
+   active release milestone prioritizing `krypton setup`, production native MCP
+   IPC and live denial telemetry. The daemon, supervisor, local dashboard and
+   redacted OS-level alerts and the dedicated `npm run test:e2e` report are
+   implemented. `.mcpb` packaging and real desktop-client verification remain planned.
+   The 60-second onboarding objective is not yet measured or guaranteed.
+2. **Phase 2 — Transparent Developer Experience & Distribution (v1.1):**
+   planned Homebrew and hardened shell distribution, descendant containment and
+   network egress isolation. The existing `krypton run` supervisor registers only
+   the initial child. Package-manager installers are not available today.
+
 3. **Phase 3 — Native Desktop Application & Developer Convenience
    (v1.2–v1.3):** planned Tauri packaging for macOS and Windows, system-tray
    status, richer application-owned notifications, validated `.kryptonrc` and

@@ -3,16 +3,50 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
-const { dispatchNativeControl, startProtectedProcess } = require('./processIsolation.cjs');
+const {
+  dispatchNativeControl,
+  startProtectedProcess,
+  NativeControlError,
+} = require('./processIsolation.cjs');
 
 const DAEMON_ERROR =
   "Krypton native daemon is not running. Please start it with 'npm run dev:full' or 'krypton daemon:start'.";
-const USAGE = 'Usage: krypton run -- <command> [args...] | krypton daemon:start';
+const USAGE = 'Usage: krypton run -- <command> [args...] | krypton daemon:start | krypton setup';
+
+/**
+ * Classifies arbitrary operational failures without emitting raw messages or payloads.
+ * @param {unknown} error - Caught failure from a runtime boundary.
+ * @returns {'permission_denied'|'unavailable'|'invalid_input'|'unexpected_failure'|import('./processIsolation.cjs').NativeControlErrorCode} Safe diagnostic category.
+ * @complexity O(1) time and space.
+ * @example failureCode(null); // unexpected_failure
+ */
+function failureCode(error) {
+  if (error instanceof NativeControlError) return error.code;
+  if (error instanceof SyntaxError || error instanceof TypeError) return 'invalid_input';
+  if (error && typeof error === 'object') {
+    if (error.code === 'EACCES' || error.code === 'EPERM') return 'permission_denied';
+    if (error.code === 'ENOENT' || error.code === 'ESRCH') return 'unavailable';
+  }
+  return 'unexpected_failure';
+}
+
+/**
+ * Records a safe failure category on stderr before an actionable operation diagnostic.
+ * @param {unknown} error - Failure to classify.
+ * @param {(text:string) => unknown} stderr - Diagnostic output sink.
+ * @returns {void} Emits no raw exception text.
+ * @complexity O(1) time and space.
+ * @example reportFailure(null, stderr); // unexpected_failure diagnostic
+ */
+function reportFailure(error, stderr) {
+  stderr(`[KRYPTON] Failure category: ${failureCode(error)}.\n`);
+  if (error instanceof NativeControlError) stderr(`[KRYPTON] ${error.message}\n`);
+}
 
 /**
  * Parses the exact CLI boundary without expanding shell syntax or target options.
  * @param {readonly string[]} argv - Arguments following the Krypton executable.
- * @returns {{type:'run',command:string,args:string[]} | {type:'daemon:start'}} Parsed invocation; invalid arguments throw.
+ * @returns {{type:'run',command:string,args:string[]} | {type:'daemon:start'} | {type:'setup'}} Parsed invocation; invalid arguments throw.
  * @complexity O(A) time and space in total argument bytes A, bounded to 128 KiB and 4096 arguments.
  * @example
  * parseInvocation(['run', '--', 'node', 'a b']); // literal argument 'a b'
@@ -25,6 +59,7 @@ function parseInvocation(argv) {
   )
     throw new Error(USAGE);
   if (argv.length === 1 && argv[0] === 'daemon:start') return { type: 'daemon:start' };
+  if (argv.length === 1 && argv[0] === 'setup') return { type: 'setup' };
   if (argv[0] !== 'run' || argv[1] !== '--' || !argv[2]) throw new Error(USAGE);
   return { type: 'run', command: argv[2], args: argv.slice(3) };
 }
@@ -115,7 +150,7 @@ async function resolveWorkspace(cwd = process.env.KRYPTON_PROJECT_ROOT ?? proces
       await fs.access(path.join(repositoryRoot, 'krypton.config.json'));
       break;
     } catch (error) {
-      if (error.code !== 'ENOENT')
+      if (!error || typeof error !== 'object' || error.code !== 'ENOENT')
         throw new Error('Cannot inspect Krypton workspace configuration.');
       const parent = path.dirname(repositoryRoot);
       if (parent === repositoryRoot)
@@ -149,13 +184,14 @@ async function resolveWorkspace(cwd = process.env.KRYPTON_PROJECT_ROOT ?? proces
  * Forwards only requested termination signals to an owned live child.
  * @param {import('node:child_process').ChildProcess} child - Child object returned by spawn, never a user-supplied PID.
  * @param {import('node:events').EventEmitter} signals - Supervisor signal source.
- * @returns {() => void} Idempotent listener removal callback.
+ * @returns {() => string|undefined} Idempotent listener removal callback reporting a safe failed-forwarding category.
  * @complexity O(1) time and space.
  * @example
  * const remove = forwardSignals(child, process); remove();
  */
 function forwardSignals(child, signals) {
   let exited = false;
+  let forwardingFailed;
   /**
    * Prevents forwarding after the owned child exits.
    * @returns {void} Marks the terminal state.
@@ -173,7 +209,13 @@ function forwardSignals(child, signals) {
    * @example interrupt(); // child.kill('SIGINT') while live
    */
   const interrupt = () => {
-    if (!exited && child.pid !== undefined) child.kill('SIGINT');
+    if (!exited && child.pid !== undefined) {
+      try {
+        if (child.kill('SIGINT') === false) forwardingFailed = 'unavailable';
+      } catch (error) {
+        forwardingFailed = failureCode(error);
+      }
+    }
   };
   /**
    * Forwards SIGTERM to the live owned child only.
@@ -182,7 +224,13 @@ function forwardSignals(child, signals) {
    * @example terminate(); // child.kill('SIGTERM') while live
    */
   const terminate = () => {
-    if (!exited && child.pid !== undefined) child.kill('SIGTERM');
+    if (!exited && child.pid !== undefined) {
+      try {
+        if (child.kill('SIGTERM') === false) forwardingFailed = 'unavailable';
+      } catch (error) {
+        forwardingFailed = failureCode(error);
+      }
+    }
   };
   signals.on('SIGINT', interrupt);
   signals.on('SIGTERM', terminate);
@@ -190,6 +238,7 @@ function forwardSignals(child, signals) {
     signals.removeListener('SIGINT', interrupt);
     signals.removeListener('SIGTERM', terminate);
     child.removeListener('exit', markExited);
+    return forwardingFailed;
   };
 }
 
@@ -225,8 +274,8 @@ async function startDaemon(workspace, dependencies) {
   });
   const remove = forwardSignals(child, dependencies.signals);
   try {
-    return await new Promise((resolve) => {
-      child.once('error', () => resolve(1));
+    return await new Promise((resolve, reject) => {
+      child.on('error', reject);
       child.once('exit', (code, signal) => resolve(exitStatus(code, signal)));
     });
   } finally {
@@ -249,9 +298,19 @@ async function main(argv, dependencies = {}) {
   let invocation;
   try {
     invocation = parseInvocation(argv);
-  } catch {
+  } catch (error) {
+    reportFailure(error, stderr);
     stderr(`${USAGE}\n`);
     return 2;
+  }
+  if (invocation.type === 'setup') {
+    try {
+      return await (dependencies.setup ?? require('../cli/setup.cjs').main)([]);
+    } catch (error) {
+      reportFailure(error, stderr);
+      stderr('[KRYPTON] Setup failed; verify client configuration permissions and retry.\n');
+      return 1;
+    }
   }
   const platform = dependencies.platform ?? process.platform;
   if (platform !== 'darwin' && platform !== 'linux') {
@@ -261,7 +320,8 @@ async function main(argv, dependencies = {}) {
   let workspace;
   try {
     workspace = await (dependencies.resolveWorkspace ?? resolveWorkspace)();
-  } catch {
+  } catch (error) {
+    reportFailure(error, stderr);
     stderr(
       '[KRYPTON] Workspace unavailable. Run from a configured Krypton checkout with an existing protected workspace and runtimeDirectory .krypton/runtime.\n'
     );
@@ -270,7 +330,8 @@ async function main(argv, dependencies = {}) {
   if (invocation.type === 'daemon:start') {
     try {
       return await startDaemon(workspace, { spawn: dependencies.spawn ?? spawn, signals });
-    } catch {
+    } catch (error) {
+      reportFailure(error, stderr);
       stderr(
         '[KRYPTON] Cannot start daemon. Install rustup/cargo and run from the Krypton source checkout.\n'
       );
@@ -290,7 +351,8 @@ async function main(argv, dependencies = {}) {
     const health = await dispatch({ type: 'health' });
     if (health.ok !== true || health.health?.status !== 'healthy')
       throw new Error('Daemon unavailable or degraded');
-  } catch {
+  } catch (error) {
+    reportFailure(error, stderr);
     stderr(`${DAEMON_ERROR}\n`);
     return 1;
   }
@@ -302,7 +364,8 @@ async function main(argv, dependencies = {}) {
       { cwd: workspace.cwd, stdio: 'inherit', shell: false },
       { dispatch }
     );
-  } catch {
+  } catch (error) {
+    reportFailure(error, stderr);
     stderr('[KRYPTON] Could not spawn the requested executable.\n');
     return 1;
   }
@@ -337,7 +400,20 @@ async function main(argv, dependencies = {}) {
           : `[KRYPTON] Process ${session.child.pid} exited via SIGKILL; enforcement attribution is unconfirmed.\n`
       );
     }
-    return exitStatus(result.code, result.signal);
+    const status = exitStatus(result.code, result.signal);
+    const forwardingFailure = remove();
+    if (forwardingFailure) {
+      stderr(`[KRYPTON] Failure category: ${forwardingFailure}.\n`);
+      stderr(
+        '[KRYPTON] Forwarding a termination signal failed; verify the owned child has stopped.\n'
+      );
+      return status || 1;
+    }
+    return result.registrationError || result.cleanupFailed ? status || 1 : status;
+  } catch (error) {
+    reportFailure(error, stderr);
+    stderr('[KRYPTON] Supervision failed; owned-child termination could not be confirmed.\n');
+    return 1;
   } finally {
     remove();
   }

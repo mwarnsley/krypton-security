@@ -18,8 +18,28 @@ interface WorkspaceObservation {
   readonly attribution: 'unattributed';
   readonly targetProcessId: null;
   readonly health: 'ready' | 'degraded';
+  readonly failureCode?:
+    'permission_denied' | 'missing_path' | 'invalid_path' | 'filesystem_failed';
 }
 let observation: WorkspaceObservation | undefined;
+
+/**
+ * Classifies filesystem and watcher failures without retaining sensitive raw paths.
+ * @param {unknown} error - Unknown filesystem or watcher failure.
+ * @returns {'permission_denied'|'missing_path'|'invalid_path'|'filesystem_failed'} Stable failure category.
+ * @complexity O(1) time and space.
+ * @example classifyFilesystemFailure(null); // filesystem_failed
+ */
+function classifyFilesystemFailure(
+  error: unknown
+): NonNullable<WorkspaceObservation['failureCode']> {
+  if (error instanceof TypeError || error instanceof RangeError) return 'invalid_path';
+  if (error !== null && typeof error === 'object' && 'code' in error) {
+    if (error.code === 'EACCES' || error.code === 'EPERM') return 'permission_denied';
+    if (error.code === 'ENOENT') return 'missing_path';
+  }
+  return 'filesystem_failed';
+}
 
 /**
  * Returns the latest bounded reference-watcher state, never process authority.
@@ -56,13 +76,13 @@ function canonicalPath(targetPath: string): string {
     try {
       return path.join(fs.realpathSync(candidate), ...tail.reverse());
     } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (classifyFilesystemFailure(error) !== 'missing_path') throw error;
       // A dangling symlink is not a missing ordinary component.
       try {
         fs.lstatSync(candidate);
         throw new Error('Unresolvable existing path.');
       } catch (statError: unknown) {
-        if ((statError as NodeJS.ErrnoException).code !== 'ENOENT') throw statError;
+        if (classifyFilesystemFailure(statError) !== 'missing_path') throw statError;
       }
       const parent = path.dirname(candidate);
       if (parent === candidate) throw error;
@@ -111,7 +131,14 @@ export function verifyPathAccess(targetPath: string, workspaceRoot = SANDBOX_ROO
       !sensitive(targetPath) &&
       !sensitive(target)
     );
-  } catch {
+  } catch (error: unknown) {
+    observation = {
+      status: 'OBSERVED',
+      attribution: 'unattributed',
+      targetProcessId: null,
+      health: 'degraded',
+      failureCode: classifyFilesystemFailure(error),
+    };
     return false;
   }
 }
@@ -125,11 +152,11 @@ export function verifyPathAccess(targetPath: string, workspaceRoot = SANDBOX_ROO
  * startWorkspaceWatcher('./sandbox_workspace'); // events remain OBSERVED, never signal processes
  */
 export function startWorkspaceWatcher(workspacePath: string): void {
-  const resolved = canonicalPath(workspacePath);
-  if (resolved !== fs.realpathSync(SANDBOX_ROOT))
-    throw new RangeError('Only the Krypton sandbox workspace may be watched.');
-  if (activeWorkspaceWatchers.has(resolved)) return;
   try {
+    const resolved = canonicalPath(workspacePath);
+    if (resolved !== fs.realpathSync(SANDBOX_ROOT))
+      throw new RangeError('Only the Krypton sandbox workspace may be watched.');
+    if (activeWorkspaceWatchers.has(resolved)) return;
     const watcher = fs.watch(
       resolved,
       { encoding: 'utf8', persistent: true, recursive: true },
@@ -144,23 +171,30 @@ export function startWorkspaceWatcher(workspacePath: string): void {
       }
     );
     activeWorkspaceWatchers.set(resolved, watcher);
-    watcher.on('error', () => {
+    watcher.on('error', (error: unknown) => {
       activeWorkspaceWatchers.delete(resolved);
-      watcher.close();
       observation = {
         status: 'OBSERVED',
         attribution: 'unattributed',
         targetProcessId: null,
         health: 'degraded',
+        failureCode: classifyFilesystemFailure(error),
       };
+      try {
+        watcher.close();
+      } catch (closeError: unknown) {
+        observation = { ...observation, failureCode: classifyFilesystemFailure(closeError) };
+        return;
+      }
     });
-  } catch (error) {
+  } catch (error: unknown) {
     observation = {
       status: 'OBSERVED',
       attribution: 'unattributed',
       targetProcessId: null,
       health: 'degraded',
+      failureCode: classifyFilesystemFailure(error),
     };
-    throw error;
+    throw error instanceof Error ? error : new Error('Workspace watcher setup failed.');
   }
 }

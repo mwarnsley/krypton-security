@@ -1,3 +1,19 @@
+export type NativeControlErrorCode =
+  | 'unavailable'
+  | 'permission_denied'
+  | 'invalid_response'
+  | 'transport_failed'
+  | 'timeout'
+  | 'disconnected'
+  | 'isolation_rejected';
+
+export class NativeControlError extends Error {
+  readonly code: NativeControlErrorCode;
+  constructor(code: NativeControlErrorCode, message: string);
+}
+export const NATIVE_TIMEOUT_MS: 1500;
+export function discoverNativeEndpoint(projectRoot?: string): Promise<Record<string, unknown>>;
+
 export interface ProcessIdentityPayload {
   executablePath: string;
   parentPid: number | null;
@@ -55,6 +71,10 @@ export interface ProtectedProcessOutcome {
   enforcementConfirmed: boolean;
   cleanupFailed: boolean;
   childMayBeRunning: boolean;
+  terminationError?: NativeControlError | undefined;
+  isolationError?: NativeControlError | undefined;
+  cleanupError?: NativeControlError | undefined;
+  receiptError?: NativeControlError | undefined;
 }
 export interface ProtectedProcessSession {
   child: import('node:child_process').ChildProcess;

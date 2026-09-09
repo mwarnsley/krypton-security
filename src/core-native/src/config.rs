@@ -2,7 +2,8 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 
 pub const CONFIG_FILE_NAME: &str = "krypton.config.json";
@@ -116,7 +117,27 @@ pub fn validate_runtime_config(config: &RuntimeConfig) -> Result<(), io::Error> 
 }
 
 pub fn load_runtime_config(repository_root: &Path) -> Result<RuntimeConfig, io::Error> {
-    let contents = fs::read_to_string(repository_root.join(CONFIG_FILE_NAME))?;
+    const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_NONBLOCK)
+        .open(repository_root.join(CONFIG_FILE_NAME))?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration size limit exceeded or non-regular file",
+        ));
+    }
+    let mut contents = String::new();
+    file.take(MAX_CONFIG_BYTES + 1)
+        .read_to_string(&mut contents)?;
+    if contents.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration size limit exceeded",
+        ));
+    }
     let config = serde_json::from_str::<RuntimeConfig>(&contents).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -157,6 +178,21 @@ mod tests {
             rate_limit_window_seconds: 5,
             rate_limit_max_breakouts: 3,
         }
+    }
+
+    #[test]
+    fn oversized_config_is_rejected_before_json_parsing() {
+        let root =
+            std::env::temp_dir().join(format!("krypton-large-config-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(
+            root.join(super::CONFIG_FILE_NAME),
+            vec![b' '; 1024 * 1024 + 1],
+        )
+        .unwrap();
+        let result = super::load_runtime_config(&root);
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(result.unwrap_err().to_string().contains("size limit"));
     }
 
     #[test]

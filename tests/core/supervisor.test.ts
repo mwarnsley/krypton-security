@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { main, parseInvocation } from '../../src/core/supervisor.cjs';
 import type { ProtectedProcessOutcome } from '../../src/core/processIsolation.cjs';
@@ -49,6 +50,13 @@ function fixture(result = outcome) {
 }
 
 describe('supervisor arguments', () => {
+  it('routes setup without requiring daemon discovery or spawning an agent', async () => {
+    const deps = fixture();
+    const setup = vi.fn().mockResolvedValue(0);
+    expect(await main(['setup'], { ...deps, setup })).toBe(0);
+    expect(setup).toHaveBeenCalledWith([]);
+    expect(deps.resolveWorkspace).not.toHaveBeenCalled();
+  });
   it('preserves literal arguments including spaces, shell operators and a second separator', () => {
     expect(parseInvocation(['run', '--', 'node', 'a b', '$(whoami)', ';', '--'])).toEqual({
       type: 'run',
@@ -64,6 +72,7 @@ describe('supervisor arguments', () => {
     ['run', '--', ''],
     ['run', '--', 'node', '\0'],
     ['daemon:start', 'extra'],
+    ['setup', 'extra'],
   ])('rejects invalid invocation %j', (...args) => {
     expect(() => parseInvocation(args as string[])).toThrow();
   });
@@ -174,5 +183,76 @@ describe('supervisor runtime', () => {
     const deps = fixture();
     expect(await main(['run', '--', 'node'], { ...deps, platform: 'win32' })).toBe(1);
     expect(deps.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('supervisor failure diagnostics', () => {
+  it('returns nonzero when registration failed after a zero child exit', async () => {
+    const deps = fixture({
+      ...outcome,
+      registrationError: new Error('denied'),
+      exitedBeforeRegistrationFailure: true,
+    });
+    expect(await main(['run', '--', 'node'], deps)).toBe(1);
+  });
+  it('returns nonzero when unregister failed after a zero child exit', async () => {
+    const deps = fixture({ ...outcome, cleanupFailed: true });
+    expect(await main(['run', '--', 'node'], deps)).toBe(1);
+    expect(deps.stderr).toHaveBeenCalledWith(expect.stringContaining('unregister'));
+  });
+  it('handles a rejected setup without leaking raw errors', async () => {
+    const deps = fixture();
+    expect(
+      await main(['setup'], { ...deps, setup: vi.fn().mockRejectedValue(new Error('secret')) })
+    ).toBe(1);
+    expect(deps.stderr).toHaveBeenCalledWith(expect.stringContaining('Setup failed'));
+  });
+  it('handles unexpected lifecycle rejection on stderr and removes listeners', async () => {
+    const deps = fixture();
+    deps.start.mockImplementation(() => ({
+      child: deps.child,
+      registered: Promise.resolve(identity),
+      completed: Promise.reject(new Error('secret')),
+    }));
+    expect(await main(['run', '--', 'node'], deps)).toBe(1);
+    expect(deps.stderr).toHaveBeenCalledWith(expect.stringContaining('Supervision failed'));
+    expect(deps.signals.listenerCount('SIGINT')).toBe(0);
+  });
+});
+
+describe('daemon startup errors', () => {
+  it('reports a missing cargo executable on stderr and returns failure', async () => {
+    const access = vi.spyOn(fs, 'access').mockResolvedValue(undefined);
+    const deps = fixture();
+    const spawn = vi.fn().mockImplementation(() => {
+      queueMicrotask(() =>
+        deps.child.emit('error', Object.assign(new Error('secret'), { code: 'ENOENT' }))
+      );
+      return deps.child;
+    });
+    try {
+      expect(await main(['daemon:start'], { ...deps, spawn })).toBe(1);
+      expect(deps.stderr).toHaveBeenCalledWith(expect.stringContaining('Install rustup/cargo'));
+      expect(deps.signals.listenerCount('SIGTERM')).toBe(0);
+    } finally {
+      access.mockRestore();
+    }
+  });
+});
+
+describe('supervisor failure classification', () => {
+  it.each([
+    ['EPERM', 'permission_denied'],
+    ['ENOENT', 'unavailable'],
+  ])('classifies %s workspace failures safely', async (code, category) => {
+    const deps = fixture();
+    deps.resolveWorkspace.mockRejectedValue(Object.assign(new Error('secret-path'), { code }));
+    expect(await main(['run', '--', 'node'], deps)).toBe(1);
+    expect(deps.stderr).toHaveBeenCalledWith(`[KRYPTON] Failure category: ${category}.\n`);
+  });
+  it('records unknown thrown values as unexpected failures', async () => {
+    const deps = fixture();
+    expect(await main(['setup'], { ...deps, setup: vi.fn().mockRejectedValue(null) })).toBe(1);
+    expect(deps.stderr).toHaveBeenCalledWith('[KRYPTON] Failure category: unexpected_failure.\n');
   });
 });

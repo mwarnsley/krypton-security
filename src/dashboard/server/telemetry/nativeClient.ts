@@ -1,27 +1,35 @@
-import * as fs from 'node:fs';
+import {
+  dispatchNativeControl,
+  discoverNativeEndpoint as discoverEndpoint,
+} from '../../../core/processIsolation.cjs';
 import { normalizeNativeHealth } from '../../utils/nativeHealth';
-import { createConnection } from 'node:net';
-import * as path from 'node:path';
 
 import {
-  NATIVE_CONTROL_PROTOCOL_VERSION,
   type NativeDaemonHealth,
   type NativeControlCommand,
-  type NativeControlRequest,
   type NativeControlResponse,
   type RuntimeEndpointRecord,
 } from '../../types';
-import { MAX_NATIVE_RESPONSE_BYTES } from './constants';
-
-const IPC_TIMEOUT_MS = 2_000;
-const RUNTIME_RECORD_PATH = path.resolve(process.cwd(), '.krypton/runtime/daemon.json');
-
 type JsonRecord = Record<string, unknown>;
 
+/**
+ * Narrows untrusted data to a non-array JSON record.
+ * @param {unknown} value - Untrusted JSON value.
+ * @returns {boolean} Whether property validation can proceed.
+ * @complexity O(1) time and space.
+ * @example isRecord(null); // false
+ */
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Validates the dashboard discovery field contract after shared path validation.
+ * @param {unknown} value - Untrusted discovery record.
+ * @returns {RuntimeEndpointRecord} Typed record or validation rejection.
+ * @complexity O(1) time and auxiliary space.
+ * @example parseEndpointRecord(null); // throws
+ */
 function parseEndpointRecord(value: unknown): RuntimeEndpointRecord {
   if (
     !isRecord(value) ||
@@ -42,6 +50,13 @@ function parseEndpointRecord(value: unknown): RuntimeEndpointRecord {
   };
 }
 
+/**
+ * Validates native response fields and health without inventing missing counts.
+ * @param {unknown} value - Bounded response from authenticated transport.
+ * @returns {NativeControlResponse} Typed native response or validation rejection.
+ * @complexity O(1) time and auxiliary space for the fixed response schema.
+ * @example parseNativeResponse(null); // throws
+ */
 function parseNativeResponse(value: unknown): NativeControlResponse {
   if (
     !isRecord(value) ||
@@ -76,76 +91,35 @@ function parseNativeResponse(value: unknown): NativeControlResponse {
   };
 }
 
+/**
+ * Reads bounded private discovery using the same trust boundary as native supervision.
+ * @returns {Promise<RuntimeEndpointRecord>} Validated workspace discovery or rejection.
+ * @complexity O(L) time and space for bounded metadata L.
+ * @example await discoverNativeEndpoint();
+ */
 export async function discoverNativeEndpoint(): Promise<RuntimeEndpointRecord> {
-  const contents = await fs.promises.readFile(RUNTIME_RECORD_PATH, 'utf8');
-  return parseEndpointRecord(JSON.parse(contents) as unknown);
+  return parseEndpointRecord(await discoverEndpoint(process.cwd()));
 }
 
+/**
+ * Sends dashboard commands through the shared 1500 ms authenticated native transport.
+ * @param {NativeControlCommand} command - Dashboard control request.
+ * @returns {Promise<NativeControlResponse>} Validated response; unavailable or malformed native state rejects.
+ * @complexity O(L) time and space for bounded request and response bytes L.
+ * @example await dispatchNativeCommand({ type: 'health' });
+ */
 export async function dispatchNativeCommand(
   command: NativeControlCommand
 ): Promise<NativeControlResponse> {
-  const endpoint = await discoverNativeEndpoint();
-  if (endpoint.protocolVersion !== NATIVE_CONTROL_PROTOCOL_VERSION) {
-    throw new Error('Native endpoint protocol version is unsupported.');
-  }
-  const capability = (await fs.promises.readFile(endpoint.capabilityFile, 'utf8')).trim();
-  if (capability.length !== 64) {
-    throw new Error('Native capability file is invalid.');
-  }
-  const requestId = `dashboard-${process.pid}-${Date.now().toString(36)}`;
-  const request: NativeControlRequest = {
-    capability,
-    command,
-    protocolVersion: NATIVE_CONTROL_PROTOCOL_VERSION,
-    requestId,
-  };
-
-  return new Promise((resolve, reject) => {
-    const socket = createConnection(endpoint.endpoint);
-    let receipt = '';
-    let settled = false;
-
-    const complete = (error?: Error): void => {
-      if (settled) return;
-      settled = true;
-      socket.removeAllListeners();
-      socket.destroy();
-      if (error) {
-        reject(error);
-        return;
-      }
-      try {
-        const parsed = parseNativeResponse(JSON.parse(receipt.trim()) as unknown);
-        if (parsed.protocolVersion !== NATIVE_CONTROL_PROTOCOL_VERSION) {
-          throw new Error('Native response protocol version is unsupported.');
-        }
-        if (parsed.requestId !== requestId) {
-          throw new Error('Native response request identifier does not match.');
-        }
-        resolve(parsed);
-      } catch (parseError: unknown) {
-        reject(parseError instanceof Error ? parseError : new Error('Native response is invalid.'));
-      }
-    };
-
-    socket.setEncoding('utf8');
-    socket.setTimeout(IPC_TIMEOUT_MS);
-    socket.once('connect', () => socket.end(`${JSON.stringify(request)}\n`, 'utf8'));
-    socket.on('data', (chunk: string) => {
-      receipt += chunk;
-      if (Buffer.byteLength(receipt, 'utf8') > MAX_NATIVE_RESPONSE_BYTES) {
-        complete(new Error('Native control response is oversized.'));
-      }
-    });
-    socket.once('end', () => complete());
-    socket.once('close', (hadError) => {
-      if (!hadError && receipt !== '') complete();
-    });
-    socket.once('timeout', () => complete(new Error('Native control request timed out.')));
-    socket.once('error', (error) => complete(error));
-  });
+  return parseNativeResponse(await dispatchNativeControl({ ...command }, process.cwd()));
 }
 
+/**
+ * Queries native health and degrades unknown registry state without fabricating zero.
+ * @returns {Promise<NativeControlResponse>} Native health or transport/validation rejection.
+ * @complexity O(L) time and space for bounded IPC frame length L.
+ * @example await queryNativeHealth();
+ */
 export async function queryNativeHealth(): Promise<NativeControlResponse> {
   const response = await dispatchNativeCommand({ type: 'health' });
   if (!response.ok || response.health === undefined) {

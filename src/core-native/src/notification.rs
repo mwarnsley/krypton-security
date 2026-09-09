@@ -1,11 +1,12 @@
 use crate::process_identity::ProcessIdentity;
+use std::io;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 #[cfg(any(target_os = "macos", test))]
-use std::{io, time::Duration};
+use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::{
     process::{Command, Stdio},
@@ -132,36 +133,38 @@ fn sanitized_agent_name(process: &ProcessIdentity) -> &'static str {
 
 pub fn start_notification_dispatcher<D>(
     delivery: D,
-) -> (
+) -> io::Result<(
     NotificationDispatcher,
     Arc<NotificationStatus>,
     JoinHandle<()>,
-)
+)>
 where
     D: NotificationDelivery,
 {
     let (sender, receiver) = sync_channel(NOTIFICATION_QUEUE_CAPACITY);
     let health = Arc::new(NotificationStatus::default());
     let worker_health = Arc::clone(&health);
-    let worker = thread::spawn(move || {
-        for notification in receiver {
-            match delivery.deliver(&notification) {
-                Ok(()) => {
-                    // Keep failures sticky so queue saturation is not hidden by
-                    // an older successful delivery racing with the caller.
+    let worker = thread::Builder::new()
+        .name("krypton-notifications".to_owned())
+        .spawn(move || {
+            for notification in receiver {
+                match delivery.deliver(&notification) {
+                    Ok(()) => {
+                        // Keep failures sticky so queue saturation is not hidden by
+                        // an older successful delivery racing with the caller.
+                    }
+                    Err(failure) => worker_health.degraded(failure),
                 }
-                Err(failure) => worker_health.degraded(failure),
             }
-        }
-    });
-    (
+        })?;
+    Ok((
         NotificationDispatcher {
             sender,
             health: Arc::clone(&health),
         },
         health,
         worker,
-    )
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -204,14 +207,27 @@ impl DeliveryProcess for std::process::Child {
         self.try_wait().map(|status| status.map(|s| s.success()))
     }
     fn kill_and_reap(&mut self) -> io::Result<()> {
-        // wait() is still required if kill races with natural process exit.
+        // Polling still reaps if kill races with natural exit; never block
+        // indefinitely in wait() after a failed delivery.
         if let Err(error) = self.kill() {
             return match self.try_wait()? {
                 Some(_) => Ok(()),
                 None => Err(error),
             };
         }
-        self.wait().map(|_| ())
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if self.try_wait()?.is_some() {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "notification process reap deadline exceeded",
+                ));
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 }
 
@@ -228,7 +244,9 @@ fn wait_for_delivery(
             Ok(Some(true)) => return Ok(()),
             Ok(Some(false)) => return Err(NotificationFailure::DeliveryFailed),
             Err(_) => {
-                let _ = process.kill_and_reap();
+                process
+                    .kill_and_reap()
+                    .map_err(|_| NotificationFailure::DeliveryFailed)?;
                 return Err(NotificationFailure::DeliveryFailed);
             }
             Ok(None) => {}
@@ -395,7 +413,8 @@ mod tests {
             notifications: Arc::clone(&notifications),
             result,
         };
-        let (notifier, health, worker) = start_notification_dispatcher(delivery);
+        let (notifier, health, worker) =
+            start_notification_dispatcher(delivery).expect("notification worker startup");
         notifier.notify_confirmed_quarantine(&identity());
         drop(notifier);
         worker.join().expect("notification worker");

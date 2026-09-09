@@ -8,6 +8,17 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it('explains bounded IPC failure and uncertain write recovery', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(
+      screen.getByText('What happens when a Krypton MCP file tool crosses the boundary?')
+    );
+    expect(screen.getByText(/Socket exchanges have a 1500 ms absolute deadline/)).toBeTruthy();
+    expect(
+      screen.getByText(/Uncertain write durability requires inspecting the destination/)
+    ).toBeTruthy();
+  });
   it('explains live mode and observational status boundaries', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
@@ -58,14 +69,14 @@ describe('ExplainerDrawer', () => {
     expect(screen.getAllByRole('listitem', { name: /Krypton roadmap phase/ })).toHaveLength(4);
   });
 
-  it('marks Phase 1 complete with OS-level quarantine alerts implemented', () => {
+  it('keeps Phase 1 onboarding work in progress while retaining implemented alerts', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
     const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 1' });
 
-    expect(phase.textContent).toContain('Completed');
+    expect(phase.textContent).toContain('In progress');
     expect(phase.textContent).toContain('redacted OS-level alerts');
   });
 
@@ -129,13 +140,18 @@ describe('ExplainerDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
     fireEvent.click(screen.getByText('How do I run the project locally?'));
-    expect(screen.getByText(/real authenticated IPC and SIGKILL/)).toBeTruthy();
+    expect(screen.getByText(/real authenticated IPC and SIGKILL/).textContent).toContain(
+      'npm run test:e2e'
+    );
+    expect(screen.getByText(/real authenticated IPC and SIGKILL/).textContent).toContain(
+      'fail-closed socket loss'
+    );
     expect(
       screen.getByText(/does not update the running dashboard or display an OS banner/)
     ).toBeTruthy();
   });
 
-  it('renders all eleven FAQ questions in order', () => {
+  it('renders the onboarding, MCP boundary and existing FAQ questions in order', () => {
     const { container } = render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
@@ -145,6 +161,8 @@ describe('ExplainerDrawer', () => {
     );
 
     expect(questions).toEqual([
+      'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
+      'What happens when a Krypton MCP file tool crosses the boundary?',
       'What is Krypton in simple terms?',
       'Is Krypton an antivirus program?',
       'Does Krypton slow down my computer or development workflow?',
@@ -256,11 +274,11 @@ describe('ExplainerDrawer', () => {
     expect(screen.getByText(/at most 1,024 receipts remain available/)).toBeTruthy();
   });
 
-  it('marks the Phase 2 initial-child supervisor implemented while descendants remain planned', () => {
+  it('keeps Phase 2 distribution planned while identifying the existing supervisor', () => {
     render(<ExplainerDrawer defaultTab="features" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 2' });
-    expect(phase.textContent).toContain('In progress');
+    expect(phase.textContent).toContain('Planned');
     expect(phase.textContent).toContain('initial-child supervisor');
     expect(phase.textContent).toContain('remain planned');
   });

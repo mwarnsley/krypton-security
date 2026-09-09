@@ -16,6 +16,7 @@ target/
 src/core-native/target/
 
 # Test output
+QA_TESTING.md
 coverage/
 *.dSYM/
 *.test

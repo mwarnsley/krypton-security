@@ -124,7 +124,9 @@ describe('native launcher IPC wire', () => {
     vi.mocked(fs.lstat).mockRejectedValue(
       Object.assign(new Error('missing socket'), { code: 'ENOENT' })
     );
-    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow('missing socket');
+    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toMatchObject({
+      code: 'unavailable',
+    });
     expect(net.createConnection).not.toHaveBeenCalled();
   });
   it('rejects a missing capability before connecting', async () => {
@@ -184,5 +186,74 @@ describe('native launcher IPC wire', () => {
     await fs.chmod(path.join(runtime, 'capability'), 0o644);
     await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow();
     expect(net.createConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe('native transport failure settlement', () => {
+  it('rejects a disconnect without a response immediately', async () => {
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'disconnected' });
+    await connected();
+    socket.emit('close', false);
+    await rejected;
+    expect(socket.destroy).toHaveBeenCalledOnce();
+  });
+  it('consumes a late socket error after completion', async () => {
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    await connected();
+    reply();
+    await pending;
+    expect(() => socket.emit('error', new Error('late failure'))).not.toThrow();
+  });
+  it('sanitizes malformed native JSON rather than exposing its contents', async () => {
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: 'invalid_response',
+      message: 'Native daemon returned malformed response JSON.',
+    });
+    await connected();
+    socket.emit('data', 'secret-material-not-json');
+    socket.emit('end');
+    await rejected;
+  });
+  it('limits metadata discovery to the same 1500 ms deadline', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(fs, 'open').mockImplementation(() => new Promise(() => undefined));
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'timeout' });
+    await vi.advanceTimersByTimeAsync(1500);
+    await rejected;
+    expect(net.createConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe('native transport permission and cancellation boundaries', () => {
+  it.each(['EACCES', 'EPERM'])('normalizes %s without exposing raw paths', async (code) => {
+    vi.mocked(fs.lstat).mockRejectedValue(
+      Object.assign(new Error('/private/secret-path'), { code })
+    );
+    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toMatchObject({
+      code: 'permission_denied',
+    });
+    expect(net.createConnection).not.toHaveBeenCalled();
+  });
+  it('does not connect after slow discovery completes beyond the deadline', async () => {
+    vi.useFakeTimers();
+    let resume!: (value: Awaited<ReturnType<typeof fs.lstat>>) => void;
+    const metadata = Object.assign(await fs.stat(runtime), { isSocket: () => true });
+    vi.mocked(fs.lstat).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resume = resolve;
+        })
+    );
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'timeout' });
+    await vi.waitFor(() => expect(fs.lstat).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(1500);
+    await rejected;
+    resume(metadata);
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(net.createConnection).not.toHaveBeenCalled());
   });
 });

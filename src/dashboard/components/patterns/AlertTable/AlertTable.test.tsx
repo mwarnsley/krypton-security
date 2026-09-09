@@ -95,6 +95,23 @@ afterEach(() => {
 });
 
 describe('AlertTable', () => {
+  it('labels native MCP denials without showing a process isolation action', () => {
+    const markup = renderToStaticMarkup(
+      <AlertTable
+        alerts={[
+          {
+            ...SIMULATED_ALERT,
+            attribution: 'unattributed',
+            targetProcessId: null,
+            enforcementStatus: 'INTERCEPTED',
+            triggerSignature: 'NATIVE_MCP_BOUNDARY',
+          },
+        ]}
+      />
+    );
+    expect(markup).toContain('Denied (actor unattributed)');
+    expect(markup).not.toContain('Open actions for process');
+  });
   it('labels null-PID evidence as observed without claiming an actor', () => {
     const markup = renderToStaticMarkup(
       <AlertTable
