@@ -336,6 +336,18 @@ be running and exits nonzero without removing a potentially live registration.
 Each IPC request has an absolute two-second deadline and a 16 KiB frame limit.
 Unregister failure is reported without replacing the child's completed exit code.
 
+**Executable identity:** Node and Rust resolve executable symlinks to their
+canonical on-disk target, including version-manager paths used by fnm, nvm, and
+Homebrew. Registration accepts an absolute client alias only when it resolves to
+the inspected target; PID, start time, and parent PID must still match exactly.
+Resolution failures deny native inspection rather than trusting a raw path.
+The daemon pins the inspected canonical identity for revalidation before signaling,
+so retargeting an alias cannot authorize a different live executable. Later IPC
+requests must reuse the original registered client identity for isolation,
+unregister, and receipt lookup; cleanup and receipts do not depend on the alias
+still existing. Restart the daemon after pulling this fix. This resolves symlink
+spellings, not executable file-content identity or the documented TOCTOU limitation.
+
 **Enforcement evidence:** After SIGKILL, the supervisor queries the authenticated
 `termination_receipt` command with the same complete identity. Only confirmed
 native signal delivery produces:
@@ -684,7 +696,9 @@ registered, and SIGKILL attribution requires an authenticated native receipt.
 Use `krypton run -- node -e 'console.log(process.cwd())'` for a benign launch check;
 a direct `/etc/passwd` read is not a containment test because arbitrary reads are
 not intercepted. Discovery tolerates redundant dot segments only for the exact
-expected runtime files.
+expected runtime files. Executable symlinks from version managers resolve to the
+same canonical target in Node and Rust; unresolved paths deny inspection, and
+PID, start time, and parent checks remain strict. Restart the updated daemon.
 Run `npm run test:sim` for an isolated native end-to-end check using disposable
 children, real authenticated IPC and SIGKILL, durable observational JSONL, and
 mocked desktop delivery. It does not update the running dashboard or display an

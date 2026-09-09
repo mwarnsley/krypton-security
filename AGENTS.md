@@ -275,7 +275,13 @@ growth, and queue growth must be explicit and bounded.
 
 1. **Compound process identity is mandatory.** A process identity consists of
    PID, operating-system start time, canonical executable path, and parent PID.
-   PID alone is never sufficient authority.
+   PID alone is never sufficient authority. Native inspection resolves executable
+   symlinks to the canonical on-disk target and fails closed if resolution fails.
+   Registration accepts an absolute executable alias only when it resolves to the
+   inspected canonical target and PID, start time, and parent PID match strictly.
+   Pin that inspected identity for later live revalidation; never re-resolve a
+   stored alias to authorize a changed target. Preserve the original registered
+   client identity for unregister and authenticated termination-receipt lookup.
 2. **Register before enforcement.** Krypton may isolate only a child process it
    explicitly launched or accepted into its private registry after validating
    the complete live identity.

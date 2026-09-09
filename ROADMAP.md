@@ -174,6 +174,10 @@ developer workflows while preserving verifiable process ownership.
       retaining exact workspace destinations and rejecting parent traversal and
       socket symlinks. Regression coverage exercises dotted runtime paths through
       the disposable native daemon and documents direct reads as a limitation probe.
+- [x] Canonicalize native executable identity for version-manager symlinks, accept
+      equivalent client aliases at registration, and pin the inspected target for
+      later revalidation. Fail closed on resolution errors; preserve exact client
+      identity for cleanup/receipts and test alias retargeting with mocked signals.
 - [x] Preserve literal arguments, inherited stdio and child exit codes, keep supervisor
       diagnostics on stderr, forward SIGINT/SIGTERM, and perform bounded native cleanup.
       Early exit and refused owned-child cleanup report their actual limitations.

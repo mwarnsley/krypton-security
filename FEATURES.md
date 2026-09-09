@@ -34,6 +34,12 @@ in `ROADMAP.md`.
   the disposable authenticated-isolation simulation.
 - Preserves literal arguments without a shell and inherits terminal streams;
   supervisor diagnostics use stderr, preserving MCP stdout.
+- Resolves executable symlinks used by fnm/nvm/Homebrew to the same canonical
+  target as the Node supervisor. Resolution failures deny native inspection.
+  Registration accepts equivalent absolute client aliases with strict PID, start
+  time, and parent checks, and pins the inspected canonical identity for signaling.
+  Cleanup and receipt lookup retain the original registered client identity even
+  if the alias disappears; a changed live target cannot inherit the registration.
 - Registers complete initial-child identity, captures early exits, forwards
   SIGINT/SIGTERM, waits for bounded unregister, and preserves child exit codes.
   Rejected registration triggers owned-child cleanup; refused or timed-out cleanup

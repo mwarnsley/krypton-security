@@ -222,7 +222,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Desktop MCP hosts can set an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci, then cargo check --manifest-path src/core-native/Cargo.toml and npm run build. Use npm run dev:full to start the macOS native daemon at .krypton/runtime/daemon.sock and Next.js 16 Turbopack dashboard concurrently. Keep port 3000 free and open http://localhost:3000; if occupied, free it or use PORT=3001 npm run dev:full and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Desktop MCP hosts can set an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Node and Rust resolve version-manager executable symlinks to the same canonical target; resolution failures deny inspection and PID, start time and parent checks remain strict. Restart the updated daemon. Run npm run test:sim for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable observational JSONL, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
     question: 'How do I run the project locally?',
   },
   {
@@ -582,6 +582,15 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     absolute <code>KRYPTON_PROJECT_ROOT</code> and pass a literal argument array.
                     Stdio is inherited, no shell expansion is performed, and supervisor diagnostics
                     use stderr so MCP stdout remains intact.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    Executable symlinks used by version managers such as fnm, nvm and Homebrew
+                    resolve to the same canonical target in Node and Rust. PID, start time and
+                    parent remain strict. Resolution failures deny inspection. The daemon pins the
+                    inspected target before later revalidation, so a changed live executable cannot
+                    inherit registration. Reuse the original registered client identity for
+                    isolation, cleanup and receipts, even if the alias disappears. Restart the
+                    daemon after updating.
                   </p>
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
                     The supervisor registers only the initial child, forwards SIGINT/SIGTERM, and

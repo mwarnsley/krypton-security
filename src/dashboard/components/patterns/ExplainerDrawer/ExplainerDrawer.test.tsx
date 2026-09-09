@@ -237,6 +237,17 @@ describe('ExplainerDrawer', () => {
     );
   });
 
+  it('documents executable symlink identity without weakening generation checks', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(screen.getByText(/Executable symlinks used by version managers/).textContent).toContain(
+      'PID, start time and parent remain strict'
+    );
+    expect(screen.getByText(/Executable symlinks used by version managers/).textContent).toContain(
+      'Resolution failures deny inspection'
+    );
+  });
+
   it('documents the supervisor and evidence limits in setup', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

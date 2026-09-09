@@ -65,9 +65,17 @@ impl TerminationReceipts {
     }
 }
 
+/// Keep the caller's identity for cleanup/receipts and pin the independently
+/// inspected canonical identity. Never re-resolve a stored alias before signaling.
+#[derive(Clone, Debug)]
+struct RegisteredProcess {
+    supplied: ProcessIdentity,
+    canonical: ProcessIdentity,
+}
+
 #[derive(Debug, Default)]
 struct RegistryState {
-    processes: HashMap<u32, ProcessIdentity>,
+    processes: HashMap<u32, RegisteredProcess>,
     receipts: TerminationReceipts,
 }
 
@@ -104,7 +112,17 @@ impl ProcessRegistry {
         let live = inspector
             .inspect(supplied.pid)
             .map_err(RegistryError::Inspector)?;
-        if live != supplied {
+        // The inspector supplies a canonical live path. Resolve only a differing
+        // client spelling; PID, start time, and parent remain strictly equal.
+        // Failure to resolve an alias denies registration, with no raw fallback.
+        if live.pid != supplied.pid
+            || live.start_time != supplied.start_time
+            || live.parent_pid != supplied.parent_pid
+            || (live.executable_path != supplied.executable_path
+                && (!supplied.executable_path.is_absolute()
+                    || std::fs::canonicalize(&supplied.executable_path)
+                        .map_or(true, |path| path != live.executable_path)))
+        {
             return Err(RegistryError::IdentityMismatch);
         }
         let mut state = self
@@ -115,7 +133,13 @@ impl ProcessRegistry {
             return Err(RegistryError::AlreadyRegistered);
         }
         state.receipts.remove(&supplied);
-        state.processes.insert(supplied.pid, supplied);
+        state.processes.insert(
+            supplied.pid,
+            RegisteredProcess {
+                supplied,
+                canonical: live,
+            },
+        );
         Ok(())
     }
 
@@ -125,7 +149,7 @@ impl ProcessRegistry {
             .try_write()
             .map_err(|_| RegistryError::RegistryUnavailable)?;
         match state.processes.get(&supplied.pid) {
-            Some(registered) if registered == supplied => {
+            Some(registered) if &registered.supplied == supplied => {
                 state.processes.remove(&supplied.pid);
                 Ok(())
             }
@@ -157,23 +181,23 @@ impl ProcessRegistry {
             .get(&supplied.pid)
             .cloned()
             .ok_or(RegistryError::NotRegistered)?;
-        if &registered != supplied {
+        if &registered.supplied != supplied {
             return Err(RegistryError::IdentityMismatch);
         }
         let live = match inspector.inspect(supplied.pid) {
             Ok(identity) => identity,
             Err(ProcessIdentityError::NotRunning) => {
-                state.processes.remove(&registered.pid);
+                state.processes.remove(&registered.canonical.pid);
                 return Err(RegistryError::StaleProcess);
             }
             Err(error) => return Err(RegistryError::Inspector(error)),
         };
-        if live != registered {
-            state.processes.remove(&registered.pid);
+        if live != registered.canonical {
+            state.processes.remove(&registered.canonical.pid);
             return Err(RegistryError::StaleProcess);
         }
         signal(supplied.pid).map_err(RegistryError::SignalFailed)?;
-        state.receipts.record(registered, Instant::now());
+        state.receipts.record(registered.supplied, Instant::now());
         state.processes.remove(&supplied.pid);
         Ok(())
     }
@@ -204,6 +228,133 @@ mod tests {
             start_time,
             executable_path: PathBuf::from("/usr/bin/node"),
             parent_pid: Some(4000),
+        }
+    }
+
+    /// Owns only an exclusively created temporary directory; signals stay mocked.
+    struct ExecutableFixture(PathBuf);
+    impl ExecutableFixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "krypton-executable-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&root).unwrap();
+            let fixture = Self(std::fs::canonicalize(root).unwrap());
+            std::fs::write(fixture.0.join("node"), b"fixture").unwrap();
+            std::os::unix::fs::symlink(fixture.0.join("node"), fixture.0.join("shim")).unwrap();
+            fixture
+        }
+        fn live(&self) -> ProcessIdentity {
+            ProcessIdentity {
+                executable_path: self.0.join("node"),
+                ..identity(10)
+            }
+        }
+        fn supplied(&self) -> ProcessIdentity {
+            ProcessIdentity {
+                executable_path: self.0.join("shim"),
+                ..identity(10)
+            }
+        }
+    }
+    impl Drop for ExecutableFixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn registers_a_symlink_to_the_live_canonical_executable() {
+        let fixture = ExecutableFixture::new();
+        let registry = ProcessRegistry::default();
+        assert_eq!(
+            registry.register(fixture.supplied(), &Inspector(Ok(fixture.live()))),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn symlink_registration_preserves_unregister_identity_after_link_removal() {
+        let fixture = ExecutableFixture::new();
+        let registry = ProcessRegistry::default();
+        registry
+            .register(fixture.supplied(), &Inspector(Ok(fixture.live())))
+            .unwrap();
+        std::fs::remove_file(fixture.0.join("shim")).unwrap();
+        assert_eq!(registry.unregister(&fixture.supplied()), Ok(()));
+    }
+
+    #[test]
+    fn symlink_registration_preserves_receipt_identity_after_link_removal() {
+        let fixture = ExecutableFixture::new();
+        let registry = ProcessRegistry::default();
+        registry
+            .register(fixture.supplied(), &Inspector(Ok(fixture.live())))
+            .unwrap();
+        std::fs::remove_file(fixture.0.join("shim")).unwrap();
+        assert_eq!(
+            registry.isolate_with(&fixture.supplied(), &Inspector(Ok(fixture.live())), |_| Ok(
+                ()
+            )),
+            Ok(())
+        );
+        assert_eq!(registry.termination_receipt(&fixture.supplied()), Ok(true));
+    }
+
+    #[test]
+    fn retargeted_symlink_cannot_replace_the_registered_executable() {
+        let fixture = ExecutableFixture::new();
+        let registry = ProcessRegistry::default();
+        registry
+            .register(fixture.supplied(), &Inspector(Ok(fixture.live())))
+            .unwrap();
+        std::fs::write(fixture.0.join("other"), b"other fixture").unwrap();
+        std::fs::remove_file(fixture.0.join("shim")).unwrap();
+        std::os::unix::fs::symlink(fixture.0.join("other"), fixture.0.join("shim")).unwrap();
+        let changed = ProcessIdentity {
+            executable_path: fixture.0.join("other"),
+            ..fixture.live()
+        };
+        assert_eq!(
+            registry.isolate_with(&fixture.supplied(), &Inspector(Ok(changed)), |_| panic!(
+                "must not signal"
+            )),
+            Err(RegistryError::StaleProcess)
+        );
+        assert_eq!(registry.termination_receipt(&fixture.supplied()), Ok(false));
+    }
+
+    #[test]
+    fn symlink_equivalence_never_relaxes_other_identity_fields() {
+        let fixture = ExecutableFixture::new();
+        let mut variants = vec![fixture.supplied(); 3];
+        variants[0].pid += 1;
+        variants[1].start_time += 1;
+        variants[2].parent_pid = None;
+        for supplied in variants {
+            assert_eq!(
+                ProcessRegistry::default().register(supplied, &Inspector(Ok(fixture.live()))),
+                Err(RegistryError::IdentityMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn missing_or_different_executable_cannot_register() {
+        let fixture = ExecutableFixture::new();
+        std::fs::write(fixture.0.join("other"), b"other fixture").unwrap();
+        for name in ["missing", "other"] {
+            let supplied = ProcessIdentity {
+                executable_path: fixture.0.join(name),
+                ..fixture.supplied()
+            };
+            assert_eq!(
+                ProcessRegistry::default().register(supplied, &Inspector(Ok(fixture.live()))),
+                Err(RegistryError::IdentityMismatch)
+            );
         }
     }
 

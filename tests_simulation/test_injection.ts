@@ -55,6 +55,7 @@ async function runSupervisorSimulation(root: string): Promise<void> {
     })
   );
   const dispatch = (command: Record<string, unknown>) => dispatchNativeControl(command, root);
+  const symlinkedNode = path.join(root, 'version-manager-node');
   const target = `
     process.on('SIGTERM', () => process.exit(23));
     console.log(JSON.stringify({pid:process.pid,args:process.argv.slice(1),cwd:process.cwd()}));
@@ -77,7 +78,7 @@ async function runSupervisorSimulation(root: string): Promise<void> {
           path.join(REPOSITORY, 'src/cli.cjs'),
           'run',
           '--',
-          process.execPath,
+          symlinkedNode,
           '-e',
           target,
           '--',
@@ -188,7 +189,7 @@ async function runSupervisorSimulation(root: string): Promise<void> {
     assert.equal((await dispatch({ type: 'health' })).activeProcessCount, 0);
   }
   console.log(
-    '[PASS] krypton run: literal arguments, MCP stdout, exit codes, SIGTERM, authenticated enforcement and unknown SIGKILL'
+    '[PASS] krypton run: symlinked executable, literal arguments, MCP stdout, exit codes, SIGTERM, authenticated enforcement and unknown SIGKILL'
   );
 }
 
@@ -246,8 +247,10 @@ async function runInjectionSimulation(): Promise<void> {
     assert.equal(discovery.endpoint, path.join(root, '.krypton/runtime/daemon.sock'));
     assert.equal(discovery.capabilityFile, path.join(root, '.krypton/runtime/capability'));
     const dispatch = (command: Record<string, unknown>) => dispatchNativeControl(command, root);
+    const symlinkedNode = path.join(root, 'version-manager-node');
+    await fs.symlink(await fs.realpath(process.execPath), symlinkedNode);
     child = spawn(
-      process.execPath,
+      symlinkedNode,
       [
         '-e',
         "process.on('message', targetPath => process.send({type:'path_attempt', targetPath})); setInterval(() => {}, 1000)",
@@ -262,7 +265,10 @@ async function runInjectionSimulation(): Promise<void> {
     });
     await once(child, 'spawn');
     assert.ok(child.pid);
-    const identity = await inspectProcessIdentity(child.pid);
+    const inspectedIdentity = await inspectProcessIdentity(child.pid);
+    assert.equal(inspectedIdentity.executablePath, await fs.realpath(process.execPath));
+    // An authenticated client may supply the executed alias; Rust pins the live canonical target.
+    const identity = { ...inspectedIdentity, executablePath: symlinkedNode };
     const registered = await dispatch({ type: 'register_process', process: identity });
     assert.equal(registered.code, 'process_registered');
     assert.equal(registered.ok, true);

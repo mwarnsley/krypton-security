@@ -18,6 +18,7 @@ pub enum ProcessIdentityError {
     ExecutableUnavailable,
 }
 
+/// Inspectors return a canonical executable path or reject unavailable identity.
 pub trait ProcessInspector: Send + Sync {
     fn inspect(&self, pid: u32) -> Result<ProcessIdentity, ProcessIdentityError>;
 }
@@ -37,10 +38,13 @@ impl ProcessInspector for SystemProcessInspector {
         let process = system
             .process(native_pid)
             .ok_or(ProcessIdentityError::NotRunning)?;
-        let executable_path = process
+        let raw_path = process
             .exe()
-            .ok_or(ProcessIdentityError::ExecutableUnavailable)?
-            .to_path_buf();
+            .ok_or(ProcessIdentityError::ExecutableUnavailable)?;
+        // Resolve version-manager symlinks just as the Node supervisor does.
+        // Never treat an unresolved path as authoritative on filesystem failure.
+        let executable_path = std::fs::canonicalize(raw_path)
+            .map_err(|_| ProcessIdentityError::ExecutableUnavailable)?;
 
         Ok(ProcessIdentity {
             pid,
