@@ -123,19 +123,19 @@ async function setupClients(options = {}) {
       file: path.join(cline, 'settings/cline_mcp_settings.json'),
     },
   ];
-  const root = await fs.realpath(path.resolve(__dirname, '../..'));
-  await fs.access(path.join(root, 'src/cli.cjs'));
-  await fs.access(path.join(root, 'src/core/mcp/server.cjs'));
+  const projectRoot = await fs.realpath(path.resolve(__dirname, '../..'));
+  await fs.access(path.join(projectRoot, 'src/cli.cjs'));
+  await fs.access(path.join(projectRoot, 'src/core/mcp/server.cjs'));
   const entry = {
     command: 'node',
     args: [
-      path.join(root, 'src/cli.cjs'),
+      path.join(projectRoot, 'src/cli.cjs'),
       'run',
       '--',
       'node',
-      path.join(root, 'src/core/mcp/server.cjs'),
+      path.resolve(projectRoot, 'src/core/mcp/server.cjs'),
     ],
-    env: { KRYPTON_PROJECT_ROOT: root },
+    env: { KRYPTON_PROJECT_ROOT: projectRoot },
   };
   const results = [];
   for (const client of clients) {

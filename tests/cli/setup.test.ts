@@ -64,6 +64,7 @@ describe('universal client setup', () => {
     await fs.writeFile(file, original);
     const results = await setupClients({ homeDir, platform: 'darwin' });
     const updated = JSON.parse(await fs.readFile(file, 'utf8'));
+    const projectRoot = await fs.realpath(process.cwd());
     expect(results.find((row) => row.client === client)?.status).toBe('configured');
     expect(updated).toMatchObject({
       theme: 'system',
@@ -71,7 +72,14 @@ describe('universal client setup', () => {
         other: { command: 'other' },
         'krypton-protected-fs': {
           command: 'node',
-          env: { KRYPTON_PROJECT_ROOT: await fs.realpath(process.cwd()) },
+          args: [
+            path.join(projectRoot, 'src/cli.cjs'),
+            'run',
+            '--',
+            'node',
+            path.resolve(projectRoot, 'src/core/mcp/server.cjs'),
+          ],
+          env: { KRYPTON_PROJECT_ROOT: projectRoot },
         },
       },
     });
