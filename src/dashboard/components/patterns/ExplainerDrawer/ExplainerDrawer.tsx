@@ -139,7 +139,7 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
     status: 'In progress',
     summary:
-      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. The npm run build:mcpb generator creates a local extension archive. CI and tagged draft-release workflows are defined for macOS binaries, MCPB and checksums; hosted execution, owner-managed branch protection, real client UI verification and the 60-second evaluation target remain outstanding. Portable watcher evidence remains observational.',
+      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The source-mode npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. The standalone MCPB packages arm64 and x64 daemons, supervises the selected daemon and has a bounded isolated npm run test:mcpb harness. CI and tagged draft-release workflows are defined for exact-byte bundle assembly, both-host packaged E2E and checksums; hosted execution, owner-managed branch protection, clean-machine Claude Desktop verification and the 60-second evaluation target remain outstanding. Portable watcher evidence remains observational.',
     title: 'Phase 1 · Local Verification, Containment & Release Hardening (v1.0.0)',
   },
   {
@@ -180,12 +180,12 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: 'How do I verify a Krypton release?',
     answer:
-      'Tagged-release automation drafts Intel and Apple Silicon daemon binaries, the MCPB bundle and SHA-256 checksum files after CI succeeds. Download the assets and SHA256SUMS into one directory, then run shasum -a 256 -c SHA256SUMS before use. Artifacts remain unsigned; checksums do not authenticate the publisher. Maintainer review and final publication remain manual. Main branch protection requires owner activation; workflow files alone do not enable it. Hosted workflow execution and live desktop QA still need verification. The MCPB requires a configured checkout and running native daemon.',
+      'Tagged-release automation runs the reusable Phase 1 verification job, builds arm64 and x86_64 daemon artifacts, assembles one MCPB from those downloaded bytes, byte-compares both embedded binaries, and runs packaged E2E on matching macOS arm64 and x86_64 hosts before drafting a release. Download the three primary assets and SHA256SUMS into one directory, then run shasum -a 256 -c SHA256SUMS before use. Artifacts remain unsigned and unnotarized; checksums do not authenticate the publisher, and Gatekeeper behavior needs manual verification. Maintainer review, manual clean-machine Claude Desktop QA, signing/notarization and final publication remain release gates. Main branch protection requires owner activation; workflow files alone do not enable it. Hosted workflow execution still needs verification after the changes are pushed.',
   },
   {
     question: 'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
     answer:
-      'Close clients and run npm run setup, or krypton setup after npm link. Setup detects existing client storage on macOS/Linux, atomically backs up existing JSON to .bak, preserves other servers and installs krypton-protected-fs through the supervisor with canonical paths and KRYPTON_PROJECT_ROOT. Invalid JSON, symlinks and conflicting Krypton entries fail per client; identical entries are skipped. Start or restart the updated daemon with npm run dev:full, ensure node is on the GUI client PATH, and restart configured clients. Linux storage detection does not imply supported native Linux enforcement. Alternatively, npm run build:mcpb creates dist/krypton-protected-fs.mcpb for a compatible macOS client. Select the Krypton checkout directory during installation and keep its native daemon running. The unsigned bundle includes JavaScript dependencies, not the daemon or local runtime state; desktop installation still requires manual QA. Its launcher uses the host Node executable. Avoid enabling duplicate Krypton servers. Only krypton_read_file and krypton_write_file are contained; built-in tools are not intercepted.',
+      'Download krypton-protected-fs.mcpb from https://github.com/mwarnsley/krypton-security/releases, then open Claude Desktop Settings, choose Extensions under This computer, and add the file. protected_workspace_root is optional; select an existing directory to protect, or leave it blank to create and protect ~/Library/Application Support/KryptonSecurity/sandbox_workspace. The launcher selects the bundled arm64 or x64 daemon, installs a verified private copy, and starts, supervises and stops that exact child with the MCP session. This route needs no repository checkout or Rust toolchain. Standalone telemetry remains local at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. The MCPB does not include or launch the Next.js dashboard. Only krypton_read_file and krypton_write_file are contained; built-in Claude tools remain outside this boundary. The bundle is unsigned and unnotarized, and manual clean-machine Claude Desktop QA remains a release gate. Source users can instead run npm run setup, or krypton setup after npm link; that checkout flow keeps KRYPTON_PROJECT_ROOT, requires a separately running daemon and can configure Claude Desktop, Cursor, Claude Code or Cline. Avoid enabling duplicate Krypton servers.',
   },
   {
     question: 'What happens when a Krypton MCP file tool crosses the boundary?',
@@ -209,7 +209,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Core security decisions do not send source code, files, or telemetry to cloud services. Native events stay in the bounded local .krypton/telemetry/alerts.jsonl ledger. The dashboard includes an external GitHub link that opens only when selected, and demonstration rows are explicitly mock data.',
+      'Core security decisions do not send source code, files, or telemetry to cloud services. Checkout native events stay in the bounded local .krypton/telemetry/alerts.jsonl ledger. Standalone MCPB events stay beneath ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. The dashboard includes an external GitHub link that opens only when selected, and demonstration rows are explicitly mock data.',
     question: 'Does Krypton send my code, files, or telemetry to the cloud?',
   },
   {
@@ -555,6 +555,24 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   1.97.0-aarch64-apple-darwin on Apple Silicon. macOS native builds also require
                   Apple command-line developer tools.
                 </p>
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Claude Desktop release install
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    Download <code>krypton-protected-fs.mcpb</code> from GitHub Releases. In Claude
+                    Desktop, open Settings, choose Extensions under This computer, and add the file.
+                    The optional <code>protected_workspace_root</code> selects an existing protected
+                    directory. A blank value creates{' '}
+                    <code>~/Library/Application Support/KryptonSecurity/sandbox_workspace</code>.
+                    The standalone macOS bundle selects its arm64 or x64 daemon and supervises that
+                    exact child for the MCP session, so this install does not need a repository
+                    checkout or Rust toolchain. It contains only the two Krypton MCP file tools and
+                    does not launch the Next.js dashboard. The artifacts are unsigned and
+                    unnotarized; Gatekeeper behavior and clean-machine Claude Desktop installation
+                    remain manual release checks.
+                  </p>
+                </aside>
                 <ol className="mt-5 space-y-krypton-space-3">
                   {SETUP_STEPS.map(([title, command]) => (
                     <li

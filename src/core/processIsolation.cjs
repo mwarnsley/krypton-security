@@ -230,19 +230,19 @@ async function readNativeFile(file) {
 }
 
 /**
- * Dispatches one authenticated, versioned command to the workspace daemon.
+ * Dispatches one authenticated, versioned command to the selected local daemon.
  * Discovery accepts redundant dot segments only for the exact expected absolute
  * runtime files; parent traversal and redirects are rejected before any IPC.
  *
  * @param {Record<string, unknown>} command - The narrow native command payload.
- * @param {string} projectRoot - Explicit trusted project root; defaults to startup working directory.
+ * @param {string} runtimeHome - Absolute directory owning `.krypton`; defaults to startup working directory.
  * @returns {Promise<Record<string, unknown>>} The validated bounded native response object.
  * @complexity O(L) time and space for bounded request and response length L.
  * @example
  * await dispatchNativeControl({ type: "health" });
  * // => { ok: true, code: "ready" }
  */
-async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
+async function dispatchNativeControl(command, runtimeHome = PROJECT_ROOT) {
   const controller = new AbortController();
   let timer;
   const deadline = new Promise((_, reject) => {
@@ -253,7 +253,7 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
   });
   try {
     return await Promise.race([
-      dispatchNativeRequest(command, projectRoot, controller.signal),
+      dispatchNativeRequest(command, runtimeHome, controller.signal),
       deadline,
     ]);
   } catch (error) {
@@ -264,15 +264,15 @@ async function dispatchNativeControl(command, projectRoot = PROJECT_ROOT) {
 }
 
 /**
- * Reads and validates bounded workspace-specific discovery metadata.
- * @param {string} projectRoot - Trusted workspace root.
+ * Reads and validates bounded discovery metadata without requiring checkout markers.
+ * @param {string} runtimeHome - Absolute trusted directory owning `.krypton`.
  * @returns {Promise<Record<string, unknown>>} Validated discovery record or typed rejection.
  * @complexity O(L) time and space for bounded paths and metadata L.
- * @example await discoverNativeEndpoint('/project');
+ * @example await discoverNativeEndpoint('/private/instance');
  */
-async function discoverNativeEndpoint(projectRoot = PROJECT_ROOT) {
+async function discoverNativeEndpoint(runtimeHome = PROJECT_ROOT) {
   try {
-    const runtimeRoot = path.resolve(projectRoot, '.krypton/runtime');
+    const runtimeRoot = path.resolve(runtimeHome, '.krypton/runtime');
     const endpoint = JSON.parse(await readNativeFile(path.join(runtimeRoot, 'daemon.json')));
     if (
       endpoint === null ||
@@ -301,15 +301,15 @@ async function discoverNativeEndpoint(projectRoot = PROJECT_ROOT) {
 /**
  * Performs one cancellable native exchange under the caller's absolute deadline.
  * @param {Record<string, unknown>} command - Native command payload.
- * @param {string} projectRoot - Trusted workspace root.
+ * @param {string} runtimeHome - Absolute trusted directory owning `.krypton`.
  * @param {AbortSignal} signal - Deadline cancellation signal.
  * @returns {Promise<Record<string, unknown>>} Validated response or rejection.
  * @complexity O(L) time and space for bounded metadata and wire length L.
  * @example await dispatchNativeRequest({ type: 'health' }, '/project', signal);
  */
-async function dispatchNativeRequest(command, projectRoot, signal) {
-  const runtimeRoot = path.resolve(projectRoot, '.krypton/runtime');
-  await discoverNativeEndpoint(projectRoot);
+async function dispatchNativeRequest(command, runtimeHome, signal) {
+  const runtimeRoot = path.resolve(runtimeHome, '.krypton/runtime');
+  await discoverNativeEndpoint(runtimeHome);
   signal.throwIfAborted();
   // Use trusted normalized destinations, not the raw discovery strings, for I/O.
   const socketPath = path.resolve(runtimeRoot, 'daemon.sock');

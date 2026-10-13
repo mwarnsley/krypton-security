@@ -12,7 +12,7 @@ export class NativeControlError extends Error {
   constructor(code: NativeControlErrorCode, message: string);
 }
 export const NATIVE_TIMEOUT_MS: 1500;
-export function discoverNativeEndpoint(projectRoot?: string): Promise<Record<string, unknown>>;
+export function discoverNativeEndpoint(runtimeHome?: string): Promise<Record<string, unknown>>;
 
 export interface ProcessIdentityPayload {
   executablePath: string;
@@ -30,7 +30,7 @@ export interface ProtectedChildLifecycle {
 
 export function dispatchNativeControl(
   command: Record<string, unknown>,
-  projectRoot?: string
+  runtimeHome?: string
 ): Promise<Record<string, unknown>>;
 export function getActiveWorkspaceProcessCount(): number;
 export function inspectProcessIdentity(pid: number): Promise<ProcessIdentityPayload>;

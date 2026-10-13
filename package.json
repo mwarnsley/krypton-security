@@ -27,6 +27,7 @@
     "test:rust": "cargo test --manifest-path src/core-native/Cargo.toml --all-targets --all-features",
     "test:sim": "ts-node tests_simulation/test_injection.ts",
     "test:e2e": "node src/testing/e2e.cjs",
+    "test:mcpb": "node src/testing/mcpb_e2e.cjs",
     "test:unit": "vitest run",
     "rust:fmt": "cargo fmt --manifest-path src/core-native/Cargo.toml -- --check",
     "rust:clippy": "cargo clippy --manifest-path src/core-native/Cargo.toml --all-targets --all-features -- -D warnings",

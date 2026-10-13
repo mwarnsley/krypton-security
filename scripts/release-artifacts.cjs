@@ -25,7 +25,7 @@ class ReleaseError extends Error {
 
 /**
  * Requires a canonical v-prefixed SemVer tag matching package.json byte for byte.
- * No normalization or numeric conversion is permitted. Inputs are limited to 256 bytes.
+ * No normalization or numeric conversion is permitted. Versions are at most 128 ASCII bytes.
  * @param {unknown} tag - Release tag from trusted workflow environment.
  * @param {unknown} version - Root package version.
  * @returns {string} Validated package version; throws ReleaseError on rejection.
@@ -34,8 +34,8 @@ function validateReleaseTag(tag, version) {
   if (
     typeof tag !== 'string' ||
     typeof version !== 'string' ||
-    tag.length > 256 ||
-    version.length > 255 ||
+    tag.length > 129 ||
+    version.length > 128 ||
     !/^[\x21-\x7e]+$/.test(tag) ||
     !/^[\x21-\x7e]+$/.test(version) ||
     !SEMVER.test(version) ||

@@ -2,8 +2,8 @@
 
 const MAX_ENTRIES = 2048;
 const MAX_NAME_BYTES = 1024;
-const MAX_FILE_BYTES = 1024 * 1024;
-const MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
+const MAX_FILE_BYTES = 128 * 1024 * 1024;
+const MAX_PAYLOAD_BYTES = 256 * 1024 * 1024;
 const UTF8_FLAG = 0x0800;
 const DOS_DATE = 0x0021; // 1980-01-01; zero DOS time is midnight.
 

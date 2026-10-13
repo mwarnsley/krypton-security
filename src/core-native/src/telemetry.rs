@@ -96,6 +96,7 @@ pub struct TelemetryLedger {
     event_count: AtomicUsize,
     last_sequence: Mutex<u64>,
     health: Arc<RwLock<LedgerHealth>>,
+    _instance_lock: Option<fs::File>,
 }
 
 impl TelemetryLedger {
@@ -150,10 +151,24 @@ impl TelemetryLedger {
             event_count: AtomicUsize::new(events.len()),
             last_sequence: Mutex::new(last_sequence),
             health: Arc::new(RwLock::new(LedgerHealth::Ready)),
+            _instance_lock: None,
         };
         if events.len() > max_events || fs::metadata(&ledger.path)?.len() > max_bytes {
             ledger.compact(events)?;
         }
+        Ok(ledger)
+    }
+
+    /// Retains already acquired instance ownership through the last ledger
+    /// reference, including queued-event drain after the owning runtime returns.
+    pub fn open_with_instance_lock(
+        path: PathBuf,
+        max_events: usize,
+        max_bytes: u64,
+        instance_lock: Option<fs::File>,
+    ) -> io::Result<Self> {
+        let mut ledger = Self::open(path, max_events, max_bytes)?;
+        ledger._instance_lock = instance_lock;
         Ok(ledger)
     }
 

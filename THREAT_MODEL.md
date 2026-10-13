@@ -21,6 +21,24 @@ A root/admin attacker—or a same-user attacker able to read daemon memory, alte
 files, attach a debugger, or replace the launcher—can bypass Krypton. Krypton is
 not an isolation boundary against the account that owns it.
 
+The standalone MCPB adds two local trust boundaries. The downloaded archive is
+unsigned and unnotarized, so its embedded SHA-256 metadata detects corruption or
+inconsistent extraction but does not authenticate the publisher. After checksum
+verification, the launcher accepts only the bundled Mach-O matching macOS arm64
+or x64, verifies its size, digest, and CPU type, and atomically installs a private
+copy. Gatekeeper behavior and clean-machine Claude Desktop installation remain
+manual release checks.
+
+Persistent standalone state lives beneath
+`~/Library/Application Support/KryptonSecurity`. Sensitive descendants require
+current-user ownership, directories use `0700`, regular files use their required
+private modes, and symlink, non-directory, foreign-owner, or group/other-writable
+components fail closed without repair. A fixed SHA-256 workspace ID prevents raw
+workspace paths from becoming instance filenames. Authenticated discovery uses a
+separate private short path under the macOS temporary directory to satisfy Unix
+socket path limits. Same-user replacement between filesystem syscalls remains
+outside a kernel-enforced boundary.
+
 ## Process ownership and PID reuse
 
 The daemon never authorizes a PID alone. Registration and isolation compare PID,
@@ -37,10 +55,11 @@ checks it on every versioned JSON Lines request. Peer credentials must resolve t
 the daemon user on supported Unix targets. Audit-mode changes receive the same
 authentication as registration and isolation.
 
-Requests and responses are limited to 16 KiB, reads/writes time out after two
-seconds, four workers consume a 32-connection queue, and unknown versions or
-commands are rejected. The capability is local bearer material; a same-user
-attacker that can read the private file can authenticate.
+Requests and responses are limited to 16 KiB. Each client exchange has a 1500 ms
+absolute deadline, and accepted native sockets inherit the remaining request
+budget rather than renewing it per byte. Four workers consume a 32-connection
+queue, and unknown versions or commands are rejected. The capability is local
+bearer material; a same-user attacker that can read the private file can authenticate.
 
 ## Filesystem attribution and enforcement limits
 
@@ -83,6 +102,25 @@ file tools now use directory-handle access as described below; broader kernel
 permission adapters remain future work.
 
 ## MCP tools and client configuration
+
+The released macOS MCPB declares an optional `protected_workspace_root`. A valid
+nonblank value must name an existing canonical directory. Missing, empty, or
+Unicode-whitespace-only input creates and protects
+`~/Library/Application Support/KryptonSecurity/sandbox_workspace`; invalid
+nonblank input stops startup. Standalone mode has no project-root or repository
+marker dependency. Source client setup remains a separate checkout flow using an
+absolute `KRYPTON_PROJECT_ROOT`.
+
+The standalone launcher publishes a bounded private absolute-path configuration,
+spawns only the verified installed daemon with `--standalone-config`, and requires
+authenticated healthy readiness before serving MCP. One persistent per-workspace
+kernel lock prevents multiple standalone daemons even if temporary runtime paths
+differ. EOF, SIGINT, SIGTERM, MCP failure, readiness failure, or daemon exit enters
+one bounded cleanup path: signal authority comes only from the exact spawned child
+object, never a PID read from discovery. Cleanup sends TERM, waits at most two
+seconds, escalates that child to KILL, and waits at most two more seconds. A cleanup
+failure produces a nonzero result. The MCPB does not include or launch the Next.js
+dashboard.
 
 `krypton setup` is an explicit operator action outside the enforcement loop.
 It detects existing client storage, bounds settings JSON to 4 MiB, creates
@@ -145,6 +183,13 @@ or encrypted. Compaction and private IPC-file publication use exclusively create
 Existing temporary paths, including symlinks, fail closed and require operator
 inspection; they are never automatically followed or overwritten.
 
+Source mode stores the ledger at `.krypton/telemetry/alerts.jsonl`. Standalone
+mode stores it outside the protected workspace at
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+The private runtime configuration and instance ownership lock remain alongside
+that persistent state; the capability, endpoint, and socket remain in the short
+private temporary runtime home. Neither layout sends telemetry remotely.
+
 The alert queue (1,024), IPC queue (32), worker count (4), IPC sizes (16 KiB),
 API page size (250), ledger read window (1 MiB), and client rows (500) are
 bounded. Saturation may drop telemetry or delay clients; it must not expand
@@ -196,7 +241,11 @@ identities.
 
 ## Platform scope
 
-macOS and Linux support the current Unix socket and signal model. Windows native
-control is intentionally unsupported until restrictive named-pipe ACLs and a
-process-generation adapter exist. Container, network filesystem, and privileged
-service deployments require separate validation.
+The standalone MCPB is scoped to macOS arm64 and x64. Source-mode macOS native
+control is actively supported; Linux retains the Unix socket and signal model but
+remains experimental. Windows native control is intentionally unsupported until
+restrictive named-pipe ACLs and a process-generation adapter exist. The MCPB
+contains only the two Krypton MCP file tools; built-in Claude filesystem, shell,
+network, and descendant-process behavior is outside its containment boundary.
+Container, network filesystem, and privileged service deployments require
+separate validation.

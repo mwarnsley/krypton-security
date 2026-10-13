@@ -15,8 +15,14 @@ export type McpResponse = {
   | { error: { code: -32700 | -32600 | -32601 | -32602 | -32603; message: string }; result?: never }
 );
 export interface SessionOptions {
+  /** Absolute directory owning `.krypton`; takes precedence over the checkout alias. */
+  runtimeHome?: string;
+  /** Legacy checkout alias; precedes both runtime-home and project-root environment overrides. */
   projectRoot?: string;
-  dispatch?: (command: Record<string, unknown>, root: string) => Promise<Record<string, unknown>>;
+  dispatch?: (
+    command: Record<string, unknown>,
+    runtimeHome: string
+  ) => Promise<Record<string, unknown>>;
 }
 export function createSession(options?: SessionOptions): {
   handle(message: unknown): Promise<McpResponse | undefined>;

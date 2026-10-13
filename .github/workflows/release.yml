@@ -35,14 +35,9 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           npm run release:validate
-          if [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" != "$(git rev-parse HEAD)" ]]; then
+          if [[ "$(git rev-parse "${RELEASE_TAG}^{commit}")" != "$(git rev-parse HEAD)" ]]; then
             echo 'Release tag no longer matches the verified commit.' >&2
             exit 1
-          fi
-          prerelease_args=()
-          version_without_metadata="${RELEASE_TAG%%+*}"
-          if [[ "$version_without_metadata" == *-* ]]; then
-            prerelease_args+=(--prerelease)
           fi
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
 
@@ -96,9 +91,106 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  bundle:
+    name: Assemble standalone MCP bundle
+    needs: [verification, native]
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Configure pinned Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Configure pinned npm
+        run: |
+          npm install --global npm@10.8.2
+          node --version
+          npm --version
+          command -v unzip
+          command -v cmp
+      - name: Install dependencies reproducibly
+        run: npm ci
+      - name: Download native release binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: krypton-native-*
+          path: dist/native
+          merge-multiple: true
+      - name: Assemble standalone MCP bundle
+        run: npm run build:mcpb
+      - name: Verify bundle integrity and embedded binaries
+        run: |
+          bundle="dist/krypton-protected-fs.mcpb"
+          verification_dir="$(mktemp -d)"
+          trap 'rm -rf "$verification_dir"' EXIT
+          unzip -t "$bundle"
+          unzip -qq "$bundle" \
+            'native/krypton-core-native-aarch64-apple-darwin' \
+            'native/krypton-core-native-x86_64-apple-darwin' \
+            -d "$verification_dir"
+          cmp "$verification_dir/native/krypton-core-native-aarch64-apple-darwin" "dist/native/krypton-core-native-aarch64-apple-darwin"
+          cmp "$verification_dir/native/krypton-core-native-x86_64-apple-darwin" "dist/native/krypton-core-native-x86_64-apple-darwin"
+      - name: Retain standalone MCP bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: krypton-mcpb
+          path: dist/krypton-protected-fs.mcpb
+          if-no-files-found: error
+          retention-days: 7
+
+  packaged_e2e:
+    name: Packaged MCPB E2E (${{ matrix.architecture }})
+    needs: bundle
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    env:
+      MCPB_HOST_ARCHITECTURE: ${{ matrix.architecture }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Configure pinned Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Configure pinned npm
+        run: |
+          npm install --global npm@10.8.2
+          node --version
+          npm --version
+      - name: Install dependencies reproducibly
+        run: npm ci
+      - name: Download assembled MCP bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: krypton-mcpb
+          path: release-artifacts
+      - name: Verify host architecture
+        run: test "$(uname -m)" = "$MCPB_HOST_ARCHITECTURE"
+      - name: Verify packaged MCP bundle end to end
+        run: npm run test:mcpb -- release-artifacts/krypton-protected-fs.mcpb
+        timeout-minutes: 10
+
   draft:
     name: Draft verified release
-    needs: [verification, native]
+    needs: [verification, native, bundle, packaged_e2e]
     runs-on: macos-14
     timeout-minutes: 10
     permissions:
@@ -134,11 +226,22 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           npm run release:validate
+          if [[ "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" != "$(git rev-parse HEAD)" ]]; then
+            echo 'Release tag moved after verification.' >&2
+            exit 1
+          fi
+          prerelease_args=()
+          version_without_metadata="${RELEASE_TAG%%+*}"
+          if [[ "$version_without_metadata" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
           cat > release-notes.md <<'NOTES'
-          Unsigned macOS native binaries and the Krypton MCP extension.
-          Verify downloaded assets using SHA256SUMS. Checksums verify integrity, not publisher identity.
-          The MCPB extension requires an existing Krypton checkout and its running native daemon.
-          Maintainer review, desktop-client QA, and publication remain manual release gates.
+          The Krypton MCPB is standalone and selects and supervises its bundled native daemon.
+          Configure the optional protected workspace; a blank value uses the private Application Support fallback workspace.
+          Containment applies to krypton_read_file and krypton_write_file; built-in Claude tools are outside Krypton's boundary.
+          The MCPB does not include the Next.js dashboard.
+          The macOS binaries and MCPB are unsigned and unnotarized. Verify downloaded assets using SHA256SUMS; checksums verify integrity, not publisher identity.
+          Maintainer review, live Claude Desktop QA, signing/notarization, and publication remain manual release gates.
           NOTES
           gh release create "$RELEASE_TAG" \
             release-artifacts/krypton-core-native-aarch64-apple-darwin \
