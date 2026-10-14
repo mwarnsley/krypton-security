@@ -4,7 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dispatchNativeControl } from '../../src/core/processIsolation.cjs';
+import { discoverNativeEndpoint, dispatchNativeControl } from '../../src/core/processIsolation.cjs';
 
 let root: string;
 let runtime: string;
@@ -68,6 +68,24 @@ function reply(overrides: Record<string, unknown> = {}) {
 }
 
 describe('native launcher IPC wire', () => {
+  it('discovers an explicit runtime home without checkout markers', async () => {
+    expect(await fs.readdir(root)).toEqual(['.krypton']);
+    expect(await discoverNativeEndpoint(root)).toMatchObject({
+      endpoint: path.join(runtime, 'daemon.sock'),
+      capabilityFile: path.join(runtime, 'capability'),
+    });
+  });
+  it('authenticates health against an explicit runtime home without checkout markers', async () => {
+    const pending = dispatchNativeControl({ type: 'health' }, root);
+    await connected();
+    reply({ code: 'ready' });
+    expect(await pending).toMatchObject({ ok: true, code: 'ready' });
+    expect(frame).toMatchObject({
+      capability: 'fake-test-capability',
+      command: { type: 'health' },
+    });
+    expect(net.createConnection).toHaveBeenCalledWith(path.join(runtime, 'daemon.sock'));
+  });
   it('accepts redundant dot segments and connects using the exact normalized runtime path', async () => {
     await fs.writeFile(
       path.join(runtime, 'daemon.json'),
@@ -131,6 +149,12 @@ describe('native launcher IPC wire', () => {
   });
   it('rejects a missing capability before connecting', async () => {
     await fs.unlink(path.join(runtime, 'capability'));
+    await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow();
+    expect(net.createConnection).not.toHaveBeenCalled();
+  });
+  it('rejects a symlink capability before connecting', async () => {
+    await fs.rename(path.join(runtime, 'capability'), path.join(runtime, 'other-capability'));
+    await fs.symlink(path.join(runtime, 'other-capability'), path.join(runtime, 'capability'));
     await expect(dispatchNativeControl({ type: 'health' }, root)).rejects.toThrow();
     expect(net.createConnection).not.toHaveBeenCalled();
   });

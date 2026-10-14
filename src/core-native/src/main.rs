@@ -30,13 +30,14 @@ compile_error!(
     "Krypton native enforcement currently supports Unix platforms only because authenticated control requires Unix-domain sockets and peer credentials"
 );
 
-use config::{load_runtime_config, resolve_repository_root, CONFIG_FILE_NAME};
+use config::{load_runtime_paths, parse_startup_mode, StartupMode, CONFIG_FILE_NAME};
 use ipc::{start_ipc, ControlState, EnforcementMode};
 use notification::{start_notification_dispatcher, MacOsNotificationDelivery};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use path_policy::{is_ignored_path, resolve_path};
 use process_identity::SystemProcessInspector;
 use process_registry::ProcessRegistry;
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
@@ -47,18 +48,6 @@ use watcher::{
     record_portable_boundary_event, FilesystemEvent, PortableAttributionAdapter,
     ProcessEventAttributionAdapter,
 };
-
-fn ensure_directory(path: &std::path::Path) -> Result<std::path::PathBuf, io::Error> {
-    fs::create_dir_all(path)?;
-    let canonical = fs::canonicalize(path)?;
-    if !canonical.is_dir() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotADirectory,
-            "configured protected workspace is not a directory",
-        ));
-    }
-    Ok(canonical)
-}
 
 fn is_rename_or_remove(kind: &EventKind) -> bool {
     matches!(
@@ -92,12 +81,27 @@ fn report_runtime_failure(
 }
 
 fn main() -> std::process::ExitCode {
-    match run() {
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    run_with_args(&args, &mut io::stderr())
+}
+
+/// Owns terminal diagnostics and exit codes; invalid arguments are rejected
+/// before looking up configuration or starting any native component.
+fn run_with_args(args: &[OsString], diagnostics: &mut impl Write) -> std::process::ExitCode {
+    let mode = match parse_startup_mode(args) {
+        Ok(mode) => mode,
+        Err(_) => {
+            if writeln!(diagnostics, "[KRYPTON] Usage: krypton-core-native [--standalone-config <absolute-private-config-path>]").is_err() {
+                return std::process::ExitCode::FAILURE;
+            }
+            return std::process::ExitCode::from(2);
+        }
+    };
+    match run(&mode) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            if report_runtime_failure(&mut io::stderr(), error.as_ref()).is_err() {
-                // Failed diagnostics remain operational failure. Do not retry
-                // a broken stderr or use default Result termination formatting.
+            if report_runtime_failure(diagnostics, error.as_ref()).is_err() {
+                // A broken diagnostic stream is a failure; never retry it.
                 return std::process::ExitCode::FAILURE;
             }
             std::process::ExitCode::FAILURE
@@ -105,22 +109,31 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let repository_root = resolve_repository_root(&std::env::current_dir()?)?;
-    let config = load_runtime_config(&repository_root)?;
-    let project_root = fs::canonicalize(repository_root.join(&config.project_root))?;
-    let protected_root = ensure_directory(&config.protected_root(&repository_root))?;
-    if protected_root == project_root {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "protected workspace must be narrower than project root",
+fn run(mode: &StartupMode) -> Result<(), Box<dyn std::error::Error>> {
+    let current_dir = std::env::current_dir()?;
+    let config = load_runtime_paths(mode, &current_dir)?;
+    // Own the persistent standalone instance before ledger open/repair or any
+    // worker startup. Keep this inode locked until the daemon returns/exits.
+    let instance_lock = config.acquire_instance_lock()?;
+    // Preserve the checkout-only project-root startup diagnostic at this
+    // boundary. All long-lived native components consume resolved paths.
+    let project_root = config.project_root.clone();
+    let protected_root = &config.protected_root;
+    let telemetry_parent = config.telemetry_file.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "telemetry destination has no parent",
         )
-        .into());
-    }
-    let ledger = Arc::new(TelemetryLedger::open(
-        config.telemetry_file(&repository_root),
+    })?;
+    let writer_instance_lock = instance_lock
+        .as_ref()
+        .map(fs::File::try_clone)
+        .transpose()?;
+    let ledger = Arc::new(TelemetryLedger::open_with_instance_lock(
+        config.telemetry_file.clone(),
         config.telemetry_max_events,
         config.telemetry_max_bytes,
+        writer_instance_lock,
     )?);
     let (telemetry_sender, _telemetry_worker) = start_writer(Arc::clone(&ledger))?;
     let (notification_dispatcher, notification_health, _notification_worker) =
@@ -128,7 +141,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let components = Arc::new(health::RuntimeHealth::default());
     let control_state = Arc::new(ControlState {
         mcp: Some(mcp::McpBoundary::new(
-            &protected_root,
+            protected_root,
             telemetry_sender.clone(),
         )?),
         registry: Arc::new(ProcessRegistry::default()),
@@ -139,7 +152,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         notification_health,
         components: Arc::clone(&components),
     });
-    let ipc = start_ipc(&config.runtime_root(&repository_root), control_state)?;
+    let ipc = start_ipc(&config.runtime_directory, control_state)?;
     let ignored_components = config.ignored_components();
     let (event_sender, event_receiver) = sync_channel::<notify::Result<Event>>(1024);
     let callback_health = Arc::clone(&components);
@@ -150,14 +163,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .store(true, Ordering::Relaxed);
         }
     })?;
-    native_watcher.watch(&protected_root, RecursiveMode::Recursive)?;
+    native_watcher.watch(protected_root, RecursiveMode::Recursive)?;
     let mut observed_root_count = 0_usize;
-    for configured_root in &config.observed_roots {
-        let observed_root = fs::canonicalize(project_root.join(configured_root))?;
+    for observed_root in &config.observed_roots {
         if observed_root == protected_root {
             continue;
         }
-        native_watcher.watch(&observed_root, RecursiveMode::Recursive)?;
+        native_watcher.watch(observed_root, RecursiveMode::Recursive)?;
         observed_root_count += 1;
     }
 
@@ -166,12 +178,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         io::stdout(),
         "[KRYPTON NATIVE] startup verification successful."
     )?;
-    writeln!(io::stdout(), "[KRYPTON NATIVE] loaded {CONFIG_FILE_NAME}.")?;
-    writeln!(
-        io::stdout(),
-        "[KRYPTON NATIVE] project root: {}",
-        project_root.display()
-    )?;
+    if let Some(project_root) = project_root {
+        writeln!(io::stdout(), "[KRYPTON NATIVE] loaded {CONFIG_FILE_NAME}.")?;
+        writeln!(
+            io::stdout(),
+            "[KRYPTON NATIVE] project root: {}",
+            project_root.display()
+        )?;
+    } else {
+        writeln!(
+            io::stdout(),
+            "[KRYPTON NATIVE] loaded standalone configuration."
+        )?;
+    }
     writeln!(
         io::stdout(),
         "[KRYPTON NATIVE] protected workspace: {}",
@@ -187,17 +206,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(event) => {
                 for event_path in event.paths {
                     if is_ignored_path(&event_path, &ignored_components)
-                        || event_path.starts_with(config.runtime_root(&repository_root))
-                        || event_path.starts_with(
-                            config
-                                .telemetry_file(&repository_root)
-                                .parent()
-                                .unwrap_or(&project_root),
-                        )
+                        || event_path.starts_with(&config.runtime_directory)
+                        || event_path.starts_with(telemetry_parent)
                     {
                         continue;
                     }
-                    let decision = match resolve_path(&protected_root, &event_path) {
+                    let decision = match resolve_path(protected_root, &event_path) {
                         Ok(decision) => decision,
                         Err(error) => {
                             components.watcher_failed.store(true, Ordering::Relaxed);
@@ -261,6 +275,105 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn standalone_instance_contention_denies_before_ledger_open() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "krypton-instance-lock-order-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
+        let instance = root.join("instance");
+        let runtime = instance.join(".krypton/runtime");
+        let config_directory = instance.join("config");
+        let protected = root.join("protected");
+        std::fs::create_dir_all(&runtime).unwrap();
+        std::fs::create_dir(&config_directory).unwrap();
+        std::fs::create_dir(&protected).unwrap();
+        for directory in [
+            &instance,
+            &instance.join(".krypton"),
+            &runtime,
+            &config_directory,
+        ] {
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let config_path = config_directory.join("runtime.json");
+        let telemetry = instance.join(".krypton/telemetry/alerts.jsonl");
+        std::fs::write(
+            &config_path,
+            serde_json::json!({
+                "schemaVersion": 1,
+                "protectedWorkspaceRoot": protected,
+                "runtimeDirectory": runtime,
+                "telemetryPath": telemetry,
+                "ignoredPaths": ["node_modules", ".git", ".krypton"],
+                "telemetryMaxEvents": 10000,
+                "telemetryMaxBytes": 8388608,
+                "rateLimitWindowSeconds": 10,
+                "rateLimitMaxBreakouts": 3
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mode = super::config::StartupMode::Standalone(config_path.clone());
+        let paths = super::config::load_runtime_paths(&mode, &root).unwrap();
+        let guard = paths.acquire_instance_lock().unwrap();
+        // Stop a regressed caller at IPC startup rather than entering its service
+        // loop: opening this directory as the runtime lock always fails closed.
+        std::fs::create_dir(runtime.join("startup.lock")).unwrap();
+        let mut output = Vec::new();
+        let status = super::run_with_args(
+            &[
+                std::ffi::OsString::from("--standalone-config"),
+                config_path.into_os_string(),
+            ],
+            &mut output,
+        );
+        let ledger_opened = telemetry.exists();
+        drop(guard);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(status, std::process::ExitCode::FAILURE);
+        assert!(
+            !ledger_opened,
+            "ledger was opened before persistent ownership"
+        );
+        let diagnostic = String::from_utf8(output).unwrap();
+        assert!(diagnostic.contains("local runtime resource busy"));
+        assert!(!diagnostic.contains(&root.to_string_lossy().into_owned()));
+    }
+
+    #[test]
+    fn invalid_startup_invocation_exits_two_without_starting_runtime() {
+        let mut output = Vec::new();
+        assert_eq!(
+            super::run_with_args(
+                &[std::ffi::OsString::from("--unknown-fake-secret")],
+                &mut output
+            ),
+            std::process::ExitCode::from(2)
+        );
+        assert!(!String::from_utf8(output).unwrap().contains("fake-secret"));
+    }
+
+    #[test]
+    fn unavailable_standalone_configuration_is_operational_failure() {
+        let mut output = Vec::new();
+        assert_eq!(
+            super::run_with_args(
+                &[
+                    std::ffi::OsString::from("--standalone-config"),
+                    std::ffi::OsString::from("/nonexistent-fake-private-config.json")
+                ],
+                &mut output
+            ),
+            std::process::ExitCode::FAILURE
+        );
+        assert!(!String::from_utf8(output).unwrap().contains("fake-private"));
+    }
+
     #[test]
     fn terminal_failure_diagnostic_redacts_untrusted_error_details() {
         let error = std::io::Error::other("fake-sensitive-config-value");

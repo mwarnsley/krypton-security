@@ -52,21 +52,34 @@ in `ROADMAP.md`.
 - Does not gate child execution until registration succeeds, automatically register
   descendant trees, attribute portable watcher events, or add kernel/network blocking.
 
-## Capability 1b: Universal setup and native MCP file tools
+## Capability 1b: Standalone bundle, source setup, and native MCP file tools
 
-- **Status:** Implemented in the source checkout; real client UI onboarding still
-  requires manual macOS QA. Linux client-path detection is supported but native
-  Linux control remains experimental.
+- **Status:** Standalone packaging and source-checkout paths are implemented for
+  macOS arm64/x64; hosted workflow execution, Gatekeeper behavior, and clean-machine
+  Claude Desktop onboarding still require manual or hosted verification. Linux
+  client-path detection is supported but native Linux control remains experimental.
 - `npm run setup` and `krypton setup` detect existing Claude Desktop, Cursor,
   Claude Code and Cline storage; atomically back up and merge bounded settings
   with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Other servers
   remain intact; malformed files, symlinks and conflicting Krypton entries fail.
-- `npm run build:mcpb` generates an unsigned, deterministic MCPB 0.3 archive at
-  `dist/krypton-protected-fs.mcpb`, with the server, supervisor, a portable Node
-  launcher and only their runtime dependencies. Installed dependency versions
-  must match the lockfile; runtime state and dev packages are excluded. The
-  macOS install form requires a checkout directory and a separately running
-  native daemon. Archive validation does not establish live desktop UI readiness.
+- `npm run build:mcpb` generates an unsigned and unnotarized deterministic MCPB
+  0.3 archive at `dist/krypton-protected-fs.mcpb`. It contains the MCP server,
+  standalone launcher, verified arm64/x64 native binaries, architecture metadata,
+  and only their runtime dependencies. Installed dependency versions must match
+  the lockfile; checkout state, telemetry, secrets, and dev packages are excluded.
+  Building requires both matching optimized native inputs. The installed bundle
+  requires no checkout or Rust toolchain and does not launch the Next.js dashboard.
+- The optional `protected_workspace_root` selects an existing canonical directory.
+  Omitted or whitespace-only input creates
+  `~/Library/Application Support/KryptonSecurity/sandbox_workspace`; invalid
+  nonblank input fails. A SHA-256 workspace ID names private persistent instance
+  state without exposing the raw workspace path in filenames.
+- The standalone launcher selects the bundled Mach-O for the host architecture,
+  verifies it before private atomic installation, publishes a private standalone
+  configuration, spawns the daemon directly, requires authenticated healthy
+  readiness, and supervises that exact child through MCP EOF, signals, daemon exit,
+  and server failure. A separate instance lock prevents concurrent daemons for one
+  workspace even when their short temporary runtime homes differ.
 - Error handling follows the mandatory three-tier contract in `AGENTS.md`:
   typed native errors, 1500 ms absolute authenticated IPC deadlines, immediate
   disconnect denial, bounded stdio output waits, and redacted CLI failures on
@@ -93,11 +106,22 @@ in `ROADMAP.md`.
   A disposable native fixture owns all runtime files and children; desktop
   notification delivery is mocked. Client installation does not intercept
   built-in tools or provide descendant control.
+- `npm run test:mcpb -- <archive>` extracts only an allowlisted archive inventory
+  into bounded temporary state, isolates HOME and working directories, and verifies
+  custom and fallback workspaces, traversal denial, durable standalone telemetry,
+  exact-child exit, and post-exit socket nonacceptance without checkout markers.
+  The private temporary runtime home may retain runtime files after shutdown. A
+  local run covers only its host architecture; release automation defines separate
+  arm64 and x86_64 jobs.
 
 ## Capability 2: Native workspace telemetry and ownership
 
 - **Status:** Implemented on macOS; experimental on Linux
 - Loads separate `projectRoot` and `protectedWorkspaceRoot` configuration.
+- Standalone mode instead loads one bounded private absolute-path configuration,
+  keeps runtime/configuration and telemetry outside the protected root, and stores
+  its bounded ledger beneath
+  `~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
 - Resolves existing, deleted, renamed, and symlinked paths through
   component-aware policy checks.
 - Records portable watcher events as explicitly `unattributed`; it never assigns
@@ -195,16 +219,20 @@ in `ROADMAP.md`.
 
 - `.github/workflows/ci.yml` defines the reusable macOS **Phase 1 verification**
   gate for main PRs/pushes: lint/typechecks, format, Clippy, Vitest/native tests,
-  simulation/E2E, builds and a zero-vulnerability npm audit including dev packages.
+  source simulation/E2E, the dashboard build, and a zero-vulnerability npm audit
+  including dev packages.
 - `.github/workflows/release.yml` validates matching SemVer tags and main ancestry,
-  runs the same gates, builds optimized Intel/Apple Silicon macOS daemons and
-  drafts a release with the tested MCPB, per-asset SHA-256 and `SHA256SUMS`.
-  Existing releases are not overwritten; publication remains manual.
+  runs the same gates, builds optimized Intel/Apple Silicon macOS daemons, downloads
+  both into one bundle job, byte-compares both embedded entries, and runs packaged
+  E2E on matching arm64/x86_64 hosts. Only then may the write-scoped draft job
+  create a release with the exact three primary assets, per-asset SHA-256 files,
+  and `SHA256SUMS`. Existing releases are not overwritten; publication remains manual.
 - `scripts/release-artifacts.cjs` bounds and verifies the exact release inventory,
   rejects redirected/modified assets and emits typed failure diagnostics.
 - `docs/RELEASE.md` specifies required main checks, owner approval/signature rules
   and least-privilege fine-grained GitHub MCP/`gh` token handling. Branch protection,
-  hosted runs, release signing and desktop QA require separate verification.
+  hosted runs, release signing/notarization, Gatekeeper behavior, and clean-machine
+  desktop QA require separate verification.
 
 ## Planned-direction boundary
 

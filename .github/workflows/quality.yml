@@ -55,9 +55,19 @@ jobs:
       - name: Test native core
         run: npm run rust:test
       - name: Install pinned Rust policy tools
-        run: cargo install cargo-audit --locked --force --version 0.22.2 && cargo install cargo-deny --locked --version 0.18.5 && cargo install cargo-cyclonedx --locked --version 0.5.7
+        run: |
+          cargo install cargo-audit --locked --force --version 0.22.2
+          cargo install cargo-deny --locked --force
+          cargo install cargo-cyclonedx --locked --version 0.5.7
+      - name: Report installed Rust policy tool versions
+        run: |
+          cargo audit --version
+          cargo deny --version
+          cargo cyclonedx --version
       - name: Audit Rust dependencies
         run: cargo audit --file src/core-native/Cargo.lock
+      - name: Clear advisory DB cache
+        run: rm -rf ~/.cargo/advisory-dbs || true
       - name: Validate Rust advisories, bans, sources, and licenses
         run: cargo deny --manifest-path src/core-native/Cargo.toml check
       - name: Generate Rust CycloneDX SBOM

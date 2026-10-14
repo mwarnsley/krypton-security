@@ -12,21 +12,34 @@ describe('ExplainerDrawer', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(screen.getByText('How do I verify a Krypton release?'));
-    const answer = screen.getByText(/Tagged-release automation drafts/);
+    const answer = screen.getByText(/Tagged-release automation runs/);
     expect(answer.textContent).toContain('shasum -a 256 -c SHA256SUMS');
     expect(answer.textContent).toContain('checksums do not authenticate the publisher');
     expect(answer.textContent).toContain('Main branch protection requires owner activation');
+    expect(answer.textContent).toContain('arm64 and x86_64');
+    expect(answer.textContent).toContain('packaged E2E');
+    expect(answer.textContent).toContain('unsigned and unnotarized');
   });
-  it('explains the bundle command and separate native daemon requirement', () => {
+  it('explains standalone Claude Desktop installation and its containment boundary', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(
       screen.getByText('How do I connect Claude Desktop, Cursor, Claude Code or Cline?')
     );
-    const answer = screen.getByText(/Alternatively, npm run build:mcpb/);
-    expect(answer.textContent).toContain('dist/krypton-protected-fs.mcpb');
-    expect(answer.textContent).toContain('keep its native daemon running');
-    expect(answer.textContent).toContain('desktop installation still requires manual QA');
+    const answer = screen.getByText(/Download krypton-protected-fs.mcpb/);
+    expect(answer.textContent).toContain('https://github.com/mwarnsley/krypton-security/releases');
+    expect(answer.textContent).toContain('protected_workspace_root');
+    expect(answer.textContent).toContain(
+      '~/Library/Application Support/KryptonSecurity/sandbox_workspace'
+    );
+    expect(answer.textContent).toContain('bundled arm64 or x64 daemon');
+    expect(answer.textContent).toContain('starts, supervises and stops');
+    expect(answer.textContent).toContain('no repository checkout or Rust toolchain');
+    expect(answer.textContent).toContain('krypton_read_file and krypton_write_file');
+    expect(answer.textContent).toContain('built-in Claude tools remain outside');
+    expect(answer.textContent).toContain('.krypton/telemetry/alerts.jsonl');
+    expect(answer.textContent).toContain('does not include or launch the Next.js dashboard');
+    expect(answer.textContent).toContain('manual clean-machine Claude Desktop QA');
   });
   it('explains bounded IPC failure and uncertain write recovery', () => {
     render(<ExplainerDrawer defaultTab="faq" />);

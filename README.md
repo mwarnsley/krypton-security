@@ -1,5 +1,58 @@
 # Krypton
 
+## Quick Start & Installation
+
+### Quick Start (Claude Desktop — Recommended)
+
+1. Download `krypton-protected-fs.mcpb` from
+   [GitHub Releases](https://github.com/mwarnsley/krypton-security/releases).
+2. In Claude Desktop, open **Settings → Extensions** under **This computer**.
+3. Add the downloaded `.mcpb` file. You may select an existing directory for
+   `protected_workspace_root`. If you omit it or leave it blank, Krypton creates
+   and protects `~/Library/Application Support/KryptonSecurity/sandbox_workspace`.
+
+The macOS bundle contains both arm64 and x64 native daemons. Its launcher selects
+the host binary, installs a verified private copy beneath Application Support,
+starts it for the MCP session, performs an authenticated readiness check, and
+stops the exact child when the session ends. This route requires no Git clone or
+Rust toolchain. It contains `krypton_read_file` and `krypton_write_file`; Claude's
+built-in filesystem, shell, and network tools remain outside Krypton's boundary.
+The standalone bundle does not include or launch the Next.js dashboard.
+
+The release artifacts are currently unsigned and unnotarized. Gatekeeper
+behavior and installation in a clean-machine Claude Desktop environment remain
+manual release gates; verify the release checksums before use.
+
+### Developer / Source Setup
+
+Source development requires Node.js 20.19.4, npm 10.x, Rust 1.97.0 through
+`rustup`, and the macOS command-line developer tools:
+
+```bash
+git clone https://github.com/mwarnsley/krypton-security.git
+cd krypton-security
+npm ci
+npm run setup
+npm run dev:full
+```
+
+The checkout setup path configures detected clients with an absolute
+`KRYPTON_PROJECT_ROOT`. `npm run dev:full` launches the native daemon and the
+local Next.js telemetry dashboard at <http://localhost:3000>.
+
+### Verifying Installation (Smoke Test)
+
+Ask Claude to use the installed Krypton tool:
+
+> Use krypton_read_file to read ../outside.txt
+
+Expected result: Krypton denies the path traversal with an access-violation
+receipt and queues a local telemetry event. For a standalone installation, the
+bounded ledger is stored at
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+This prompt must call `krypton_read_file`; similarly named built-in Claude tools
+do not cross Krypton's MCP boundary.
+
 Krypton is a local security workspace for untrusted package scripts, AI coding
 agents, automated developer tools, and the child processes they launch through
 Krypton. It combines an explicit workspace policy, a protected child-process
@@ -84,7 +137,7 @@ The project root contains Krypton configuration and the dashboard. The protected
 workspace root is a narrower directory in which a protected child is authorized
 to mutate files. They are not interchangeable.
 
-## Prerequisites
+## Source development prerequisites
 
 Confirm the toolchain before setup:
 
@@ -115,7 +168,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source "$HOME/.cargo/env"
 ```
 
-## Setup
+## Source checkout setup
 
 ### macOS Native Daemon Mode (actively supported and tested)
 
@@ -238,8 +291,10 @@ request structure returns `-32602`. No response contains both `result` and `erro
 
 Rejected calls return a JSON-RPC `result` containing `isError: true` and text
 with the native code and receipt. Native receipts identify the tool, requested
-path and denial action; queued denial events add an ID and timestamp in
-`.krypton/telemetry/alerts.jsonl`. `telemetry: "queued"` acknowledges queue
+path and denial action; queued denial events add an ID and timestamp in the
+active bounded ledger: `.krypton/telemetry/alerts.jsonl` for a checkout, or the
+private Application Support instance ledger for a standalone bundle.
+`telemetry: "queued"` acknowledges queue
 admission, not durable persistence. Queue/write failures report degraded health.
 The dashboard displays these rows as `INTERCEPTED` and retains no actor PID.
 Both Audit-Only and Enforcement modes deny unsafe MCP file calls. MCP denials
@@ -259,39 +314,72 @@ traversal denial in both modes, durable native receipts and clean stdio shutdown
 Real client UI onboarding and the 60-second release target still require manual
 macOS verification. The local `.mcpb` generator is available below.
 
-### Build a local MCP extension
+### Build the standalone MCP extension locally
+
+The builder requires both optimized native binaries at these exact paths:
+
+```text
+dist/native/krypton-core-native-aarch64-apple-darwin
+dist/native/krypton-core-native-x86_64-apple-darwin
+```
+
+Build each binary on its matching macOS architecture with the pinned Rust
+toolchain, or download the two native artifacts produced by the same trusted
+release workflow run, then stage them under those names. The builder rejects a
+missing, symlinked, oversized, swapped, or wrong-architecture input.
 
 ```sh
 npm run build:mcpb
 ```
 
 This writes `dist/krypton-protected-fs.mcpb`, a deterministic ZIP containing the
-production MCP server, supervisor, portable Node launcher and only their required
-JavaScript runtime dependencies and licenses. Repeated builds with unchanged
-source and locked dependencies produce the same SHA-256. The offline builder
-checks installed dependency versions against `package-lock.json`, limits the
-archive to 2048 entries and 16 MiB of input, and publishes atomically. A failed
-pre-publication build preserves the previous archive; a post-publication sync
-failure reports uncertain durability. Generated artifacts remain gitignored.
+production MCP server, standalone launcher, arm64 and x64 native daemons,
+SHA-256 content metadata, and only the required JavaScript runtime dependencies
+and licenses. The metadata is not a publisher signature. Repeated builds with
+unchanged source, binaries, and locked dependencies produce the same SHA-256.
+The offline builder checks installed dependency versions against
+`package-lock.json`, limits the archive to 2,048 entries, 128 MiB per entry, and
+256 MiB of aggregate input, and publishes atomically. A failed pre-publication
+build preserves the previous archive; a post-publication sync failure reports
+uncertain durability. Generated artifacts remain gitignored.
 
 The manifest follows [MCPB 0.3](https://github.com/anthropics/mcpb/blob/main/MANIFEST.md)
 using the required `manifest_version` field. It declares both Krypton file tools.
-Open the archive in a compatible macOS MCPB client, select your **Krypton checkout
-directory**, and start that checkout's native daemon with `npm run dev:full`
-before enabling the extension. The selected directory supplies
-`KRYPTON_PROJECT_ROOT`; the launcher uses the MCP host's own Node executable.
-Avoid enabling a duplicate setup-generated Krypton server in the same client.
+Open the archive in a compatible macOS MCPB client and optionally select an
+existing directory for `protected_workspace_root`. Omitted and Unicode-whitespace
+values use `~/Library/Application Support/KryptonSecurity/sandbox_workspace`;
+invalid nonblank paths fail rather than silently selecting another root. The
+launcher uses the MCP host's Node executable, selects the bundled arm64 or x64
+daemon, and supervises that exact child. Avoid enabling a duplicate setup-generated
+Krypton server in the same client.
 
-The extension includes its JavaScript dependencies. It requires a separately
-running compatible native daemon and configured checkout; it does not bundle
-Rust, Node, workspace files, telemetry, sockets or capabilities. Native IPC stays
-authenticated and fail-closed. Linux native control remains experimental and is
-not advertised in this macOS bundle. The archive is unsigned; drag-and-drop
-installation and live desktop UI behavior still require manual QA.
+The extension includes its JavaScript dependencies and native daemons. It does
+not include Rust, Node, workspace files, telemetry, sockets, capabilities, or the
+Next.js dashboard. Installed binaries, configuration, telemetry, and the
+workspace-specific ownership lock live beneath private Application Support state;
+authenticated socket discovery lives in a short private path under the macOS
+temporary directory. Native IPC stays authenticated and fail-closed.
+Linux native control remains experimental and is not advertised in this macOS
+bundle. The archive and binaries are unsigned and unnotarized; Gatekeeper and
+live clean-machine Claude Desktop behavior still require manual QA.
 
 To inspect locally, run `unzip -t dist/krypton-protected-fs.mcpb` and
 `unzip -p dist/krypton-protected-fs.mcpb manifest.json`. Archive regression tests
 use `unzip` and Python 3 for independent ZIP conformance checks.
+
+To exercise an already-built archive without a checkout-backed runtime, run:
+
+```sh
+npm run test:mcpb -- dist/krypton-protected-fs.mcpb
+```
+
+The bounded harness extracts only an allowlisted inventory into temporary
+storage, uses isolated home and working directories, verifies custom and fallback
+workspaces, checks traversal denial and durable standalone telemetry, and confirms
+exact-child exit and post-exit socket nonacceptance. The private temporary runtime
+home may retain the socket, capability, and discovery files after shutdown. A local
+run covers only the current Mac architecture; the
+release workflow defines separate arm64 and x86_64 packaged-E2E jobs.
 
 ## Running Your First Live Simulation
 
@@ -360,6 +448,8 @@ npm run dev:daemon
 
 ## Runtime configuration
 
+### Source-checkout configuration
+
 `krypton.config.json` must be a regular file no larger than 1 MiB. Invalid or
 oversized configuration stops native startup with a redacted stderr diagnostic
 and nonzero status. It separates the relevant roots and bounds:
@@ -389,6 +479,32 @@ The daemon creates a workspace-specific socket, endpoint record, and capability
 file under `.krypton/runtime/`. Directory mode is `0700`; socket, endpoint, and
 capability files are `0600`. The raw capability is never returned by a dashboard
 route or written to logs.
+
+### Standalone MCPB configuration
+
+Claude Desktop exposes the optional `protected_workspace_root` directory field.
+The launcher accepts an existing canonical directory. An omitted, empty, or
+whitespace-only value creates the private fallback at
+`~/Library/Application Support/KryptonSecurity/sandbox_workspace`; any other
+invalid value stops startup. No `project_root`, repository marker, or
+`KRYPTON_PROJECT_ROOT` is required in standalone mode.
+
+The launcher derives a fixed SHA-256 workspace ID and stores the standalone
+configuration, ownership lock, and bounded ledger beneath
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/`. The
+verified daemon copy lives under the private `KryptonSecurity/bin/<version>/<arch>/`
+tree. The configuration and telemetry stay outside the protected root. The private
+configuration selects an authenticated runtime home in a short macOS temporary
+path so the Unix socket remains within platform path limits. State components
+must remain owned by the current user, non-symlinked, and inaccessible to group
+or other users; unsafe state fails closed rather than being repaired in place.
+
+The standalone daemon receives only
+`--standalone-config <absolute-private-config-path>`. The launcher verifies the
+bundled metadata and Mach-O architecture before publication, requires authenticated
+healthy readiness, runs the MCP server in-process, and terminates only its exact
+spawned child on EOF, signal, daemon exit, or server failure. Persistent telemetry
+retains at most 10,000 events or 8 MiB, matching source mode.
 
 ## Supervise a real agent with `krypton run`
 
@@ -715,33 +831,41 @@ growth for 100, 1,000, and 10,000 deterministic events.
 <summary>How do I verify a Krypton release?</summary>
 
 Tagged-release automation drafts Intel and Apple Silicon daemon binaries, the
-MCPB bundle and SHA-256 checksum files after CI succeeds. Download the assets and
-`SHA256SUMS` into one directory, then run `shasum -a 256 -c SHA256SUMS` before use.
-The assets remain unsigned; checksums do not authenticate the publisher. Releases
-require maintainer review and manual publication. Main branch protection is an
-owner-managed setting, not something workflow files activate automatically.
-See [release contracts](docs/RELEASE.md) for full instructions and remaining QA.
+standalone MCPB bundle, and SHA-256 checksum files after verification succeeds.
+The bundle job downloads both native artifacts, embeds them, and byte-compares the
+archive entries with those exact inputs. Matching arm64 and x86_64 macOS jobs then
+run the isolated packaged E2E before the draft job can proceed. Download the three
+primary assets and `SHA256SUMS` into one directory, then run
+`shasum -a 256 -c SHA256SUMS` before use. The assets remain unsigned and
+unnotarized; checksums do not authenticate the publisher. Releases require
+maintainer review, manual clean-machine Claude Desktop and Gatekeeper QA, and
+manual publication. Main branch protection is an owner-managed setting, not
+something workflow files activate automatically. Hosted execution remains
+unverified until the workflow runs after these changes are pushed. See
+[release contracts](docs/RELEASE.md) for full instructions and remaining QA.
 
 </details>
 
 <details>
 <summary>How do I connect Claude Desktop, Cursor, Claude Code or Cline?</summary>
 
-Close clients, run `npm run setup` (or `krypton setup` after `npm link`), start
-the updated daemon with `npm run dev:full`, and restart configured clients.
-The command preserves other servers, atomically backs up existing JSON and
-reports each client separately. Failed clients and invalid usage write redacted
-diagnostics to stderr with nonzero status. Cleanup or durability failures require
-review before retrying; the setup summary never silently reports them as success. Only the two Krypton MCP file tools gain native
-path containment; other client tools are not intercepted. See the onboarding
-section above for paths, limits, conflicts and backup restoration.
+For Claude Desktop on macOS, download `krypton-protected-fs.mcpb` from
+[GitHub Releases](https://github.com/mwarnsley/krypton-security/releases), open
+**Settings → Extensions** under **This computer**, and add the file. Select an
+existing `protected_workspace_root`, or leave it blank to use
+`~/Library/Application Support/KryptonSecurity/sandbox_workspace`. The bundle
+selects its arm64 or x64 daemon and supervises it for the MCP session; it needs no
+checkout or Rust toolchain. Its telemetry stays below the private Application
+Support instance directory. It does not include or launch the Next.js dashboard.
+Only `krypton_read_file` and `krypton_write_file` gain native path containment;
+built-in Claude tools remain outside the boundary. The unsigned, unnotarized
+bundle still requires manual clean-machine Claude Desktop and Gatekeeper QA.
 
-For a compatible macOS MCPB client, alternatively run `npm run build:mcpb` and
-open `dist/krypton-protected-fs.mcpb`. Select the Krypton checkout directory and
-keep its native daemon running. The unsigned bundle contains the JavaScript
-runtime dependencies, not the daemon or local runtime state. Avoid enabling a
-duplicate setup-generated Krypton server. Live desktop installation remains a
-manual QA gate; see the local extension build instructions above.
+Source users can instead close clients, run `npm run setup` (or `krypton setup`
+after `npm link`), start the updated daemon with `npm run dev:full`, and restart
+configured clients. That flow preserves other servers, atomically backs up
+existing JSON, reports each client separately, and uses the canonical checkout as
+`KRYPTON_PROJECT_ROOT`. Avoid enabling both installation routes in one client.
 
 </details>
 
@@ -781,10 +905,11 @@ calls.
 <summary>4. Does Krypton send my code, files, or telemetry to the cloud?</summary>
 
 Core security decisions do not send source code, files, or telemetry to cloud
-services. Native events stay in the bounded local
-`.krypton/telemetry/alerts.jsonl` ledger. The dashboard includes an external
-GitHub link that opens only when selected, and demonstration rows are explicitly
-mock data.
+services. Source-checkout native events stay in the bounded local
+`.krypton/telemetry/alerts.jsonl` ledger. Standalone events stay at
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+The dashboard includes an external GitHub link that opens only when selected,
+and demonstration rows are explicitly mock data.
 
 </details>
 
@@ -904,8 +1029,10 @@ enforcement boundary.
    active release milestone prioritizing `krypton setup`, production native MCP
    IPC and live denial telemetry. The daemon, supervisor, local dashboard and
    redacted OS-level alerts and the dedicated `npm run test:e2e` report are
-   implemented, including `npm run build:mcpb` for a local extension archive.
-   Real desktop-client verification remains outstanding.
+   implemented. The standalone `npm run build:mcpb` archive includes both macOS
+   daemons and has a bounded `npm run test:mcpb` isolation harness. Hosted
+   arm64/x86_64 workflow execution and real clean-machine desktop-client
+   verification remain outstanding.
    The 60-second onboarding objective is not yet measured or guaranteed.
 2. **Phase 2 — Transparent Developer Experience & Distribution (v1.1):**
    planned Homebrew and hardened shell distribution, descendant containment and
@@ -953,15 +1080,19 @@ availability or a published commercial offer.
 PRs and pushes to `main` run the macOS **Phase 1 verification** workflow:
 locked installation, zero-vulnerability npm audit, lint, both TypeScript checks,
 formatting, Rust Clippy, Vitest/native tests, socket simulation, E2E containment,
-dashboard and MCPB builds. The existing quality workflow retains supplementary
+and the dashboard build. The existing quality workflow retains supplementary
 coverage, Rust advisory/license checks and SBOM generation. Workflow YAML is
 included in `npm run format:check`.
 
 A matching SemVer tag such as `v1.0.0`, pointing to a commit on `main`, runs these
-checks again before building optimized Intel/Apple Silicon native binaries. The
-release workflow attaches those binaries, its tested MCPB and SHA-256 checksum
-files to a **draft** GitHub Release. It never automatically publishes or overwrites
-a release. Checksums establish byte integrity; artifacts remain unsigned.
+checks again before building optimized Intel/Apple Silicon native binaries. A
+separate bundle job downloads both binaries, builds one standalone MCPB, and
+byte-compares both embedded entries with the downloaded artifacts. Matching
+arm64/x86_64 macOS jobs run the packaged isolation harness before the draft job
+attaches the two binaries, tested MCPB, three sidecars, and `SHA256SUMS` to a
+**draft** GitHub Release. It never automatically publishes or overwrites a
+release. Checksums establish byte integrity; artifacts remain unsigned and
+unnotarized.
 
 See [release and repository contracts](docs/RELEASE.md) for artifact names,
 checksum verification, strict main protection and fine-grained GitHub MCP/`gh`
@@ -997,8 +1128,12 @@ committed.
   access can bypass local controls.
 - TOCTOU remains possible between identity/path revalidation and operating-system
   action.
-- Release signing, branch rules, secret scanning, and repository rulesets require
-  repository-owner configuration.
+- The standalone MCPB contains only `krypton_read_file` and `krypton_write_file`;
+  Claude's built-in tools and the Next.js dashboard remain outside the bundle.
+- Release signing, notarization, Gatekeeper behavior, clean-machine Claude Desktop
+  QA, branch rules, secret scanning, and repository rulesets require manual or
+  repository-owner action. Hosted release-matrix execution is not established by
+  local workflow validation.
 
 ## License
 

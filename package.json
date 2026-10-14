@@ -27,6 +27,7 @@
     "test:rust": "cargo test --manifest-path src/core-native/Cargo.toml --all-targets --all-features",
     "test:sim": "ts-node tests_simulation/test_injection.ts",
     "test:e2e": "node src/testing/e2e.cjs",
+    "test:mcpb": "node src/testing/mcpb_e2e.cjs",
     "test:unit": "vitest run",
     "rust:fmt": "cargo fmt --manifest-path src/core-native/Cargo.toml -- --check",
     "rust:clippy": "cargo clippy --manifest-path src/core-native/Cargo.toml --all-targets --all-features -- -D warnings",
@@ -62,6 +63,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitest/coverage-v8": "4.1.11",
     "autoprefixer": "^10.5.3",
+    "braces": "file:vendor/braces-3.0.4.tgz",
     "concurrently": "^9.1.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.4",
@@ -95,6 +97,8 @@
     "krypton": "src/cli.cjs"
   },
   "overrides": {
+    "micromatch": "4.0.8",
+    "postcss-selector-parser": "7.1.6",
     "vitest": {
       "vite": "7.3.6"
     }

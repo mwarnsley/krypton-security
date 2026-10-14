@@ -2,6 +2,7 @@
 name = "krypton-core-native"
 version = "0.1.0"
 edition = "2021"
+license = "ISC"
 publish = false
 
 [dependencies]

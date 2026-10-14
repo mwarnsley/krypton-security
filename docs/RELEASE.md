@@ -12,15 +12,18 @@ The job uses Apple Silicon `macos-14`, Node 20.19.4, npm 10.8.2 and the
 `rust-toolchain.toml` Rust 1.97.0 pin. It installs with `npm ci`, then checks every
 npm advisory severity (including development dependencies), ESLint, both
 TypeScript projects, Prettier/YAML and Rust formatting, Clippy, Vitest, native
-tests, `test:sim`, `test:e2e`, dashboard token compliance, dashboard build and
-MCPB build/ZIP integrity. Network, install, audit and test errors fail the job.
-All jobs have time limits and use fresh hosted runners; tests own disposable
-children and never use the maintainer's daemon or client settings.
+tests, `test:sim`, `test:e2e`, dashboard token compliance, and dashboard build.
+MCPB assembly is intentionally release-only because it
+requires both native architecture artifacts. Network, install, audit and test
+errors fail the job. All jobs have time limits and use fresh hosted runners;
+tests own disposable children and never use the maintainer's daemon or client
+settings.
 
 The existing `quality.yml` workflow retains additional Linux coverage, npm/Rust
-SBOM generation and pinned Rust advisory/license tools. Its jobs are named
-**JavaScript and TypeScript** and **Native Rust core**. They supplement the
-macOS gate; experimental Linux runtime support is not promoted by compilation.
+SBOM generation, pinned `cargo-audit` and `cargo-cyclonedx`, and a current
+`cargo-deny` capable of parsing the live advisory schema. Its jobs are named
+**JavaScript and TypeScript** and **Native Rust core**. They supplement the macOS
+gate; experimental Linux runtime support is not promoted by compilation.
 `deploy.yml` continues to publish only the static demonstration dashboard.
 
 ## Activate strict main protection
@@ -60,15 +63,28 @@ Tags must match the product version exactly and point to a commit reachable from
 `.github/workflows/release.yml`:
 
 1. Validates the tag and main ancestry, then runs the reusable CI workflow against
-   that tag. The MCPB comes from this run's successful build, not another branch,
-   an old local artifact or a mutable external download.
+   that tag. The required reusable job remains named **Phase 1 verification**.
 2. Builds with `cargo build --release --locked` for `aarch64-apple-darwin` on
    `macos-14` and `x86_64-apple-darwin` on `macos-15-intel`. `lipo -archs` must
    confirm the target architecture before upload. The native toolchain stays pinned.
-3. Downloads exactly the three primary artifacts from that workflow run and
-   computes/verifies SHA-256 checksums using the dependency-free
-   `scripts/release-artifacts.cjs` contract.
-4. Rechecks that the remote tag still resolves to the tested commit, then creates
+3. After verification and both native jobs pass, the bundle job downloads both
+   native artifacts into `dist/native`, installs locked Node dependencies, and
+   runs `npm run build:mcpb`. It checks ZIP integrity, extracts only the two
+   embedded native entries, and byte-compares each with its downloaded input
+   before uploading the single `krypton-mcpb` workflow artifact. The bundle
+   comes only from the tagged source and native bytes in this workflow run.
+4. Matching `macos-14` arm64 and `macos-15-intel` x86_64 jobs download that exact
+   bundle and run
+   `npm run test:mcpb -- release-artifacts/krypton-protected-fs.mcpb`. The bounded
+   harness verifies custom and fallback workspaces, traversal denial, durable
+   standalone telemetry, exact-child exit, and post-exit socket nonacceptance from
+   an unpacked temporary directory without relying on repository markers. The
+   private temporary runtime home may retain runtime files after shutdown.
+5. Only after verification, both native builds, bundle assembly, and both packaged
+   E2E jobs pass does the draft job download exactly the three primary artifacts
+   from the same run and compute/verify SHA-256 checksums using the dependency-free
+   `scripts/release-artifacts.cjs` contract. It rechecks that the remote tag still
+   resolves to the tested commit, then creates
    a **draft** GitHub Release with `gh release create --draft --verify-tag`.
    SemVer prerelease tags also set GitHub's `--prerelease` flag.
    Only this job has `contents: write`; only its final command receives `GH_TOKEN`.
@@ -79,11 +95,11 @@ Tags must match the product version exactly and point to a commit reachable from
 The release attaches these three primary assets, each matching `.sha256` sidecar,
 and the combined `SHA256SUMS` file:
 
-| Artifact                                   | Contract                                                               |
-| ------------------------------------------ | ---------------------------------------------------------------------- |
-| `krypton-core-native-aarch64-apple-darwin` | Optimized Apple Silicon Mach-O daemon                                  |
-| `krypton-core-native-x86_64-apple-darwin`  | Optimized Intel Mach-O daemon                                          |
-| `krypton-protected-fs.mcpb`                | Deterministic MCPB with server, supervisor and JavaScript dependencies |
+| Artifact                                   | Contract                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `krypton-core-native-aarch64-apple-darwin` | Optimized Apple Silicon Mach-O daemon                                                                   |
+| `krypton-core-native-x86_64-apple-darwin`  | Optimized Intel Mach-O daemon                                                                           |
+| `krypton-protected-fs.mcpb`                | Deterministic standalone MCPB with server, launcher, both daemons, metadata and JavaScript dependencies |
 
 Names are stable within each versioned release. Checksums cover primary assets;
 checksum files do not recursively hash themselves. Checksum validation rejects
@@ -98,15 +114,27 @@ Download the assets and `SHA256SUMS` into one directory and run:
 shasum -a 256 -c SHA256SUMS
 ```
 
-After verifying the matching architecture, set the downloaded binary executable
-with `chmod +x krypton-core-native-aarch64-apple-darwin` (or the Intel filename).
-Run it from the configured Krypton checkout. The MCPB installer selects that
-checkout and still requires its running native daemon; it does not install a
-system service or expand the runtime's containment boundary.
+After verifying the matching architecture, a source-mode operator can set the
+downloaded daemon executable with
+`chmod +x krypton-core-native-aarch64-apple-darwin` (or the Intel filename) and
+run it using reviewed checkout configuration. The standalone MCPB already embeds
+both binaries. Its launcher selects the host architecture, installs a verified
+private copy in Application Support, starts it with private standalone
+configuration, requires authenticated readiness, and stops its exact child when
+the MCP session ends. It needs no checkout or Rust toolchain. The optional
+`protected_workspace_root` selects an existing directory; blank input creates
+`~/Library/Application Support/KryptonSecurity/sandbox_workspace`.
 
-Owner review, live macOS client/notification QA, signing policy and manual final
-publication remain release gates. Local validation of YAML does not prove a
-hosted Actions run, branch protection or a successful remote release upload.
+The MCPB contains only `krypton_read_file` and `krypton_write_file`; built-in
+Claude tools remain outside its boundary. Standalone telemetry persists under
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+The bundle does not include or launch the Next.js dashboard and does not install
+a system service.
+
+Owner review, live clean-machine Claude Desktop and Gatekeeper QA, notification
+QA, signing/notarization policy, and manual final publication remain release
+gates. Local validation of YAML does not prove the hosted arm64/x86_64 matrix,
+branch protection, or a successful remote release upload.
 
 ## Local checks and artifact preparation
 
@@ -118,9 +146,28 @@ npm run format:check
 npm run security:audit
 npm run test:sim
 npm run test:e2e
-npm run build:mcpb
 RELEASE_TAG=v1.0.0 npm run release:validate
 ```
+
+Local MCPB assembly additionally requires both matching optimized Mach-O inputs:
+
+```text
+dist/native/krypton-core-native-aarch64-apple-darwin
+dist/native/krypton-core-native-x86_64-apple-darwin
+```
+
+Build them on matching macOS hosts with `cargo build --release --locked` and the
+pinned targets, or obtain both from the same trusted workflow run. Then run:
+
+```sh
+npm run build:mcpb
+unzip -t dist/krypton-protected-fs.mcpb
+npm run test:mcpb -- dist/krypton-protected-fs.mcpb
+```
+
+Byte-compare both archive entries with the staged inputs. The packaged E2E can
+execute only the binary matching the local host, so one local pass is partial
+release evidence until the hosted arm64 and x86_64 jobs pass.
 
 Use the current package version in `RELEASE_TAG`. After copying the exact three
 primary assets into a fresh directory, run `npm run release:checksums -- <dir>`

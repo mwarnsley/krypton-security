@@ -18,7 +18,9 @@ Every phase and commercial tier must preserve these boundaries:
   supplies trustworthy actor evidence. Inferred agent labels are explanatory
   telemetry, not process-control authority.
 - Native telemetry remains distinct from static or mock demonstration data and
-  retains at most 10,000 events or 8 MiB in `.krypton/telemetry/alerts.jsonl`.
+  retains at most 10,000 events or 8 MiB. Source mode uses
+  `.krypton/telemetry/alerts.jsonl`; standalone mode uses the private Application
+  Support instance ledger.
 - Platform, desktop, host, and fleet integrations must advertise their actual
   enforcement capability. A missing or degraded adapter must never silently
   downgrade a requested enforcing workflow to observation-only behavior.
@@ -42,25 +44,31 @@ syscall containment remain planned and other host tools are not intercepted.
 
 **Status:** In Progress (Active Release Milestone).
 
-**Release Objective:** Deliver a bulletproof, 1-command local evaluation experience. Any engineer cloning the repository must be able to verify native containment against real LLM tool calls (such as Claude Desktop) within 60 seconds, with zero manual JSON hacking and zero ambiguous failure modes.
+**Release Objective:** Deliver a direct local evaluation experience. A macOS user
+should be able to install the released MCPB in Claude Desktop and verify native
+containment against a Krypton tool call within 60 seconds, without cloning the
+repository, installing Rust, or editing client JSON manually.
 
-The 60-second experience is an unverified release target. Source setup still
-requires dependencies and a running native daemon; client restart and native
-macOS desktop QA remain release gates.
+The 60-second experience is an unverified release target. The standalone code,
+isolated harness, and release matrix are implemented in the repository, but hosted
+arm64/x86_64 execution, Gatekeeper behavior, and clean-machine Claude Desktop QA
+remain release gates. Source setup separately requires dependencies and a running
+checkout daemon.
 
 ### 1. Local Frictionless Onboarding (Must-Have for HackerNoon)
 
 - [x] **Mandatory Error-Handling Audit Gate:** Document the three-tier contract, audit all native/core/CLI entry points, remediate failures and record fresh verification in `AGENTS.md` before further Phase 1 features.
 - [x] **Universal Single-Command Client Config (`krypton setup`):** Detect existing Claude Desktop, Cursor, Claude Code, and Cline storage on macOS/Linux; atomically back up existing JSON, preserve other servers, and install `krypton-protected-fs` with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Malformed files and conflicting entries fail closed. `npm run setup` works without global linking.
-- [x] **Bundled Local `.mcpb` Generator:** `npm run build:mcpb` outputs `dist/krypton-protected-fs.mcpb`, a deterministic MCPB 0.3 archive containing the production server, supervisor and required JavaScript dependencies. Installation selects an existing checkout and requires its running native daemon. The unsigned macOS archive excludes local runtime state; live drag-and-drop client QA remains a separate release gate.
+- [x] **Standalone `.mcpb` Generator:** `npm run build:mcpb` outputs `dist/krypton-protected-fs.mcpb`, a deterministic MCPB 0.3 archive containing the production server, standalone launcher, required JavaScript dependencies, and verified arm64/x64 native daemons. `protected_workspace_root` is optional; blank input creates `~/Library/Application Support/KryptonSecurity/sandbox_workspace`. The launcher selects and supervises its exact native child, while private configuration and telemetry remain outside the protected root. No checkout or Rust toolchain is required after installation. The bundle is unsigned and unnotarized, excludes the Next.js dashboard and local runtime state, and still requires live clean-machine Claude Desktop and Gatekeeper QA.
 - [x] **Deterministic Local Test Harness (`npm run test:e2e`):** Boots a disposable native daemon fixture, exercises production MCP stdio read/write and traversal denial, verifies durable native receipts mapped to `INTERCEPTED`, fail-closed socket loss and owned-child `SIGKILL`, then cleans up and prints a pass/fail terminal report. Desktop notification delivery is mocked; live client and dashboard QA remain separate.
+- [x] **Isolated Packaged Harness (`npm run test:mcpb -- <archive>`):** Extracts only an allowlisted MCPB inventory into bounded temporary storage, isolates HOME and working directories, and verifies custom/fallback workspace selection, traversal denial, durable standalone telemetry, exact-child exit, and post-exit socket nonacceptance without repository markers. The private temporary runtime home may retain runtime files after shutdown. Local runs cover one architecture; the release workflow defines matching arm64 and x86_64 jobs.
 
 ### 2. Containment Engine & Native IPC (Must-Have)
 
 - [x] **Native macOS Watchdog Daemon:** Rust core maintaining compound identities, revalidating registered children before isolation, and exposing authenticated local IPC via `.krypton/runtime/daemon.sock`.
 - [x] **Fail-Closed Path Policy:** Strict lexical traversal rejection (`..`) and workspace canonicalization via `path_policy.rs`.
 - [x] **Production Native MCP Server:** `src/core/mcp/server.cjs` serves bounded stdio `krypton_read_file` and `krypton_write_file` calls with local JSON Schema 2020-12 validation. `dispatchNativeControl` sends authenticated `mcp_file` requests to the Rust daemon, which evaluates paths and performs descriptor-relative file access. Denials return `isError: true` inside `result` with native receipts. Missing or incompatible daemons fail closed. Calls support up to 2 KiB of UTF-8 content and 1 KiB paths; only these tools are contained.
-- [x] **Live Telemetry Emission:** Native MCP denials queue structured receipts to `.krypton/telemetry/alerts.jsonl`, retaining tool, requested path, timestamp, and denial action. Queue admission is distinct from durable persistence; write/queue failures degrade health. Dashboard rows show `INTERCEPTED`, with no invented actor PID or SIGKILL claim.
+- [x] **Live Telemetry Emission:** Native MCP denials queue structured receipts to the bounded source or standalone JSONL ledger, retaining tool, requested path, timestamp, and denial action. Queue admission is distinct from durable persistence; write/queue failures degrade health. Dashboard rows show `INTERCEPTED`, with no invented actor PID or SIGKILL claim. The standalone MCPB persists telemetry under its private Application Support instance and does not bundle or launch the dashboard.
 
 ### 3. AegisAgent Dashboard & Telemetry Verification (Must-Have)
 
@@ -70,9 +78,9 @@ macOS desktop QA remain release gates.
 
 ### 4. Release Hardening & Automated Delivery (Must-Have)
 
-- [x] **GitHub Actions CI/CD Pipeline:** `.github/workflows/ci.yml` defines a reusable `macos-14` gate for PRs and pushes to `main`: locked installation, lint, both TypeScript projects, formatting, Rust Clippy, Vitest, native unit tests, socket simulation, E2E containment, dashboard build, MCPB build and security audit. Hosted execution remains to be verified after merge.
+- [x] **GitHub Actions CI/CD Pipeline:** `.github/workflows/ci.yml` defines a reusable `macos-14` gate for PRs and pushes to `main`: locked installation, lint, both TypeScript projects, formatting, Rust Clippy, Vitest, native unit tests, socket simulation, source E2E containment, dashboard build and security audit. Hosted execution remains to be verified after merge.
 - [ ] **Strict Branch Protection & Automated PR Gates:** Activate owner-managed `main` rules requiring the `Phase 1 verification` status, up-to-date branches, human/code-owner approval, signed commits and resolved conversations; prohibit force pushes, deletion and routine bypasses. Workflow files and CODEOWNERS alone do not activate these rules.
-- [x] **Automated SemVer Release Packaging:** `.github/workflows/release.yml` validates a matching package version and main ancestry for `v*.*.*` tags, reuses CI gates, builds `x86_64-apple-darwin` and `aarch64-apple-darwin` optimized binaries, and drafts a GitHub Release containing those binaries, the verified `.mcpb` and SHA-256 checksums. Signing, notarization, hosted execution and final publication remain separate gates.
+- [x] **Automated SemVer Release Packaging:** `.github/workflows/release.yml` validates a matching package version and main ancestry for `v*.*.*` tags, reuses CI gates, builds `x86_64-apple-darwin` and `aarch64-apple-darwin` optimized binaries, downloads both into one standalone bundle job, and byte-compares the embedded archive entries with those exact artifacts. Matching-host packaged-E2E jobs must pass before the draft job attaches the two binaries, tested MCPB, three sidecars, and `SHA256SUMS`. Signing, notarization, Gatekeeper and clean-machine Claude QA, hosted execution, and final publication remain separate gates.
 - [x] **Agent GitHub Integration Contracts:** Document repository-scoped fine-grained PAT permissions for GitHub MCP and `gh`, secret storage, read-only defaults, explicit authorization for remote writes and prohibition of protection bypasses. Workflows use job-scoped `GITHUB_TOKEN`, never a personal PAT.
 - [x] **Dependency Supply-Chain Auditing:** PR CI enforces zero npm vulnerabilities at every severity through `npm run security:audit`, including dev dependencies. Existing Rust advisory/license checks and SBOM generation remain supplementary gates; network or audit errors fail the check.
 

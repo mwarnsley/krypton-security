@@ -198,24 +198,39 @@ describe('bounded deterministic ZIP writer', () => {
     expect(createZip([entry('a', length)]).length).toBe(length + 100);
   });
 
-  it('rejects a file above 1 MiB', () => {
-    expect(() => createZip([entry('a', 1048577)])).toThrowError(
+  it('accepts an entry at the 128 MiB limit', () => {
+    const data = Buffer.alloc(128 * 1024 * 1024);
+    expect(createZip([{ name: 'native', data }])).toBeInstanceOf(Buffer);
+  }, 30_000);
+
+  it('rejects an entry one byte above 128 MiB', () => {
+    const data = Buffer.alloc(128 * 1024 * 1024 + 1);
+    expect(() => createZip([{ name: 'native', data }])).toThrowError(
       expect.objectContaining({ code: 'size_limit' })
     );
   });
 
-  it.each([1048575, 1048576])(
-    'accepts the total payload immediately below or at 16 MiB: last file %i',
-    (last) => {
-      const entries = Array.from({ length: 15 }, (_, index) => entry(`${index}`, 1048576));
-      entries.push(entry('last', last));
-      expect(createZip(entries).length).toBeGreaterThan(15 * 1048576 + last);
-    }
-  );
+  it('accepts a payload at the 256 MiB limit', () => {
+    const first = Buffer.alloc(128 * 1024 * 1024);
+    const second = Buffer.alloc(128 * 1024 * 1024);
+    expect(
+      createZip([
+        { name: 'native-a', data: first },
+        { name: 'native-b', data: second },
+      ])
+    ).toBeInstanceOf(Buffer);
+  }, 30_000);
 
-  it('rejects total payload above 16 MiB', () => {
-    const entries = Array.from({ length: 16 }, (_, index) => entry(`${index}`, 1048576));
-    entries.push(entry('last', 1));
-    expect(() => createZip(entries)).toThrowError(expect.objectContaining({ code: 'size_limit' }));
+  it('rejects a payload one byte above 256 MiB', () => {
+    const first = Buffer.alloc(128 * 1024 * 1024);
+    const second = Buffer.alloc(128 * 1024 * 1024);
+    const extra = Buffer.alloc(1);
+    expect(() =>
+      createZip([
+        { name: 'native-a', data: first },
+        { name: 'native-b', data: second },
+        { name: 'extra', data: extra },
+      ])
+    ).toThrowError(expect.objectContaining({ code: 'size_limit' }));
   });
 });

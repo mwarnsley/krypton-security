@@ -1,8 +1,9 @@
 import { PassThrough, Writable } from 'node:stream';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { createSession, serve } = require('../../../src/core/mcp/server.cjs') as {
   createSession(options?: {
+    runtimeHome?: string;
     projectRoot?: string;
     dispatch?: (command: Record<string, unknown>, root: string) => Promise<Record<string, unknown>>;
   }): { handle(message: unknown): Promise<Record<string, unknown> | undefined> };
@@ -40,6 +41,93 @@ const call = (args: unknown, name = 'krypton_read_file') => ({
   id: 3,
   method: 'tools/call',
   params: { name, arguments: args },
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe('MCP runtime home selection', () => {
+  it.each([
+    { options: { runtimeHome: '/instance', projectRoot: '/checkout' }, expected: '/instance' },
+    { options: { projectRoot: '/checkout' }, expected: '/checkout' },
+    { options: {}, expected: '/environment-instance' },
+  ])('dispatches using the highest-priority root %j', async ({ options, expected }) => {
+    vi.stubEnv('KRYPTON_RUNTIME_HOME', '/environment-instance');
+    vi.stubEnv('KRYPTON_PROJECT_ROOT', '/environment-checkout');
+    const dispatch = vi.fn().mockResolvedValue({
+      ok: true,
+      code: 'file_read',
+      content: 'hello',
+      receipt: {
+        path: 'file',
+        tool: 'krypton_read_file',
+        action: 'allowed',
+        telemetry: 'not_required',
+      },
+    });
+    const session = createSession({ ...options, dispatch });
+    await session.handle(initialize);
+    await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    expect(await session.handle(call({ path: 'file' }))).toMatchObject({
+      result: { isError: false, content: [{ type: 'text', text: 'hello' }] },
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      { type: 'mcp_file', tool: 'krypton_read_file', path: 'file' },
+      expected
+    );
+  });
+  it('retains the legacy project-root environment override', async () => {
+    vi.stubEnv('KRYPTON_RUNTIME_HOME', undefined);
+    vi.stubEnv('KRYPTON_PROJECT_ROOT', '/environment-checkout');
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'unavailable' });
+    const session = createSession({ dispatch });
+    await session.handle(initialize);
+    await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    await session.handle(call({ path: 'file' }));
+    expect(dispatch).toHaveBeenCalledWith(
+      { type: 'mcp_file', tool: 'krypton_read_file', path: 'file' },
+      '/environment-checkout'
+    );
+  });
+  it.each(['option', 'environment'])(
+    'denies a relative %s runtime home without dispatch',
+    async (source) => {
+      vi.stubEnv(
+        'KRYPTON_RUNTIME_HOME',
+        source === 'environment' ? 'relative-instance' : '/instance'
+      );
+      vi.stubEnv('KRYPTON_PROJECT_ROOT', '/checkout');
+      const dispatch = vi.fn();
+      const options =
+        source === 'option' ? { runtimeHome: 'relative-instance', projectRoot: '/checkout' } : {};
+      const session = createSession({ ...options, dispatch });
+      await session.handle(initialize);
+      await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
+      expect(await session.handle(call({ path: 'file' }))).toMatchObject({
+        id: 3,
+        result: {
+          isError: true,
+          content: [{ type: 'text', text: expect.stringContaining('invalid_runtime_home') }],
+        },
+      });
+      expect(dispatch).not.toHaveBeenCalled();
+    }
+  );
+  it('denies a non-string runtime home without dispatch', async () => {
+    const dispatch = vi.fn();
+    const session = createSession({ runtimeHome: 42 as unknown as string, dispatch });
+    await session.handle(initialize);
+    await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    expect(await session.handle(call({ path: 'file' }))).toMatchObject({
+      id: 3,
+      result: {
+        isError: true,
+        content: [{ type: 'text', text: expect.stringContaining('invalid_runtime_home') }],
+      },
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
 });
 
 describe('native MCP session', () => {

@@ -27,6 +27,7 @@ const MAX_FRAME = 32768;
 const MAX_CONTENT = 2048;
 const MAX_PATH = 1024;
 const TOOL_FAILURE_MESSAGES = new Map([
+  ['invalid_runtime_home', 'Configure an absolute native runtime home owning .krypton.'],
   ['invalid_tool_arguments', 'Check the tool input schema and path/content size limits.'],
   ['unavailable', 'Native daemon is unavailable; start it before retrying.'],
   ['native_unavailable', 'Native control failed; verify daemon health before retrying.'],
@@ -197,14 +198,19 @@ function toolError(id, code, receipt) {
 
 /**
  * Creates one stdio session with constant-size lifecycle state and indexed tools.
- * @param {object} options - Optional project root and native dispatch boundary.
+ * @param {import('./server.cjs').SessionOptions} options - Runtime home, legacy checkout alias, and native dispatch boundary.
  * @returns {{handle: Function}} Serialized message handler; no request history is retained.
  * @complexity O(1) session storage and average Map/Set lookup; validation is O(L) in bounded message bytes L.
- * @example const session = createSession({projectRoot: '/project'});
+ * @example const session = createSession({runtimeHome: '/private/instance'});
  */
 function createSession(options = {}) {
-  const projectRoot =
-    options.projectRoot ?? process.env.KRYPTON_PROJECT_ROOT ?? path.resolve(__dirname, '../../..');
+  // Explicit options precede environment overrides; runtime homes need no checkout markers.
+  const runtimeHome =
+    options.runtimeHome ??
+    options.projectRoot ??
+    process.env.KRYPTON_RUNTIME_HOME ??
+    process.env.KRYPTON_PROJECT_ROOT ??
+    path.resolve(__dirname, '../../..');
   const dispatch = options.dispatch ?? dispatchNativeControl;
   let initialized = false;
   let ready = false;
@@ -264,8 +270,9 @@ function createSession(options = {}) {
     if (busy) return toolError(id, 'session_busy');
     busy = true;
     try {
-      if (!path.isAbsolute(projectRoot)) return toolError(id, 'invalid_project_root');
-      const reply = await dispatch({ type: 'mcp_file', tool: params.name, ...args }, projectRoot);
+      if (typeof runtimeHome !== 'string' || !path.isAbsolute(runtimeHome))
+        return toolError(id, 'invalid_runtime_home');
+      const reply = await dispatch({ type: 'mcp_file', tool: params.name, ...args }, runtimeHome);
       if (
         !reply ||
         typeof reply.ok !== 'boolean' ||

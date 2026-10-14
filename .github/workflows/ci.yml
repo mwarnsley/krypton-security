@@ -69,14 +69,3 @@ jobs:
         run: npm run design-system:check
       - name: Build production dashboard
         run: npm run build
-      - name: Build local MCP extension
-        run: npm run build:mcpb
-      - name: Verify bundle ZIP integrity
-        run: unzip -t dist/krypton-protected-fs.mcpb
-      - name: Retain the verified MCP bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: krypton-mcpb
-          path: dist/krypton-protected-fs.mcpb
-          if-no-files-found: error
-          retention-days: 7
