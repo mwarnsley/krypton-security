@@ -3,6 +3,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { spawnSync } from 'node:child_process';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -253,7 +254,8 @@ function dependencies(): PackagedE2EDependencies {
 }
 
 beforeEach(async () => {
-  root = await fs.mkdtemp('/private/tmp/me-test-');
+  const rawRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'me-test-'));
+  root = await fs.realpath(rawRoot);
   archive = path.join(root, 'fixture.mcpb');
   removed = [];
   report = vi.fn();
@@ -301,7 +303,9 @@ beforeEach(async () => {
 afterEach(async () => {
   clearTimeout(timer);
   vi.restoreAllMocks();
-  await fs.rm(root, { recursive: true, force: true });
+  if (root) {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 describe('packaged MCPB harness', () => {
@@ -904,7 +908,7 @@ describe('packaged MCPB harness', () => {
   it('redacts operational CLI failures with exit 1', () => {
     const result = spawnSync(
       process.execPath,
-      ['src/testing/mcpb_e2e.cjs', '/private/tmp/missing-private-archive.mcpb'],
+      ['src/testing/mcpb_e2e.cjs', path.join(os.tmpdir(), 'missing-private-archive.mcpb')],
       { encoding: 'utf8', timeout: 5000 }
     );
     expect(result.status).toBe(1);

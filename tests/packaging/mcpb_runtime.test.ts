@@ -58,7 +58,9 @@ async function changeMetadata(
 }
 beforeEach(async () => {
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'krypton-runtime-test-')));
-  temporaryRoot = await fs.mkdtemp('/private/tmp/ks-test-');
+  const temporaryBase =
+    process.platform === 'darwin' ? path.join(path.parse(os.tmpdir()).root, 'tmp') : os.tmpdir();
+  temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(temporaryBase, 'ks-test-')));
   options = {
     bundleRoot: path.join(root, 'bundle'),
     version: '1.0.0',
@@ -76,8 +78,12 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   vi.restoreAllMocks();
-  await fs.rm(root, { recursive: true, force: true });
-  await fs.rm(temporaryRoot, { recursive: true, force: true });
+  if (root) {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+  if (temporaryRoot) {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
 });
 
 describe('workspace resolution', () => {

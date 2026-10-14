@@ -1,0 +1,13 @@
+{
+  "name": "braces",
+  "version": "3.0.4",
+  "description": "Krypton-maintained security patch for braces 3.0.3",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=8"
+  },
+  "dependencies": {
+    "fill-range": "^7.1.1"
+  }
+}
