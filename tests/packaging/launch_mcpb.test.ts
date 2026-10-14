@@ -14,6 +14,7 @@ const {
 } = require('../../src/packaging/launch_mcpb.cjs') as typeof import('../../src/packaging/launch_mcpb.cjs');
 
 const launcherPath = path.resolve('src/packaging/launch_mcpb.cjs');
+const launcherPreloadPath = path.resolve('tests/packaging/launch_mcpb.preload.cjs');
 const ready = { ok: true, code: 'ready', health: { status: 'healthy' } };
 const discovery = {
   protocolVersion: 1,
@@ -82,43 +83,26 @@ function realServiceFixture() {
   };
 }
 
-// Preload replaces only destructive boundaries in an owned disposable Node process.
-function invokeEntry(serverBody: string) {
+// Static preload replaces only destructive boundaries in an owned disposable Node process.
+function invokeEntry(serverMode: 'throw' | 'stdout' | 'stderr') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'krypton-launcher-test-'));
-  const preload = path.join(root, 'preload.cjs');
   const signals = path.join(root, 'signals');
-  const sourceRoot = path.resolve('src');
   try {
-    fs.writeFileSync(
-      preload,
-      `
-      const fs = require('node:fs');
-      const cp = require('node:child_process');
-      const child = new cp.ChildProcess();
-      Object.defineProperty(child, 'pid', { value: 424242 });
-      child.kill = (signal) => {
-        fs.appendFileSync(${JSON.stringify(signals)}, signal + '\\n');
-        child.signalCode = signal;
-        queueMicrotask(() => { child.emit('exit', null, signal); child.emit('close', null, signal); });
-        return true;
-      };
-      process.kill = () => { throw new Error('arbitrary PID signaling forbidden'); };
-      Object.defineProperty(process, 'platform', { value: 'darwin' });
-      Object.defineProperty(process, 'arch', { value: 'arm64' });
-      cp.spawn = () => child;
-      require(${JSON.stringify(path.join(sourceRoot, 'packaging/mcpb_runtime.cjs'))}).prepareStandaloneRuntime = async () => (${JSON.stringify(runtime)});
-      require(${JSON.stringify(path.join(sourceRoot, 'core/processIsolation.cjs'))}).dispatchNativeControl = async () => (${JSON.stringify(ready)});
-      require(${JSON.stringify(path.join(sourceRoot, 'core/processIsolation.cjs'))}).discoverNativeEndpoint = async () => (${JSON.stringify(discovery)});
-      require(${JSON.stringify(path.join(sourceRoot, 'core/mcp/server.cjs'))}).serve = async () => { ${serverBody} };
-    `
-    );
     const result = spawnSync(
       process.execPath,
-      ['--unhandled-rejections=strict', '--require', preload, launcherPath],
+      ['--unhandled-rejections=strict', '--require', launcherPreloadPath, launcherPath],
       {
         encoding: 'utf8',
         timeout: 5000,
         cwd: root,
+        env: {
+          ...process.env,
+          KRYPTON_TEST_SIGNALS_PATH: signals,
+          KRYPTON_TEST_SERVER_MODE: serverMode,
+          KRYPTON_TEST_RUNTIME: JSON.stringify(runtime),
+          KRYPTON_TEST_READY: JSON.stringify(ready),
+          KRYPTON_TEST_DISCOVERY: JSON.stringify(discovery),
+        },
       }
     );
     return { ...result, signals: fs.existsSync(signals) ? fs.readFileSync(signals, 'utf8') : '' };
@@ -178,7 +162,7 @@ afterEach(() => {
 
 describe('standalone launcher entry boundary', () => {
   it('redacts an arbitrary server failure through the shared CLI boundary', () => {
-    const result = invokeEntry("throw new Error('private capability /private/workspace');");
+    const result = invokeEntry('throw');
     expect(result.status).toBe(1);
     expect(result.stderr).toBe('[KRYPTON] operation_failed; command failed closed.\n');
     expect({ stdout: result.stdout, signals: result.signals }).toEqual({
@@ -186,12 +170,10 @@ describe('standalone launcher entry boundary', () => {
       signals: 'SIGTERM\n',
     });
   });
-  it.each(['stdout', 'stderr'])(
+  it.each(['stdout', 'stderr'] as const)(
     'uses only exact-child synchronous fallback when %s fails',
     (stream) => {
-      const result = invokeEntry(
-        `process.${stream}.emit('error', new Error('private capability'));`
-      );
+      const result = invokeEntry(stream);
       expect(result.status).toBe(1);
       expect({ stdout: result.stdout, stderr: result.stderr }).toEqual({ stdout: '', stderr: '' });
       expect(result.signals).toBe('SIGKILL\n');
