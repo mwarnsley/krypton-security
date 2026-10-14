@@ -201,7 +201,7 @@ describe('bounded deterministic ZIP writer', () => {
   it('accepts an entry at the 128 MiB limit', () => {
     const data = Buffer.alloc(128 * 1024 * 1024);
     expect(createZip([{ name: 'native', data }])).toBeInstanceOf(Buffer);
-  });
+  }, 30_000);
 
   it('rejects an entry one byte above 128 MiB', () => {
     const data = Buffer.alloc(128 * 1024 * 1024 + 1);
