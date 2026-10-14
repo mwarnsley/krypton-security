@@ -20,9 +20,10 @@ tests own disposable children and never use the maintainer's daemon or client
 settings.
 
 The existing `quality.yml` workflow retains additional Linux coverage, npm/Rust
-SBOM generation and pinned Rust advisory/license tools. Its jobs are named
-**JavaScript and TypeScript** and **Native Rust core**. They supplement the
-macOS gate; experimental Linux runtime support is not promoted by compilation.
+SBOM generation, pinned `cargo-audit` and `cargo-cyclonedx`, and a current
+`cargo-deny` capable of parsing the live advisory schema. Its jobs are named
+**JavaScript and TypeScript** and **Native Rust core**. They supplement the macOS
+gate; experimental Linux runtime support is not promoted by compilation.
 `deploy.yml` continues to publish only the static demonstration dashboard.
 
 ## Activate strict main protection
