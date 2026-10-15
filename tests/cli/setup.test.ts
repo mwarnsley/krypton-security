@@ -30,6 +30,18 @@ const locations = [
 ] as const;
 
 describe('universal client setup', () => {
+  it('explains on-demand source protection and the optional telemetry viewer', async () => {
+    const messages: string[] = [];
+    expect(
+      await main([], { homeDir, platform: 'darwin', write: (text: string) => messages.push(text) })
+    ).toBe(0);
+    expect(messages.join('')).toContain('Krypton starts the native daemon on demand');
+    expect(messages.join('')).toContain(
+      'cargo build --release --manifest-path src/core-native/Cargo.toml'
+    );
+    expect(messages.join('')).toContain('Optional telemetry viewer: npm run dev:dashboard');
+    expect(messages.join('')).not.toContain('npm run dev:full');
+  });
   it('explains Windows unavailability without touching existing settings', async () => {
     await fs.mkdir(path.join(homeDir, '.cursor'));
     const file = path.join(homeDir, '.cursor/mcp.json');

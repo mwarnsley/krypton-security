@@ -83,7 +83,7 @@ describe('DashboardPage', () => {
   it('renders the security command heading', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 
-    expect(markup).toContain('AegisAgent Security Command');
+    expect(markup).toContain('Krypton Security Command');
   });
 
   it('renders the About and Guide drawer trigger in the command header', () => {

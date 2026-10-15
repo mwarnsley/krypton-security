@@ -245,7 +245,12 @@ async function main(argv = process.argv.slice(2), options = {}) {
       (result.status === 'failed' ? writeError : write)(
         `${result.status.toUpperCase()} ${result.client}: ${result.reason}\n`
       );
-    write('Restart configured clients. Start the native daemon with npm run dev:full.\n');
+    write(
+      'Restart configured clients. Krypton starts the native daemon on demand; no separate daemon terminal is required.\n'
+    );
+    write(
+      'Source prerequisite: cargo build --release --manifest-path src/core-native/Cargo.toml. Optional telemetry viewer: npm run dev:dashboard, then open http://localhost:3000.\n'
+    );
     return results.some((row) => row.status === 'failed') ? 1 : 0;
   } catch (error) {
     const code = error instanceof SetupError ? error.code : 'filesystem_error';

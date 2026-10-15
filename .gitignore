@@ -29,6 +29,7 @@ sandbox_workspace/*
 !sandbox_workspace/.gitkeep
 .krypton/runtime/
 .krypton/telemetry/
+.krypton/logs/
 
 # Logs
 *.log

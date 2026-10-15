@@ -61,7 +61,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (identity.pid === process.pid) {
     return Response.json(
-      { success: false, error: 'The AegisAgent dashboard process cannot isolate itself.' },
+      { success: false, error: 'The Krypton Security dashboard process cannot isolate itself.' },
       { status: 400 }
     );
   }

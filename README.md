@@ -25,39 +25,43 @@ The release artifacts are currently unsigned and unnotarized. Gatekeeper
 behavior and installation in a clean-machine Claude Desktop environment remain
 manual release gates; verify the release checksums before use.
 
-### Method 2: Terminal / Source Setup
+### Method 2: Source checkout in three steps
 
 Source development requires Node.js 20.19.4, npm 10.x, Rust 1.97.0 through
-`rustup`, and the macOS command-line developer tools:
+`rustup`, and the macOS command-line developer tools. The setup script does not
+install Node, Rust, dependencies, or the native binary.
 
-```bash
-git clone https://github.com/mwarnsley/krypton-security.git
-cd krypton-security
-npm ci
-npm run setup
-npm run dev:full
-```
+1. Clone and prepare the checkout:
+
+   ```bash
+   git clone https://github.com/mwarnsley/krypton-security.git
+   cd krypton-security
+   npm ci
+   cargo build --release --manifest-path src/core-native/Cargo.toml
+   ```
+
+2. Close Claude Desktop, Cursor, Claude Code and Cline, then double-click
+   `scripts/Install-Mac.command` inside the checkout. It opens Terminal and runs
+   the shared setup engine. Node must be on PATH; alternatively run `npm run setup`
+   from your configured terminal. Keep the script inside the checkout.
+3. Restart Claude Desktop and use `krypton_read_file` or `krypton_write_file`.
+   The configured `src/cli.cjs run` launcher reuses a healthy authenticated daemon
+   or starts the compiled daemon automatically. No development terminal is required
+   for protection; closing the MCP client leaves the source daemon running.
 
 The checkout setup path configures detected clients with an absolute
-`KRYPTON_PROJECT_ROOT`. `npm run dev:full` launches the native daemon and the
-local Next.js telemetry dashboard at <http://localhost:3000>.
+`KRYPTON_PROJECT_ROOT`. To view source telemetry optionally run
+`npm run dev:dashboard` and open <http://localhost:3000>. The dashboard does not
+start the daemon and is not required for protected MCP tools.
 
-### Source-checkout double-click setup
-
-After installing the prerequisites and running `npm ci`, close Claude Desktop,
-Cursor, Claude Code and Cline. Double-click `scripts/Install-Mac.command` inside
-the checkout. This opens Terminal and calls the same setup engine as
-`npm run setup`; it is not a standalone application or dependency installer.
-Node must be available on PATH in that Terminal session. If a version-manager
-installation is not found, run `npm run setup` from your configured terminal or
-use the standalone MCPB. Keep the scripts in the checkout rather than downloading
-an isolated script. Source users must separately start `npm run dev:full`.
+### Source-checkout setup notices
 
 The engine detects installed client storage, preserves other settings, and
 atomically backs up and merges JSON. Review each configured/skipped/failed row.
 A bounded `osascript` completion notice means setup finished, not that a daemon
 is running or containment is active. Notification failure returns exit 1 without
-rolling back settings. No privileged installation or background service is added.
+rolling back settings. No privileged installation or login service is added. The
+source launcher starts a detached daemon when a configured client connects, not during setup.
 
 `scripts/Install-Windows.cmd` reports unsupported native setup and exits 1
 without modifying client settings. If Node is installed it invokes the shared
@@ -68,7 +72,7 @@ Linux retains its existing experimental terminal setup path.
 ### Verifying Installation (Live Smoke Test)
 
 1. On macOS, fully quit Claude Desktop with **Cmd + Q** and reopen it. Source
-   installs need their local daemon running; standalone MCPB supervises its own.
+   installs auto-start their compiled daemon; standalone MCPB supervises its own.
 2. Open the tools / **+ → Connectors** menu and verify `krypton_read_file` and
    `krypton_write_file`. Developer settings and extension logs show connection status.
 3. With the default protected workspace, submit:
@@ -91,7 +95,8 @@ Source telemetry lives at `.krypton/telemetry/alerts.jsonl`. Standalone evidence
 lives at `~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
 The source dashboard does not automatically attach to standalone instance ledgers.
 The public GitHub Pages dashboard is a static demonstration and cannot inspect
-local sockets or show your native workstation events.
+local sockets or show your native workstation events. A local-file telemetry
+bridge is planned for Phase 2; it is not available today.
 
 The generated manifest is owned by `createManifest` in
 `src/packaging/build_mcpb.cjs`; there is no separate source `manifest.json` to edit.
@@ -167,19 +172,24 @@ integrate with its policy or protected launcher.
 ## Architecture
 
 ```text
-[Protected launcher]
-      │ spawn → inspect PID/start/executable/parent → authenticated register
+[Claude / other MCP client]
+      │ source setup invokes src/cli.cjs run
       ▼
-[Rust daemon process registry] ◄──── authenticated Unix socket ──── [Next API]
-      │ exact-generation revalidation                                 │
-      ├─ isolate only registered identity                             ▼
-      └─ confirmed SIGKILL → bounded alert queue → macOS Notification Center
-                                                               [Dashboard]
+[Node supervisor: daemon readiness + owned-child registration/lifecycle]
+      │ starts MCP child; preserves JSON-RPC stdout
+      ▼
+[MCP server: validates JSON-RPC and the two file tools]
+      │ authenticated mcp_file IPC; no arbitrary syscall interception
+      ▼
+[Rust daemon: path policy + descriptor-relative file read/write]
+      ├─ compound process identity registry → live revalidation
+      │    → SIGKILL only for an owned registered child → confirmed quarantine alert
+      └─ bounded, compacted JSONL ledger → local Next.js API → dashboard
 
-[OS filesystem notifications]
-      │ paths and event kinds only; no fabricated PID
-      ▼
-[Component-aware workspace policy] → [bounded JSONL telemetry ledger]
+[OS filesystem notifications] → unattributed observations → bounded JSONL ledger
+      └─ never authorize a process signal
+
+[GitHub Pages] → mock data only (local-file bridge planned for Phase 2)
 ```
 
 The project root contains Krypton configuration and the dashboard. The protected
@@ -228,38 +238,35 @@ cd krypton-security
 # 1. Install pinned dependencies
 npm ci
 
-# 2. Check native core compilation
-cargo check --manifest-path src/core-native/Cargo.toml
+# 2. Build the native executable used by automatic startup
+cargo build --release --manifest-path src/core-native/Cargo.toml
 
 # 3. Verify Next.js production build (Turbopack)
 npm run build
 ```
 
-This onboarding sequence was validated on clean macOS Apple Silicon (aarch64).
+These source checks prepare the native binary and verify the dashboard build.
+Client UI installation and clean-machine checks remain separate manual steps.
 
-### Running the full stack
+### Optional dashboard and foreground development
 
-```bash
-npm run dev:full
-```
-
-`dev:full` uses `concurrently` to start the native Rust daemon, bound to
-`.krypton/runtime/daemon.sock`, and the Next.js 16 Turbopack dashboard at
-[http://localhost:3000](http://localhost:3000). Keep this terminal running;
-Ctrl+C stops the development session. A failed child causes `concurrently` to
-stop the other service.
-
-**Port collision fallback:** Keep port 3000 free for the standard command.
-During clean-macOS QA, an occupied port 3000 blocked dashboard startup under
-Turbopack inside `concurrently`. Do not depend on automatic port retry: free
-port 3000 or explicitly select an available alternative for the full stack:
+For source telemetry after a configured client has connected:
 
 ```bash
-PORT=3001 npm run dev:full
+npm run dev:dashboard
 ```
 
-Then open [http://localhost:3001](http://localhost:3001). The `PORT` override
-changes the dashboard HTTP port; native IPC still uses the workspace Unix socket.
+Open <http://localhost:3000>. If occupied, use
+`npm run dev:dashboard -- -p 3001` and open <http://localhost:3001>.
+This viewer reads the source checkout ledger; it does not automatically load a
+standalone Application Support ledger. Protection continues without the viewer.
+
+`npm run dev:full` remains an optional foreground development command using
+`concurrently` for the Cargo daemon and dashboard. Use it only when no daemon is
+already running for this checkout; a failed child stops the other service.
+Ctrl+C stops that development session. `PORT=3001 npm run dev:full` changes only
+the dashboard HTTP port, not native IPC. Neither command is required for MCP
+onboarding or automatic source daemon startup.
 
 After a confirmed native quarantine, the daemon queues
 a macOS Notification Center banner outside the browser. The banner identifies
@@ -308,9 +315,9 @@ Each entry launches `node` with the literal argument array
 and `env: { "KRYPTON_PROJECT_ROOT": "<PROJECT_ROOT>" }`, using the canonical
 checkout path. Node must be on the GUI client's PATH. Setup prints
 `CONFIGURED`, `SKIPPED`, or `FAILED` per client and exits nonzero for failures.
-Restart configured clients after starting or restarting the updated daemon with
-`npm run dev:full`. To undo setup, close the client and restore its reviewed
-`.bak` file, or remove only `mcpServers.krypton-protected-fs` if no original
+Restart configured clients; their supervisor reuses a healthy daemon or starts
+the compiled source daemon automatically. To undo setup, close the client and
+restore its reviewed `.bak` file, or remove only `mcpServers.krypton-protected-fs` if no original
 configuration existed.
 
 ### Protected MCP file tools
@@ -567,30 +574,54 @@ This creates the `krypton` command using your active Node/npm installation.
 No additional CLI package is required. Without linking, use
 `node /absolute/path/to/krypton-security/src/cli.cjs` in place of `krypton`.
 
-Start the daemon in one terminal and the supervised command in another:
+Run the supervised command from the prepared checkout:
 
 ```sh
-# Terminal 1, in the Krypton checkout (foreground daemon only)
-krypton daemon:start
-# Or run npm run dev:full to include the dashboard.
-
-# Terminal 2, in the same checkout
 krypton run -- claude
 krypton run -- node agent.js
 ```
 
-`krypton daemon:start` runs the checkout's Rust daemon through Cargo; it requires
-rustup/Cargo and does not install a background service. Ctrl+C ends the session.
-`krypton run` validates private daemon discovery and authenticated healthy status
-before spawning. If the daemon is missing, unreachable, unauthenticated, or degraded:
+`krypton run` first validates private discovery and authenticated healthy status.
+It reuses a healthy daemon. When no reachable daemon exists, it searches for
+`krypton-core-native` in this order: `target/release/`,
+`src/core-native/target/release/`, `target/debug/`, then
+`src/core-native/target/debug/`. When `CARGO_TARGET_DIR` is set, its target
+directory is searched first within each profile; relative values resolve against
+the checkout and absolute values are used directly. All release candidates are
+searched before any debug candidates. Build the native executable if it is missing:
 
-```text
-Krypton native daemon is not running. Please start it with 'npm run dev:full' or 'krypton daemon:start'.
+```sh
+cargo build --release --manifest-path src/core-native/Cargo.toml
 ```
 
-For a degraded daemon, inspect dashboard health and resolve the failure before
-retrying. No target is spawned on failed preflight. Start/restart the updated daemon
-after upgrading so the termination-receipt command is available.
+Automatic startup launches a detached Node host, which owns the native daemon
+child without Cargo or a shell. Healthy readiness must succeed within three
+seconds after host spawn. The initial existing-daemon IPC probe has its own
+1500 ms deadline, and filesystem preparation occurs before the readiness timer;
+the entire startup is not bounded to three seconds. Readiness polls every 100 ms
+and individual IPC exchanges retain their 1500 ms absolute deadline.
+Authentication, malformed discovery, degraded health, early exit without a healthy
+service, or readiness timeout fails closed before the target is launched. Scheduler
+stalls and blocking kernel I/O are outside hard real-time guarantees.
+
+The source host and daemon remain running independently of MCP sessions until
+explicitly stopped or a service failure ends them. Each client still registers
+and unregisters its own initial child. The host copies combined native stdout and
+stderr to private `.krypton/logs/daemon.log`, capped at 64 KiB; subsequent output is
+drained and discarded. Each new startup attempt atomically publishes a fresh file;
+an existing host retains its original private file handle, avoiding mixed output.
+The visible log describes the latest attempt, which may be a losing concurrent
+starter. It is diagnostic output, not the separate native telemetry ledger. It can
+contain native output and private paths: inspect it locally and redact it before
+sharing. These bytes never share MCP stdout. This differs from the standalone
+MCPB, whose launcher stops its exact daemon child when its session ends.
+No login service is installed. After updating the binary, stop the known source
+daemon and reconnect the client so the new binary starts; never kill a PID copied
+from untrusted discovery data or delete a live socket/startup lock.
+
+`krypton daemon:start` remains an explicit foreground Cargo development command;
+Ctrl+C ends that session. Resolve degraded health before retrying. The launcher
+does not replace an authenticated but unhealthy daemon with a permissive instance.
 
 **Workspace selection:** Run from the checkout root or inside its configured
 protected workspace. From the root, the child starts in `sandbox_workspace`
@@ -661,10 +692,9 @@ Linux remains experimental and Windows remains dashboard-only.
 
 ### Local supervisor verification
 
-1. In the checkout, use the pinned toolchains and run `npm ci` and `npm link`.
-   Start or restart the updated daemon with `krypton daemon:start`, or use
-   `npm run dev:full` to include the dashboard. Keep that terminal running.
-2. In another terminal in the same checkout, run:
+1. In the checkout, use the pinned toolchains, run `npm ci`,
+   `cargo build --release --manifest-path src/core-native/Cargo.toml`, and `npm link`.
+2. In the same checkout, run (the daemon starts automatically if unavailable):
 
    ```sh
    krypton run -- node -e 'console.log(process.cwd())'
@@ -842,7 +872,7 @@ Krypton release binaries are unsigned and unnotarized. After verifying the relea
 
 ### Native Daemon Connection Timeout
 
-A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, start npm run dev:full and inspect the existence and permissions of .krypton/runtime/ without printing capability or daemon.json contents. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.
+A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, the configured launcher starts the compiled daemon automatically. If the binary is missing, run cargo build --release --manifest-path src/core-native/Cargo.toml, then reconnect. Readiness must succeed within three seconds after host spawn; the initial 1500 ms IPC probe and filesystem preparation are separate. Authentication or degraded-health errors fail closed without replacing that daemon. Inspect private .krypton/logs/daemon.log output (64 KiB maximum, reset per startup attempt; private paths require redaction before sharing) and the permissions of .krypton/runtime/ without printing capability or daemon.json contents. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.
 
 ### Permissions Denied on Protected Workspace
 
@@ -881,7 +911,9 @@ per-app approval. Do not disable system-wide protections.
   this lock file while a daemon could still be running. Startup removes a socket only
   after a connection check proves it is stale; never delete a socket belonging
   to a running daemon.
-- **Daemon endpoint missing:** start `npm run dev:daemon` and confirm
+- **Daemon endpoint missing:** reconnect the configured source client to trigger
+  automatic startup. If the executable is missing, run
+  `cargo build --release --manifest-path src/core-native/Cargo.toml`. Confirm
   `.krypton/runtime/daemon.json` is created with private permissions.
 - **macOS quarantine banner missing:** confirm the daemon is running in an
   interactive macOS desktop session and review Notification settings for the
@@ -944,10 +976,42 @@ built-in Claude tools remain outside the boundary. The unsigned, unnotarized
 bundle still requires manual clean-machine Claude Desktop and Gatekeeper QA.
 
 Source users can instead close clients, double-click `scripts/Install-Mac.command`
-in a prepared macOS checkout, or run `npm run setup` (`krypton setup` after `npm link`), start the updated daemon with `npm run dev:full`, and restart
-configured clients. That flow preserves other servers, atomically backs up
+in a prepared macOS checkout, or run `npm run setup` (`krypton setup` after `npm link`),
+and restart configured clients. Their supervisor automatically starts the compiled
+daemon when unavailable and reuses a healthy existing daemon. That flow preserves other servers, atomically backs up
 existing JSON, reports each client separately, and uses the canonical checkout as
 `KRYPTON_PROJECT_ROOT`. Avoid enabling both installation routes in one client.
+
+</details>
+
+<details>
+<summary>How do I view native telemetry, and is the dashboard required?</summary>
+
+Protection runs without the dashboard. In a source checkout, run
+`npm run dev:dashboard` and open <http://localhost:3000> after a protected client
+connects. It reads `.krypton/telemetry/alerts.jsonl`, a bounded JSONL ledger that
+retains at most 10,000 events or 8 MiB through atomic compaction. It is not an
+unbounded append-only log. Standalone MCPB evidence lives at
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`
+and is not automatically loaded by the source viewer. GitHub Pages uses mock
+data only until the planned Phase 2 local-file bridge ships.
+
+</details>
+
+<details>
+<summary>What happens if the native daemon disconnects?</summary>
+
+Protected MCP calls fail closed on a missing socket, disconnect, authentication
+failure, degraded native state, or the 1500 ms absolute IPC deadline. They never
+fall back to direct unprotected file access. Reconnect a source client to reuse a
+healthy daemon or trigger automatic startup; missing binaries require
+`cargo build --release --manifest-path src/core-native/Cargo.toml`. Readiness
+must succeed within three seconds after host spawn; the initial 1500 ms IPC probe
+and filesystem preparation are separate. Existing authentication or degraded-health
+failures never trigger daemon replacement. Review private `.krypton/logs/daemon.log`
+output locally: it is capped at 64 KiB and reset per startup attempt, and may contain
+private paths that require redaction before sharing. The standalone MCPB owns its own daemon lifecycle. Inspect the destination
+before retrying an uncertain write; reconnecting does not establish rollback.
 
 </details>
 
@@ -998,8 +1062,11 @@ and demonstration rows are explicitly mock data.
 <details>
 <summary>5. What is the difference between Audit-Only Mode and Enforcement Mode?</summary>
 
-Audit-Only Mode records integrated policy violations without requesting process
-termination. Enforcement Mode denies integrated out-of-bounds actions and may
+The native daemon initially starts in `audit_only`; the local dashboard displays
+the authenticated live mode. Both modes deny unsafe MCP file operations. Audit-Only
+Mode records violations
+without requesting process termination; it does not permit out-of-bounds reads or
+writes. Enforcement Mode may
 quarantine only an owned, registered child after its PID, start time, executable
 path, and parent PID are revalidated. Portable watcher events alone never
 authorize arbitrary PID isolation.
@@ -1058,13 +1125,17 @@ remains between validation and the operating-system action.
 <details>
 <summary>10. How do I run the project locally?</summary>
 
-Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via
-`rustup`. Clone the repository, enter `krypton-security`, run `npm ci`, then
-`cargo check --manifest-path src/core-native/Cargo.toml` and `npm run build`.
-Use `npm run dev:full` to start the macOS native daemon at
-`.krypton/runtime/daemon.sock` and Next.js 16 Turbopack dashboard concurrently.
-Keep port 3000 free and open `http://localhost:3000`; if occupied, free it or
-use `PORT=3001 npm run dev:full` and open `http://localhost:3001`.
+Use Node.js v20.19.4, npm 10.x, and Rust 1.97.0 via `rustup`. Clone the repository,
+run `npm ci` and `cargo build --release --manifest-path src/core-native/Cargo.toml`,
+then close clients and double-click `scripts/Install-Mac.command` (or run
+`npm run setup`). Restart Claude Desktop and use the protected MCP tools. The
+source launcher automatically starts a missing daemon and reuses a healthy one;
+it does not require `npm run dev:full` or an open terminal. The source daemon
+remains running after client disconnect. For optional source telemetry, run
+`npm run dev:dashboard` and open `http://localhost:3000`; use
+`npm run dev:dashboard -- -p 3001` if that port is occupied. The viewer does not
+automatically read standalone Application Support ledgers. Pages stays mock until
+the planned Phase 2 local-file bridge ships.
 After `npm link`, run `krypton run -- <command> [args...]` from the checkout or
 protected workspace. `krypton daemon:start` starts only the foreground daemon.
 For desktop MCP hosts, set an absolute `KRYPTON_PROJECT_ROOT` and use literal

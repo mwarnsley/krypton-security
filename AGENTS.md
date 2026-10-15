@@ -356,7 +356,7 @@ reshape the tree or create alternate roots.
 │   ├── core-native/             # Rust daemon, watcher, registry, telemetry, IPC
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   ├── dashboard/               # Next.js 16 AegisAgent Command Center
+│   ├── dashboard/               # Next.js 16 Krypton Security Command Center
 │   │   ├── app/                 # App Router pages and local API routes
 │   │   ├── components/
 │   │   │   ├── primitives/      # Semantic design-system building blocks
@@ -374,8 +374,10 @@ reshape the tree or create alternate roots.
     │   ├── daemon.json          # Socket discovery and daemon metadata
     │   ├── daemon.sock          # Workspace-specific Unix control socket
     │   └── capability           # Private daemon capability material
-    └── telemetry/
-        └── alerts.jsonl         # Bounded native telemetry ledger
+    ├── telemetry/
+    │   └── alerts.jsonl         # Bounded native telemetry ledger
+    └── logs/
+        └── daemon.log          # Private bounded output from latest source startup attempt
 ```
 
 ### Directory responsibilities
@@ -385,7 +387,7 @@ reshape the tree or create alternate roots.
 - `/src/core-native/` owns the Rust daemon, authenticated Unix-domain socket
   server, watcher, live compound process registry, signal delivery, and durable
   native telemetry.
-- `/src/dashboard/` owns the Next.js 16 AegisAgent Command Center. Routing and
+- `/src/dashboard/` owns the Next.js 16 Krypton Security Command Center. Routing and
   server-only behavior remain in `app/` and `server/`; reusable visual elements
   remain in the existing `components/primitives/`, `components/patterns/`, and
   `components/ui/` tiers.

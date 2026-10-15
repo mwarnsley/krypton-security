@@ -1116,7 +1116,7 @@ export default function DashboardPage(): React.JSX.Element {
                 ACTIVE SECURITY WORKSPACE
               </p>
               <h1 className="mt-2 text-2xl font-black tracking-tight text-krypton-fg-primary sm:text-3xl">
-                AegisAgent Security Command
+                Krypton Security Command
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-krypton-fg-muted">
                 Real-time monitoring and threat isolation for automated applications and file
@@ -1145,7 +1145,7 @@ export default function DashboardPage(): React.JSX.Element {
                 />
                 {!modeKnown && <span role="status">Mode unavailable</span>}
                 <InfoTooltip
-                  content="Audit-Only Mode records folder escapes and shows warnings without terminating the process, so you can observe normal workspace activity before enabling enforcement."
+                  content="The native daemon starts in Audit-Only Mode (switch on), recording workspace violations and showing warnings without terminating processes. Switch off selects Active Enforcement; only owned, registered processes can be isolated after live identity verification. The live daemon supplies the current mode. Krypton MCP reads and writes outside the protected workspace remain denied in both modes. Static demonstrations change only simulated behavior."
                   label="Audit-Only Mode"
                 />
               </div>

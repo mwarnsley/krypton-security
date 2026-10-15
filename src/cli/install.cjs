@@ -12,7 +12,7 @@ async function notifySetupComplete() {
     '/usr/bin/osascript',
     [
       '-e',
-      'display notification "Setup finished. Review console results and restart configured clients." with title "Krypton Setup"',
+      'display notification "Setup finished. Review prerequisites and restart clients for on-demand native protection." with title "Krypton Setup"',
     ],
     { timeout: 2000, killSignal: 'SIGKILL', maxBuffer: 4096 }
   );

@@ -1,8 +1,15 @@
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 import { Toaster } from '../components/ui/Toaster';
 
 import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'Krypton Security | Command Center',
+  description:
+    'Krypton Security monitors local workspace activity and registered-process isolation, with clearly labeled native telemetry and demonstration data.',
+};
 
 interface RootLayoutProps {
   /** The active dashboard route content rendered inside the document body. */

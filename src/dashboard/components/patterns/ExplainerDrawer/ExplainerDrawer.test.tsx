@@ -25,6 +25,65 @@ describe('ExplainerDrawer', () => {
       screen.getByText(/A file denial does not trigger a desktop quarantine banner/)
     ).toBeTruthy();
   });
+  it('offers three source setup steps and automatic daemon startup', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(
+      screen.getByRole('heading', { name: '3. Restart Claude Desktop and use the protected tools' })
+    ).toBeTruthy();
+    expect(screen.getByRole('tabpanel').textContent).toContain(
+      'No development terminal is required for protection'
+    );
+    expect(screen.getByText(/The detached source daemon remains running/)).toBeTruthy();
+  });
+
+  it('documents bounded cold-start failure and missing-binary recovery', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByText('Native Daemon Connection Timeout'));
+    const answer = screen.getByText(/A missing socket, disconnect/).textContent;
+    expect(answer).toContain('within three seconds after host spawn');
+    expect(answer).toContain('cargo build --release --manifest-path src/core-native/Cargo.toml');
+    expect(answer).toContain(
+      'Authentication errors and degraded health fail closed without replacing'
+    );
+  });
+
+  it('separates readiness timing from preparation and protects private logs', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByText('Native Daemon Connection Timeout'));
+    const answer = screen.getByText(/A missing socket, disconnect/).textContent;
+    expect(answer).toContain(
+      'the initial 1500 ms IPC probe and filesystem preparation are separate'
+    );
+    expect(answer).toContain('64 KiB maximum, reset per startup attempt');
+    expect(answer).toContain('private paths, so redact before sharing');
+  });
+
+  it('keeps unsafe MCP operations denied in audit mode', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(
+      screen.getByText('What is the difference between Audit-Only Mode and Enforcement Mode?')
+    );
+    expect(screen.getByText(/Both modes deny unsafe MCP reads and writes/).textContent).toContain(
+      'it does not allow out-of-bounds file access'
+    );
+  });
+
+  it('distinguishes the optional source viewer from standalone ledgers and Pages', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(
+      screen.getByText('How do I view native telemetry, and is the dashboard required?')
+    );
+    const answer = screen.getByText(/Protection runs without the dashboard/).textContent;
+    expect(answer).toContain('npm run dev:dashboard');
+    expect(answer).toContain('not automatically loaded by the source viewer');
+    expect(answer).toContain('mock data only until the planned Phase 2 local-file bridge ships');
+  });
+
   it('explains recovery when native setup is unavailable', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
@@ -235,6 +294,7 @@ describe('ExplainerDrawer', () => {
       'Tools not showing up in Claude Desktop',
       'Gatekeeper / Unsigned Binary Notice on macOS',
       'Native Daemon Connection Timeout',
+      'How do I view native telemetry, and is the dashboard required?',
       'Permissions Denied on Protected Workspace',
       'Can I install the native runtime on Windows?',
     ]);
@@ -298,11 +358,11 @@ describe('ExplainerDrawer', () => {
     expect(screen.getByRole('tabpanel').textContent).toContain('1.97.0-aarch64-apple-darwin');
   });
 
-  it('documents full-stack port recovery without changing native IPC', () => {
+  it('documents optional dashboard port recovery without changing native IPC', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
 
-    expect(screen.getByText('PORT=3001 npm run dev:full')).toBeTruthy();
+    expect(screen.getByText('npm run dev:dashboard -- -p 3001')).toBeTruthy();
     expect(screen.getByText(/The override changes only the dashboard/).textContent).toContain(
       'not the native Unix socket'
     );
@@ -314,7 +374,7 @@ describe('ExplainerDrawer', () => {
     fireEvent.click(screen.getByText('How do I run the project locally?'));
 
     expect(screen.getByText(/Use Node.js v20.19.4/).textContent).toContain(
-      'PORT=3001 npm run dev:full'
+      'npm run dev:dashboard -- -p 3001'
     );
   });
 
@@ -367,7 +427,7 @@ describe('ExplainerDrawer', () => {
 
     expect(await screen.findByText('Setup command copied')).toBeTruthy();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && cargo check --manifest-path src/core-native/Cargo.toml && npm run build && npm run dev:full'
+      'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && cargo build --release --manifest-path src/core-native/Cargo.toml && npm run setup'
     );
   });
 });

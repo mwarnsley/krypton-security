@@ -24,7 +24,6 @@ export function InfoTooltip(props: InfoTooltipProps): React.JSX.Element {
         icon={<Info />}
         onClick={(event) => {
           event.stopPropagation();
-          event.currentTarget.blur();
         }}
         size="sm"
         variant="link"

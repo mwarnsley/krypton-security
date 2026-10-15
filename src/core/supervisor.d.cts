@@ -1,12 +1,14 @@
 import type { EventEmitter } from 'node:events';
 import type { spawn } from 'node:child_process';
 import type { startProtectedProcess, dispatchNativeControl } from './processIsolation.cjs';
+import type { ensureNativeDaemon } from './daemonStartup.cjs';
 export interface SupervisorWorkspace {
   repositoryRoot: string;
   projectRoot: string;
   cwd: string;
 }
 export interface SupervisorDependencies {
+  ensureDaemon?: typeof ensureNativeDaemon;
   setup?: (argv: readonly string[]) => Promise<number>;
   resolveWorkspace?: () => Promise<SupervisorWorkspace>;
   dispatch?: typeof dispatchNativeControl;
