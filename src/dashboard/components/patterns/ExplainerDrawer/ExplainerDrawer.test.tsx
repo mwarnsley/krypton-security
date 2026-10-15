@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ExplainerDrawer } from './ExplainerDrawer';
@@ -8,6 +8,39 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it('compares alignment, approval settings and scoped native containment', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    const matrix = screen.getByRole('table', {
+      name: 'The Security Model: Prompt Alignment vs. Kernel Containment',
+    });
+    expect(within(matrix).getAllByRole('columnheader')).toHaveLength(4);
+    expect(
+      within(matrix)
+        .getAllByRole('rowheader')
+        .map((cell) => cell.textContent)
+    ).toEqual([
+      'Claude / Codex / Gemini Safety',
+      "Client 'YOLO' / Bypass Modes",
+      'Krypton Security Core',
+    ]);
+    expect(matrix.textContent).toContain('owned, registered children');
+  });
+
+  it('does not present the comparison as universal kernel isolation', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(screen.getByText(/Krypton does not replace model alignment/).textContent).toContain(
+      'through its protected MCP tools fails closed'
+    );
+    expect(screen.getByText(/This is defense in depth/).textContent).toContain(
+      'Audit-Only is the native startup default'
+    );
+    expect(screen.getByText(/This is defense in depth/).textContent).toContain(
+      'arbitrary syscalls and unrelated host tools remain outside this boundary'
+    );
+  });
+
   it('shows double-click setup with accurate denial verification', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));

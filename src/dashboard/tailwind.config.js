@@ -91,6 +91,14 @@ const config = {
         'krypton-space-5': '24px',
         'krypton-space-6': '32px',
       },
+      maxWidth: {
+        'krypton-dashboard': '96rem',
+        'krypton-signature': '20rem',
+      },
+      minWidth: {
+        'krypton-signature': '16rem',
+        'krypton-comparison': '48rem',
+      },
     },
   },
   plugins: [],

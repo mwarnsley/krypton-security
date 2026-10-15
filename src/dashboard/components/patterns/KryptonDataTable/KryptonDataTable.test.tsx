@@ -19,6 +19,40 @@ const PAGINATION = {
 } as const;
 
 describe('KryptonDataTable', () => {
+  it('supplies only the sorted current page to the compact renderer', () => {
+    const renderMobileRow = vi.fn((row: { original: AssetRow }) => row.original.name);
+    renderToStaticMarkup(
+      <KryptonDataTable
+        caption="Protected assets"
+        columns={[...COLUMNS]}
+        data={['a', 'b', 'c', 'd'].map((name) => ({ id: name, name }))}
+        emptyMessage="No assets."
+        itemLabel="asset"
+        pagination={{ ...PAGINATION, state: { pageIndex: 1, pageSize: 2 } }}
+        sorting={{ onChange: vi.fn(), state: [{ id: 'name', desc: true }] }}
+        renderMobileRow={renderMobileRow}
+      />
+    );
+    expect(renderMobileRow.mock.calls.map(([row]) => row.original.name)).toEqual(['b', 'a']);
+  });
+
+  it('does not invoke the compact renderer for an empty page', () => {
+    const renderMobileRow = vi.fn(() => 'Unexpected card');
+    const markup = renderToStaticMarkup(
+      <KryptonDataTable
+        caption="Protected assets"
+        columns={[...COLUMNS]}
+        data={[]}
+        emptyMessage="No assets."
+        itemLabel="asset"
+        pagination={PAGINATION}
+        renderMobileRow={renderMobileRow}
+      />
+    );
+    expect(renderMobileRow).not.toHaveBeenCalled();
+    expect(markup).toContain('Protected assets mobile view');
+  });
+
   it('renders the shared grid, row count, selector, and navigation cluster', () => {
     const markup = renderToStaticMarkup(
       <KryptonDataTable

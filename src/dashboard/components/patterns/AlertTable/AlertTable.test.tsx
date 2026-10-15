@@ -305,7 +305,9 @@ describe('AlertTable', () => {
   it('keeps the responsive footer controls aligned without clipping navigation', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
-    expect(markup).toContain('flex w-full items-center justify-end gap-krypton-space-5 sm:w-auto');
+    expect(markup).toContain(
+      'flex w-full flex-wrap items-center justify-end gap-krypton-space-5 sm:w-auto'
+    );
     expect(markup).toContain('flex min-w-max items-center gap-1');
   });
 

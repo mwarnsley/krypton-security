@@ -1104,14 +1104,10 @@ export default function DashboardPage(): React.JSX.Element {
       className="min-h-screen bg-krypton-bg-main px-krypton-space-4 py-krypton-space-5 text-krypton-fg-primary sm:px-krypton-space-5 lg:px-krypton-space-6 lg:py-krypton-space-6"
       data-system-status={systemStatus}
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex w-full min-w-0 max-w-krypton-dashboard flex-col gap-6">
         <header className="relative overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-7 shadow-2xl shadow-krypton-shadow sm:px-krypton-space-6">
-          <div
-            aria-hidden="true"
-            className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-krypton-accent-cyan via-krypton-accent-blue to-krypton-accent-violet"
-          />
-          <div className="relative flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-            <div>
+          <div className="relative flex flex-col gap-krypton-space-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-bold uppercase tracking-krypton-hero text-krypton-accent-cyan">
                 ACTIVE SECURITY WORKSPACE
               </p>
@@ -1123,11 +1119,11 @@ export default function DashboardPage(): React.JSX.Element {
                 systems.
               </p>
             </div>
-            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-krypton-space-3 md:justify-end">
               <ExplainerDrawer />
               <div
                 aria-busy={isAuditModeUpdating}
-                className="flex items-center gap-krypton-space-3 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"
+                className="flex h-10 items-center gap-krypton-space-2 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"
               >
                 <label
                   className="cursor-pointer text-xs font-bold uppercase tracking-wider text-krypton-fg-secondary"
@@ -1143,7 +1139,6 @@ export default function DashboardPage(): React.JSX.Element {
                   onCheckedChange={handleAuditModeChange}
                   variant="warning"
                 />
-                {!modeKnown && <span role="status">Mode unavailable</span>}
                 <InfoTooltip
                   content="The native daemon starts in Audit-Only Mode (switch on), recording workspace violations and showing warnings without terminating processes. Switch off selects Active Enforcement; only owned, registered processes can be isolated after live identity verification. The live daemon supplies the current mode. Krypton MCP reads and writes outside the protected workspace remain denied in both modes. Static demonstrations change only simulated behavior."
                   label="Audit-Only Mode"
@@ -1152,7 +1147,7 @@ export default function DashboardPage(): React.JSX.Element {
               <p
                 aria-live="polite"
                 className={clsx(
-                  'inline-flex w-fit items-center gap-krypton-space-2 rounded-krypton-radius-full border px-krypton-space-3 py-1.5 text-xs font-bold uppercase tracking-wider',
+                  'inline-flex h-10 w-fit items-center gap-krypton-space-2 rounded-krypton-radius-full border px-krypton-space-3 text-xs font-bold uppercase tracking-wider',
                   systemStatus === 'operational'
                     ? 'border-krypton-success/40 bg-krypton-success/10 text-krypton-success'
                     : 'border-krypton-warning-amber/40 bg-krypton-warning-amber/10 text-krypton-warning-foreground'
@@ -1169,6 +1164,11 @@ export default function DashboardPage(): React.JSX.Element {
                 />
                 Telemetry stream: {systemStatus}
               </p>
+              {!modeKnown && (
+                <span role="status" className="w-full text-xs text-krypton-fg-muted md:text-right">
+                  Mode unavailable
+                </span>
+              )}
             </div>
           </div>
         </header>

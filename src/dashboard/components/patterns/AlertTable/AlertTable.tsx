@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  flexRender,
+  type Row,
   type ColumnDef,
   type Column,
   type PaginationState,
@@ -16,7 +18,7 @@ import {
   MoreVertical,
   SquareTerminal,
 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type {
   EnforcementStatus,
@@ -348,6 +350,58 @@ export function isolationIdentityKey(process: ProcessIdentityPayload): string {
   ]);
 }
 
+/**
+ * Renders a compact alert from the same cells that own desktop attribution and actions.
+ * @param {Row<SecurityAlert>} row - One already sorted and paginated alert row.
+ * @returns {ReactNode} A card body with a native keyboard-accessible signature disclosure.
+ * @complexity O(C + L) time and space for fixed columns C and displayed text length L.
+ */
+function renderMobileAlert(row: Row<SecurityAlert>): ReactNode {
+  const cells = new Map(row.getVisibleCells().map((cell) => [cell.column.id, cell]));
+  const renderCell = (id: string): ReactNode => {
+    const cell = cells.get(id);
+    return cell === undefined ? null : flexRender(cell.column.columnDef.cell, cell.getContext());
+  };
+  return (
+    <article className="min-w-0 space-y-krypton-space-4">
+      <div className="flex flex-wrap items-center justify-between gap-krypton-space-2 text-xs">
+        {renderCell('timestamp')}
+        {renderCell('severity')}
+      </div>
+      <div className="space-y-krypton-space-2">
+        <h3 className="break-all text-sm font-semibold text-krypton-fg-primary">
+          {row.original.processName}
+        </h3>
+        <p className="text-xs text-krypton-fg-muted">Attempted Access Location</p>
+        <code className="block break-all font-mono text-xs text-krypton-fg-secondary">
+          {row.original.attemptedPath}
+        </code>
+      </div>
+      <div className="flex items-start justify-between gap-krypton-space-3 border-t border-krypton-border-muted pt-krypton-space-3">
+        <div className="min-w-0 break-words text-xs">
+          <p className="mb-krypton-space-1 text-krypton-fg-muted">Process ID attribution</p>
+          {renderCell('targetProcessId')}
+        </div>
+        {renderCell('actions')}
+      </div>
+      <details className="group min-w-0 rounded-krypton-radius-control border border-krypton-border-muted">
+        <summary className="min-h-11 cursor-pointer rounded-krypton-radius-control p-krypton-space-3 text-xs text-krypton-fg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring">
+          <span className="font-semibold">Verified Signature</span>
+          <span
+            aria-hidden="true"
+            className="mt-krypton-space-1 block truncate font-mono text-krypton-fg-muted group-open:hidden"
+          >
+            {row.original.origin_attribution}
+          </span>
+        </summary>
+        <code className="block break-all px-krypton-space-3 pb-krypton-space-3 font-mono text-xs text-krypton-fg-secondary">
+          {row.original.origin_attribution}
+        </code>
+      </details>
+    </article>
+  );
+}
+
 export function AlertTable(props: AlertTableProps): React.JSX.Element {
   const { alerts } = props;
   const inFlightProcessIds = useRef(new Set<string>());
@@ -496,7 +550,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           />
         ),
         cell: ({ getValue }) => (
-          <span className="inline-flex max-w-56 rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-krypton-nano font-semibold tracking-krypton-mono text-krypton-fg-secondary">
+          <span className="block min-w-krypton-signature max-w-krypton-signature whitespace-normal break-all rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-xs font-semibold tracking-krypton-mono text-krypton-fg-secondary">
             {getValue<string>()}
           </span>
         ),
@@ -538,7 +592,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
                     }
                     disabled={isIsolating}
                     icon={<MoreVertical />}
-                    size="md"
+                    size="lg"
                     variant="link"
                   />
                 </DropdownMenuTrigger>
@@ -621,6 +675,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
         state: pagination,
       }}
       sorting={{ onChange: setSorting, state: sorting }}
+      renderMobileRow={renderMobileAlert}
     />
   );
 }
