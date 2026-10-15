@@ -201,6 +201,11 @@ in `ROADMAP.md`.
   deduplication, and a 500-row client bound.
 - Uses bounded table pagination options `10, 25, 50, 75, 100`; unbounded `ALL`
   rendering is removed.
+- Presents the same sorted, paginated alerts as a desktop table or mobile/tablet
+  cards. Cards preserve process attribution and action permissions, wrap access
+  paths, and expand complete signatures on tap or keyboard activation. Header
+  controls wrap independently of the title; the wide Field Guide comparison
+  remains horizontally scrollable on smaller screens.
 - Requires compound process identity for Force Isolate actions.
 - Preserves portable watcher rows with a null PID as observed, unattributed
   evidence; attributed native identities include `parentPid` (number or null).

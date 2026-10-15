@@ -10,10 +10,11 @@ import {
   type OnChangeFn,
   type PaginationState,
   type RowData,
+  type Row,
   type SortingState,
 } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
-import { useId, useMemo } from 'react';
+import { useId, useMemo, type ReactNode } from 'react';
 
 import {
   KryptonButton,
@@ -79,6 +80,9 @@ export interface KryptonDataTableProps<TData extends RowData> {
 
   /** Optional controlled TanStack sorting state and handler. */
   readonly sorting?: KryptonDataTableSorting;
+
+  /** Optional compact renderer sharing the sorted, paginated rows and footer below lg. */
+  readonly renderMobileRow?: (row: Row<TData>) => ReactNode;
 }
 
 /**
@@ -156,6 +160,7 @@ export function KryptonDataTable<TData extends RowData>(
     itemLabel,
     pagination,
     sorting,
+    renderMobileRow,
   } = props;
   const pageSizeSelectId = useId();
   // TanStack Table intentionally returns mutable callbacks that React Compiler cannot memoize safely.
@@ -193,7 +198,33 @@ export function KryptonDataTable<TData extends RowData>(
       className="w-full min-w-0 overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted shadow-2xl shadow-krypton-shadow"
       data-component="krypton-data-table"
     >
-      <div className="w-full overflow-x-auto bg-krypton-bg-main/40">
+      {renderMobileRow ? (
+        <section aria-label={`${caption} mobile view`} className="block lg:hidden">
+          {rows.length > 0 ? (
+            <ul
+              aria-label={`${caption} cards`}
+              className="space-y-krypton-space-3 p-krypton-space-3"
+            >
+              {rows.map((row) => (
+                <li
+                  key={row.id}
+                  {...getRowDataAttributes?.(row.original)}
+                  className="min-w-0 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4"
+                >
+                  {renderMobileRow(row)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="p-krypton-space-6 text-center text-sm text-krypton-fg-secondary">
+              {emptyMessage}
+            </p>
+          )}
+        </section>
+      ) : null}
+      <div
+        className={`${renderMobileRow ? 'hidden lg:block ' : ''}w-full overflow-x-auto bg-krypton-bg-main/40`}
+      >
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead className="border-b border-krypton-border-muted bg-krypton-bg-surface/95 text-xs uppercase tracking-wider text-krypton-table-header">
@@ -252,7 +283,7 @@ export function KryptonDataTable<TData extends RowData>(
             Page {activePageIndex + 1} of {pageCount} · {totalRowCount} {countLabel}
           </KryptonTypography>
         </div>
-        <div className="flex w-full items-center justify-end gap-krypton-space-5 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center justify-end gap-krypton-space-5 sm:w-auto">
           <div className="flex shrink-0 items-center gap-krypton-space-2">
             <label
               className="whitespace-nowrap text-xs text-krypton-fg-muted"
@@ -272,6 +303,7 @@ export function KryptonDataTable<TData extends RowData>(
                 });
               }}
               options={selectOptions}
+              size={renderMobileRow ? 'md' : 'sm'}
               value={pagination.pageSizeSelection}
             />
           </div>
@@ -281,37 +313,39 @@ export function KryptonDataTable<TData extends RowData>(
               disabled={!table.getCanPreviousPage()}
               icon={<ChevronLeft />}
               onClick={() => table.previousPage()}
-              size="sm"
+              size={renderMobileRow ? 'lg' : 'sm'}
               variant="link"
             />
-            {pageTokens.map((pageToken) =>
-              typeof pageToken === 'number' ? (
-                <KryptonButton
-                  aria-current={pageToken === activePageIndex ? 'page' : undefined}
-                  aria-label={`Go to page ${pageToken + 1}`}
-                  key={pageToken}
-                  onClick={() => table.setPageIndex(pageToken)}
-                  size="sm"
-                  variant={pageToken === activePageIndex ? 'secondary' : 'link'}
-                >
-                  {pageToken + 1}
-                </KryptonButton>
-              ) : (
-                <span
-                  aria-hidden="true"
-                  className="inline-flex h-8 w-8 items-center justify-center text-krypton-fg-muted"
-                  key={pageToken}
-                >
-                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
-                </span>
-              )
-            )}
+            <span className={renderMobileRow ? 'hidden sm:contents' : 'contents'}>
+              {pageTokens.map((pageToken) =>
+                typeof pageToken === 'number' ? (
+                  <KryptonButton
+                    aria-current={pageToken === activePageIndex ? 'page' : undefined}
+                    aria-label={`Go to page ${pageToken + 1}`}
+                    key={pageToken}
+                    onClick={() => table.setPageIndex(pageToken)}
+                    size={renderMobileRow ? 'lg' : 'sm'}
+                    variant={pageToken === activePageIndex ? 'secondary' : 'link'}
+                  >
+                    {pageToken + 1}
+                  </KryptonButton>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-8 w-8 items-center justify-center text-krypton-fg-muted"
+                    key={pageToken}
+                  >
+                    <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                )
+              )}
+            </span>
             <KryptonIconButton
               aria-label="Go to next page"
               disabled={!table.getCanNextPage()}
               icon={<ChevronRight />}
               onClick={() => table.nextPage()}
-              size="sm"
+              size={renderMobileRow ? 'lg' : 'sm'}
               variant="link"
             />
           </nav>

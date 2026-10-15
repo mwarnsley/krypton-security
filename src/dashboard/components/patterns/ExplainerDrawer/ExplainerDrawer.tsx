@@ -352,14 +352,14 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
   return (
     <Dialog.Root onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
-        <KryptonButton size="sm" startIcon={<BookOpen />} variant="secondary">
+        <KryptonButton size="md" startIcon={<BookOpen />} variant="secondary">
           About &amp; Guide
         </KryptonButton>
       </Dialog.Trigger>
 
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-krypton-muted-overlay backdrop-blur-sm data-[state=closed]:animate-krypton-overlay-out data-[state=open]:animate-krypton-overlay-in" />
-        <Dialog.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-krypton-border-muted bg-krypton-bg-main text-krypton-fg-primary shadow-2xl shadow-krypton-shadow focus:outline-none lg:max-w-4xl data-[state=closed]:animate-krypton-drawer-out data-[state=open]:animate-krypton-drawer-in">
+        <Dialog.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-krypton-border-muted bg-krypton-bg-main text-krypton-fg-primary shadow-2xl shadow-krypton-shadow focus:outline-none lg:max-w-5xl data-[state=closed]:animate-krypton-drawer-out data-[state=open]:animate-krypton-drawer-in">
           <header className="flex items-start justify-between gap-krypton-space-4 border-b border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-krypton-space-4 sm:px-krypton-space-6">
             <div>
               <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-accent-cyan">
@@ -485,6 +485,10 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     Krypton does not replace model alignment; even if an agent is tricked,
                     jailbroken, or runs in full auto-pilot, unauthorized file access through its
                     protected MCP tools fails closed.
+                  </p>
+                  <p className="text-xs text-krypton-fg-muted lg:hidden">
+                    Scroll horizontally to compare all four columns. Keyboard: focus the table area
+                    and use the arrow keys.
                   </p>
                   <div
                     role="region"
