@@ -137,10 +137,10 @@ const CORE_FEATURES: readonly GuideItem[] = [
 
 const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
-    status: 'In progress',
+    status: 'Completed & shipped',
     summary:
-      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The source-mode npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. The standalone MCPB packages arm64 and x64 daemons, supervises the selected daemon and has a bounded isolated npm run test:mcpb harness. CI and tagged draft-release workflows are defined for exact-byte bundle assembly, both-host packaged E2E and checksums; hosted execution, owner-managed branch protection, clean-machine Claude Desktop verification and the 60-second evaluation target remain outstanding. Portable watcher evidence remains observational.',
-    title: 'Phase 1 · Local Verification, Containment & Release Hardening (v1.0.0)',
+      'The macOS daemon, krypton setup, native MCP file tools, live denial telemetry and redacted OS-level alerts are implemented. The source-mode npm run test:e2e harness verifies production MCP, durable denial receipts and socket loss in a disposable workspace. The standalone MCPB packages arm64 and x64 daemons, supervises the selected daemon and has a bounded isolated npm run test:mcpb harness. v1.0.2 is shipped with dual-architecture supervision, ancestry validation and protected PR gates. The 60-second evaluation target remains unmeasured; clean-machine and Gatekeeper checks remain ongoing release QA. Portable watcher evidence remains observational.',
+    title: 'Phase 1 · Local Verification, Containment & Release Hardening (v1.0.2)',
   },
   {
     status: 'Planned',
@@ -180,12 +180,12 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: 'How do I verify a Krypton release?',
     answer:
-      'Tagged-release automation runs the reusable Phase 1 verification job, builds arm64 and x86_64 daemon artifacts, assembles one MCPB from those downloaded bytes, byte-compares both embedded binaries, and runs packaged E2E on matching macOS arm64 and x86_64 hosts before drafting a release. Download the three primary assets and SHA256SUMS into one directory, then run shasum -a 256 -c SHA256SUMS before use. Artifacts remain unsigned and unnotarized; checksums do not authenticate the publisher, and Gatekeeper behavior needs manual verification. Maintainer review, manual clean-machine Claude Desktop QA, signing/notarization and final publication remain release gates. Main branch protection requires owner activation; workflow files alone do not enable it. Hosted workflow execution still needs verification after the changes are pushed.',
+      'Tagged-release automation runs the reusable Phase 1 verification job, builds arm64 and x86_64 daemon artifacts, assembles one MCPB from those downloaded bytes, byte-compares both embedded binaries, and runs packaged E2E on matching macOS arm64 and x86_64 hosts before drafting a release. Download the three primary assets and SHA256SUMS into one directory, then run shasum -a 256 -c SHA256SUMS before use. Artifacts remain unsigned and unnotarized; checksums do not authenticate the publisher, and Gatekeeper behavior needs manual verification. Maintainer review, manual clean-machine Claude Desktop QA, signing/notarization and final publication remain release gates. Main branch protection requires owner activation; workflow files alone do not enable it. v1.0.2 is published; future releases must pass the same verification and owner review.',
   },
   {
     question: 'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
     answer:
-      'Download krypton-protected-fs.mcpb from https://github.com/mwarnsley/krypton-security/releases, then open Claude Desktop Settings, choose Extensions under This computer, and add the file. protected_workspace_root is optional; select an existing directory to protect, or leave it blank to create and protect ~/Library/Application Support/KryptonSecurity/sandbox_workspace. The launcher selects the bundled arm64 or x64 daemon, installs a verified private copy, and starts, supervises and stops that exact child with the MCP session. This route needs no repository checkout or Rust toolchain. Standalone telemetry remains local at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. The MCPB does not include or launch the Next.js dashboard. Only krypton_read_file and krypton_write_file are contained; built-in Claude tools remain outside this boundary. The bundle is unsigned and unnotarized, and manual clean-machine Claude Desktop QA remains a release gate. Source users can instead run npm run setup, or krypton setup after npm link; that checkout flow keeps KRYPTON_PROJECT_ROOT, requires a separately running daemon and can configure Claude Desktop, Cursor, Claude Code or Cline. Avoid enabling duplicate Krypton servers.',
+      'Download krypton-protected-fs.mcpb from https://github.com/mwarnsley/krypton-security/releases, then double-click it on macOS to open Claude Desktop and confirm installation. If file association is unavailable, use Settings > Extensions > Advanced settings > Install Extension. protected_workspace_root is optional; select an existing directory to protect, or leave it blank to create and protect ~/Library/Application Support/KryptonSecurity/sandbox_workspace. The launcher selects the bundled arm64 or x64 daemon, installs a verified private copy, and starts, supervises and stops that exact child with the MCP session. This route needs no repository checkout or Rust toolchain. Standalone telemetry remains local at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. The MCPB does not include or launch the Next.js dashboard. Only krypton_read_file and krypton_write_file are contained; built-in Claude tools remain outside this boundary. The bundle is unsigned and unnotarized, and manual clean-machine Claude Desktop QA remains a release gate. Source users can instead double-click scripts/Install-Mac.command in a prepared checkout, run npm run setup, or krypton setup after npm link; that checkout flow keeps KRYPTON_PROJECT_ROOT, requires a separately running daemon and can configure Claude Desktop, Cursor, Claude Code or Cline. Install-Windows.cmd reports unsupported native setup without modifying settings; Windows remains demonstration-only. Avoid enabling duplicate Krypton servers.',
   },
   {
     question: 'What happens when a Krypton MCP file tool crosses the boundary?',
@@ -246,6 +246,31 @@ const FAQ_ITEMS: readonly FaqItem[] = [
     answer:
       "Krypton operates independently of an AI agent's internal approval settings. Auto, Bypass Permissions, and YOLO modes remove the agent's own prompts, but they do not bypass controls for actions routed through Krypton's policy layer and protected launcher. In Enforcement Mode, an integrated out-of-bounds file request is denied, and Krypton may quarantine only an explicitly registered child after revalidating its PID, start time, executable path, and parent PID; the current Unix native runtime uses SIGKILL. Portable filesystem events remain post-event and unattributed, tools outside Krypton's integration are not automatically contained, and outbound-network enforcement remains planned. These agent modes therefore increase the importance of launching the agent through Krypton rather than providing universal protection by themselves.",
     question: "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?",
+  },
+  {
+    question: 'Tools not showing up in Claude Desktop',
+    answer:
+      'Fully quit with Cmd + Q on macOS and reopen Claude Desktop. Open the chat tools / + menu and Connectors to check krypton_read_file and krypton_write_file. For an MCPB install, review Settings > Extensions and its configuration/logs. For source setup only, validate JSON syntax in ~/Library/Application Support/Claude/claude_desktop_config.json, check mcpServers and absolute script paths, and ensure node is on the client PATH. Use Developer settings to open MCP logs (macOS logs are under ~/Library/Logs/Claude). Close the client before edits, keep its backup, and never share capabilities or complete settings/log files. Organization extension policies may require administrator approval.',
+  },
+  {
+    question: 'Gatekeeper / Unsigned Binary Notice on macOS',
+    answer:
+      'Krypton release binaries are unsigned and unnotarized. After verifying the release source and checksums, attempt opening the file; if macOS blocks a trusted download, review System Settings > Privacy & Security > Open Anyway when offered. Managed Macs may require IT approval. Do not globally disable Gatekeeper or strip quarantine recursively. Approval does not prove containment; repeat the live tool test after installation.',
+  },
+  {
+    question: 'Native Daemon Connection Timeout',
+    answer:
+      'A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, start npm run dev:full and inspect the existence and permissions of .krypton/runtime/ without printing capability or daemon.json contents. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.',
+  },
+  {
+    question: 'Permissions Denied on Protected Workspace',
+    answer:
+      'Choose an existing directory owned by your user in protected_workspace_root, or leave it blank to create ~/Library/Application Support/KryptonSecurity/sandbox_workspace. Invalid nonblank paths do not silently fall back. Check directory permissions and macOS privacy controls; do not run as root or grant broad disk access to bypass a denial. /etc/passwd is outside the default workspace and should be denied. A file denial produces a receipt and queues INTERCEPTED evidence; it does not trigger a desktop quarantine banner.',
+  },
+  {
+    question: 'Can I install the native runtime on Windows?',
+    answer:
+      'No. Install-Windows.cmd invokes the shared setup engine when Node is available and exits nonzero without editing client settings. Windows is dashboard demonstration-only until the native runtime ships. Claude Desktop configuration normally lives at %APPDATA%/Claude/claude_desktop_config.json (fallback: %USERPROFILE%/AppData/Roaming/Claude/claude_desktop_config.json), and Cursor uses %USERPROFILE%/.cursor/mcp.json; those locations are not enabled installation targets. The MCPB manifest intentionally supports darwin only.',
   },
 ];
 
@@ -440,7 +465,8 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   </ul>
                   <p className="mt-3 text-sm font-semibold leading-6 text-krypton-warning-foreground">
                     Core security decisions stay local and deterministic, without remote API or
-                    model lookups.
+                    model lookups. The macOS MCPB is the standalone installation route; Windows
+                    remains demonstration-only. GitHub Pages cannot connect to your local daemon.
                   </p>
                 </aside>
               </section>
@@ -557,13 +583,14 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                 </p>
                 <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
                   <h2 className="text-sm font-bold text-krypton-fg-primary">
-                    Claude Desktop release install
+                    Method 1: Zero-terminal double-click (macOS recommended)
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    Download <code>krypton-protected-fs.mcpb</code> from GitHub Releases. In Claude
-                    Desktop, open Settings, choose Extensions under This computer, and add the file.
-                    The optional <code>protected_workspace_root</code> selects an existing protected
-                    directory. A blank value creates{' '}
+                    Download <code>krypton-protected-fs.mcpb</code> from GitHub Releases.
+                    Double-click it to open Claude Desktop and confirm installation. If that does
+                    not open the installer, use Settings &gt; Extensions &gt; Advanced settings &gt;
+                    Install Extension. The optional <code>protected_workspace_root</code> selects an
+                    existing protected directory. A blank value creates{' '}
                     <code>~/Library/Application Support/KryptonSecurity/sandbox_workspace</code>.
                     The standalone macOS bundle selects its arm64 or x64 daemon and supervises that
                     exact child for the MCP session, so this install does not need a repository
@@ -573,6 +600,57 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     remain manual release checks.
                   </p>
                 </aside>
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Source-checkout double-click launchers
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    In a checkout prepared with Node and npm ci, close your clients and double-click
+                    <code> scripts/Install-Mac.command</code>. It configures detected Claude
+                    Desktop, Cursor, Claude Code and Cline using the shared backup-and-merge engine,
+                    then attempts a bounded macOS completion notification. Review the console
+                    results; a notification is not proof of active containment. Start the source
+                    daemon separately. This script opens Terminal and requires Node on PATH; the
+                    MCPB above is the zero-terminal route. Keep scripts inside the checkout.{' '}
+                    <code>Install-Windows.cmd</code> exits with an unsupported-platform notice and
+                    leaves settings untouched. It does not install Windows containment.
+                  </p>
+                </aside>
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Live verification after setup
+                  </h2>
+                  <ol className="mt-2 space-y-krypton-space-2 text-sm leading-6 text-krypton-fg-muted">
+                    <li>1. Fully quit Claude Desktop with Cmd + Q, then reopen it.</li>
+                    <li>
+                      2. Open the tools / + menu and Connectors; verify krypton_read_file and
+                      krypton_write_file are registered.
+                    </li>
+                    <li>
+                      3. With the default protected workspace, ask the following and confirm the
+                      actual Krypton tool runs:
+                    </li>
+                  </ol>
+                  <code className="mt-2 block overflow-x-auto rounded-krypton-radius-control bg-krypton-bg-main p-krypton-space-3 font-mono text-xs leading-5 text-krypton-accent-cyan">
+                    Can you use your krypton_read_file tool to inspect the contents of /etc/passwd?
+                  </code>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    4. Expect a native denial receipt and queued INTERCEPTED ledger evidence, not
+                    file contents. A refusal by the model without a tool call does not verify
+                    containment. A file denial does not trigger a desktop quarantine banner; banners
+                    accompany confirmed registered-child isolation. GitHub Pages shows simulated
+                    data only. Use the local source dashboard for its source ledger; the standalone
+                    bundle has a separate Application Support ledger.
+                  </p>
+                </aside>
+                <h2 className="mt-5 text-sm font-bold text-krypton-fg-primary">
+                  Method 2: Terminal / source setup
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  After installing prerequisites, run <code>npm run setup</code> from the checkout
+                  and keep <code>npm run dev:full</code> running. The standalone MCPB launcher is
+                  started by Claude Desktop; it does not need a separately started source daemon.
+                </p>
                 <ol className="mt-5 space-y-krypton-space-3">
                   {SETUP_STEPS.map(([title, command]) => (
                     <li

@@ -319,6 +319,29 @@ Every completion response must include:
    platform limitations, security implications, and follow-up work. State
    explicitly when none remain.
 
+## Documentation & Field Guide Synchronization Contract
+
+Whenever architecture, packaging, releases, scripts, configuration flags, client
+support, or onboarding flows change:
+
+1. Agents MUST inspect `src/dashboard/` and the Field Guide content in
+   `components/patterns/ExplainerDrawer/` across **Overview**, **Core Features**,
+   **Install & Setup**, and **FAQ**. Update affected UI copy in the same change
+   as README installation/troubleshooting/FAQs, FEATURES, ROADMAP, and applicable
+   inline contracts. State supported platforms and prerequisites accurately.
+2. Agents MUST run `npm run build` and verify the public GitHub Pages export
+   using `.github/workflows/deploy.yml`: in a disposable checkout, remove only
+   that copy's dashboard API routes and run `KRYPTON_STATIC_EXPORT=true npm run build`.
+   Never remove the working checkout's API routes for this check. Inspect the
+   exported guide for updated steps, verified release asset names, and bundle usage.
+   A regular server build alone does not verify the Pages export or hosted deployment.
+3. PR descriptions MUST explicitly state whether the public documentation guide
+   required updates, which tabs changed, and the normal/static build results.
+4. Docs MUST distinguish native receipts, mock Pages data, installer notices,
+   and confirmed-quarantine banners. Manifest validity never establishes runtime
+   support on an unimplemented platform. Do not describe scripts requiring a
+   source checkout as standalone zero-terminal installers.
+
 ## 3. Folder Architecture Map
 
 Preserve this repository layout. Align code within these locations; do not

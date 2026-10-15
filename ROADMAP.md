@@ -97,6 +97,7 @@ required check contexts, credential boundaries and activation verification.
 
 **Release Objective:** Expand beyond source checkouts to system-wide developer adoption via native package managers and prebuilt binaries.
 
+- [x] **Source-checkout double-click onboarding:** `Install-Mac.command` reuses atomic client setup and attempts a bounded completion notification. A prepared checkout and Node on PATH are required. `Install-Windows.cmd` reports unsupported native setup without changing settings; Windows containment remains Phase 4. README and Field Guide cover live MCP denial verification and troubleshooting, separately from desktop quarantine banners.
 - [ ] **Homebrew Tap:** Package prebuilt native binaries at `krypton-security/tap/krypton`.
 - [ ] **Shell One-Liner:** Host a hardened shell installer at `https://get.krypton.dev`.
 - [ ] **Process Tree & Descendant Containment:** Track agent child processes recursively through process generations.

@@ -232,6 +232,13 @@ async function main(argv = process.argv.slice(2), options = {}) {
     writeError('Usage: krypton setup\n');
     return 2;
   }
+  // Windows has no native daemon yet. Reject before inspecting or changing client files.
+  if ((options.platform ?? process.platform) === 'win32') {
+    writeError(
+      'FAILED Krypton setup: unsupported_platform; Windows native containment is not available. No client settings were changed. Use npm run dev:dashboard for demonstration only.\n'
+    );
+    return 1;
+  }
   try {
     const results = await setupClients(options);
     for (const result of results)
