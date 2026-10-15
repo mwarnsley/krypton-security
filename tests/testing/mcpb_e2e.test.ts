@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createZip } from '../../src/packaging/zip.cjs';
 import { createManifest } from '../../src/packaging/build_mcpb.cjs';
-import { runPackagedMcpbE2E } from '../../src/testing/mcpb_e2e.cjs';
+import { CLEANUP_BUDGET_MS, runPackagedMcpbE2E } from '../../src/testing/mcpb_e2e.cjs';
 import type { PackagedE2EDependencies } from '../../src/testing/mcpb_e2e.cjs';
 import type { Socket } from 'node:net';
 
@@ -600,7 +600,7 @@ describe('packaged MCPB harness', () => {
     const timers = new Set<ReturnType<typeof setTimeout>>();
     deps.setTimer = (callback, milliseconds) => {
       if (milliseconds === 45000 && !expire) expire = callback;
-      const handle = setTimeout(callback, milliseconds === 6000 ? 25 : milliseconds);
+      const handle = setTimeout(callback, milliseconds === CLEANUP_BUDGET_MS ? 25 : milliseconds);
       timers.add(handle);
       return handle;
     };
@@ -719,6 +719,12 @@ describe('packaged MCPB harness', () => {
     async (operation, settlement) => {
       const deps = dependencies();
       let settle: (() => void) | undefined;
+      let expireCleanup: (() => void) | undefined;
+      let signalStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        signalStarted = resolve;
+      });
+      const timers = new Set<ReturnType<typeof setTimeout>>();
       const isCleanupRoot = (file: unknown) =>
         launchCount === 2 &&
         !active &&
@@ -730,9 +736,18 @@ describe('packaged MCPB harness', () => {
             settlement === 'resolve'
               ? resolve(value)
               : reject(new Error('late private validation failure'));
+          signalStarted?.();
         });
-      deps.setTimer = (callback, milliseconds) =>
-        setTimeout(callback, milliseconds === 6000 ? 25 : milliseconds);
+      deps.setTimer = (callback, milliseconds) => {
+        if (milliseconds === CLEANUP_BUDGET_MS) expireCleanup = callback;
+        const handle = setTimeout(callback, milliseconds);
+        timers.add(handle);
+        return handle;
+      };
+      deps.clearTimer = (handle) => {
+        clearTimeout(handle);
+        timers.delete(handle);
+      };
       deps.fs = {
         ...deps.fs,
         lstat: ((file, options) => {
@@ -749,13 +764,21 @@ describe('packaged MCPB harness', () => {
         (error: unknown) => error
       );
       try {
+        // Extraction and both scenarios may exceed 250 ms on CI. Observe only
+        // cleanup expiry after validation is stalled, independently of setup time.
+        expect(await Promise.race([started.then(() => 'validation started'), outcome])).toBe(
+          'validation started'
+        );
+        expect(expireCleanup).toBeTypeOf('function');
+        expireCleanup?.();
         const observed = await Promise.race([
           outcome,
           new Promise((resolve) => {
-            timer = setTimeout(() => resolve('still pending'), 250);
+            setImmediate(() => resolve('still pending'));
           }),
         ]);
         expect(observed).toHaveProperty('code', 'cleanup_failed');
+        expect(timers.size).toBe(0);
       } finally {
         settle?.();
         await outcome;
@@ -763,6 +786,7 @@ describe('packaged MCPB harness', () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
       expect(removed).toHaveLength(0);
       expect(report).not.toHaveBeenCalled();
+      expect(timers.size).toBe(0);
     }
   );
   it('telemetry budget rejects a matching event whose descriptor closes after two seconds', async () => {
@@ -864,7 +888,7 @@ describe('packaged MCPB harness', () => {
     const deps = dependencies();
     deps.fs = { ...fs, rm: () => new Promise(() => undefined) };
     deps.setTimer = (callback, milliseconds) =>
-      setTimeout(callback, milliseconds === 6000 ? 25 : milliseconds);
+      setTimeout(callback, milliseconds === CLEANUP_BUDGET_MS ? 25 : milliseconds);
     await expect(runPackagedMcpbE2E(archive, deps)).rejects.toHaveProperty(
       'code',
       'cleanup_failed'

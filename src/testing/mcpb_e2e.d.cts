@@ -2,6 +2,9 @@ import type * as fs from 'node:fs/promises';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import type { Socket } from 'node:net';
 
+/** Separate absolute budget for owned-tree validation and removal, in milliseconds. */
+export const CLEANUP_BUDGET_MS: 6000;
+
 export type PackagedE2EErrorCode =
   | 'unsafe_input'
   | 'size_limit'

@@ -18,6 +18,7 @@ const FRAME_BYTES = 32768;
 const OUTPUT_BYTES = 65536;
 const SCENARIO_MS = 15000;
 const TOTAL_RUN_MS = 45000;
+const CLEANUP_BUDGET_MS = 6000;
 const NATIVE = {
   arm64: ['native/krypton-core-native-aarch64-apple-darwin', 0x0100000c],
   x64: ['native/krypton-core-native-x86_64-apple-darwin', 0x01000007],
@@ -940,7 +941,7 @@ async function scenario(paths, launcher, fallback, ctx, parent) {
  * Losing calls retain rejection ownership through the budget race.
  */
 async function removeOwned(owned, ownedStat, creation, parent, ctx) {
-  const budget = operationDeadline(ctx, 6000, 'cleanup_failed');
+  const budget = operationDeadline(ctx, CLEANUP_BUDGET_MS, 'cleanup_failed');
   try {
     let candidate = owned;
     if (!candidate && creation) {
@@ -1107,4 +1108,4 @@ if (require.main === module)
     await runPackagedMcpbE2E(argv[0]);
     return 0;
   });
-module.exports = { runPackagedMcpbE2E, PackagedE2EError };
+module.exports = { runPackagedMcpbE2E, PackagedE2EError, CLEANUP_BUDGET_MS };
