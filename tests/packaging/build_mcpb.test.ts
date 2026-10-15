@@ -7,6 +7,10 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildBundle, createManifest } from '../../src/packaging/build_mcpb.cjs';
 
+// Archive builds, subprocess startup, and fixture I/O need headroom on shared CI runners.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+const subprocessOptions = { timeout: 30_000, maxBuffer: 2 * 1024 * 1024 };
+
 let root: string;
 let extracted: string;
 let nativeInputs: { arm64: string; x64: string };
@@ -24,7 +28,7 @@ function macho(cpu: number, size = 32): Buffer {
 }
 
 function archiveFile(name: string): Buffer {
-  return execFileSync('unzip', ['-p', artifact.path, name], { timeout: 5000 });
+  return execFileSync('unzip', ['-p', artifact.path, name], subprocessOptions);
 }
 
 function buildFixture() {
@@ -73,7 +77,7 @@ beforeAll(async () => {
   // Sibling temporary roots prevent Node from falling back to the fixture's
   // installed dependencies when an archive dependency is accidentally omitted.
   extracted = await fs.mkdtemp(path.join(os.tmpdir(), 'krypton-bundle-extracted-'));
-  execFileSync('unzip', ['-q', artifact.path, '-d', extracted], { timeout: 5000 });
+  execFileSync('unzip', ['-q', artifact.path, '-d', extracted], subprocessOptions);
 });
 
 afterAll(async () => {
@@ -134,8 +138,8 @@ describe('MCPB build', () => {
 
   it('excludes development dependencies, tests, source maps and runtime state', () => {
     const names = execFileSync('unzip', ['-Z1', artifact.path], {
+      ...subprocessOptions,
       encoding: 'utf8',
-      timeout: 5000,
     });
     expect(names).not.toMatch(/\.krypton|vitest|dashboard|\.map\n|\/test\/|\/spec\//);
     expect(names).toContain('node_modules/ajv/dist/refs/json-schema-2020-12/schema.json');
@@ -165,9 +169,8 @@ describe('MCPB build', () => {
         '\n' +
         JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) +
         '\n',
+      ...subprocessOptions,
       encoding: 'utf8',
-      timeout: 5000,
-      maxBuffer: 16384,
     });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
@@ -184,8 +187,8 @@ describe('MCPB build', () => {
       {
         cwd: extracted,
         env: { PATH: process.env.PATH },
+        ...subprocessOptions,
         encoding: 'utf8',
-        timeout: 5000,
       }
     );
     expect(result.status).toBe(0);
@@ -193,7 +196,10 @@ describe('MCPB build', () => {
   });
 
   it('publishes exactly the reviewed native inventory with digests of archive bytes', () => {
-    const names = execFileSync('unzip', ['-Z1', artifact.path], { encoding: 'utf8' });
+    const names = execFileSync('unzip', ['-Z1', artifact.path], {
+      ...subprocessOptions,
+      encoding: 'utf8',
+    });
     expect(names.split('\n').filter((name) => name.startsWith('native/'))).toEqual([
       nativeNames.arm64,
       nativeNames.x64,
@@ -407,9 +413,7 @@ describe('MCPB build', () => {
     try {
       const result = await buildBundle(root, { nativeInputs: { ...nativeInputs, arm64: input } });
       expect(
-        execFileSync('unzip', ['-p', result.path, nativeNames.arm64], {
-          maxBuffer: 2 * 1024 * 1024,
-        })
+        execFileSync('unzip', ['-p', result.path, nativeNames.arm64], subprocessOptions)
       ).toEqual(bytes);
     } finally {
       spy.mockRestore();

@@ -298,6 +298,45 @@ Do not hide a failure behind a pre-existing-error claim. Record the exact
 command, exit status, and relevant error, and leave the workflow explicitly
 incomplete. Do not commit or push merely because verification passes.
 
+### Mandatory Pre-Push CI Gate
+
+No contributor or AI coding agent (including Codex, Claude, and Copilot) may
+push a branch, create a PR backed by unverified changes, or push a PR update
+until the full repository verification suite has passed for the exact final
+changes. Run `npm run verify` and `npm run format:check` from the repository
+root with the pinned Node and Rust toolchains. `verify` is the canonical
+consolidated command: it runs lint, both TypeScript projects, the full Vitest
+suite, the production dashboard build, design-system checks, Rust formatting,
+Clippy, and native tests. A focused test run alone does not satisfy this gate.
+
+Rerun the gate after further edits, conflict resolution, or rebasing onto new
+code. Record the commands and results; failed, skipped, or warning-producing
+required checks block a push. Also run the applicable simulation, coverage,
+security, and release checks required by `docs/RELEASE.md` and the workflows;
+the local aggregate does not replace hosted platform checks or branch protection.
+Passing verification does not authorize an agent to commit or push: explicit
+human instructions and all existing review requirements still apply.
+
+### CI Environment Invariants
+
+Packaging, bundle-building, and native process-spawning tests must tolerate
+resource-constrained CI virtual machines. Give integration test bodies and their
+filesystem-heavy setup/cleanup hooks explicit budgets of at least 30 seconds.
+Every subprocess used for those integration operations must have an explicit
+timeout of at least 20 seconds, normally 30 seconds, and bounded output capture
+of at least 128 KiB where archive listings or extracted contents are parsed.
+Choose larger finite limits when a fixture or build requires them. Do not rely
+on the 5000 ms local Vitest default or unbounded subprocess/file-I/O waits.
+The CI default test timeout is at least 15 seconds; integration suites must
+override it with their larger operation-appropriate budgets.
+
+These are test-harness budgets, not changes to production security deadlines.
+Keep intentional timeout/fail-closed regression checks short and deterministic
+using injected clocks or timers; preserve the native 1500 ms IPC contract and
+other runtime limits. Diagnose hangs and missing cleanup before increasing a
+budget, and retain owned-child teardown and late-rejection handling. A test
+timeout cannot forcibly cancel an in-flight kernel filesystem call.
+
 ### Mandatory Completion Output Protocol
 
 Every completion response must include:
