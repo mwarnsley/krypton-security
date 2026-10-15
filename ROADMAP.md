@@ -100,6 +100,7 @@ required check contexts, credential boundaries and activation verification.
 - [x] **Source-checkout double-click onboarding:** `Install-Mac.command` reuses atomic client setup and attempts a bounded completion notification. A prepared checkout and Node on PATH are required. `Install-Windows.cmd` reports unsupported native setup without changing settings; Windows containment remains Phase 4. README and Field Guide cover live MCP denial verification and troubleshooting, separately from desktop quarantine banners.
 - [ ] **Homebrew Tap:** Package prebuilt native binaries at `krypton-security/tap/krypton`.
 - [ ] **Shell One-Liner:** Host a hardened shell installer at `https://get.krypton.dev`.
+- [ ] **Client-Side Telemetry Visualizer (Web Dashboard Bridge):** Enable the static web dashboard (`mwarnsley.github.io/krypton-security/`) to read and visualize a local `alerts.jsonl` file via the browser File System Access API / file picker. This provides non-technical users with live audit inspection without requiring a local Next.js Node server or CLI execution before the Phase 3 Tauri desktop app ships.
 - [ ] **Process Tree & Descendant Containment:** Track agent child processes recursively through process generations.
 - [ ] **Network Egress Isolation:** Process-level macOS Seatbelt profiles and domain allowlisting.
 
