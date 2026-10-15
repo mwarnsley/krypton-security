@@ -1,6 +1,6 @@
 {
   "name": "krypton-security",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "",
   "packageManager": "npm@10.8.2",
   "engines": {
