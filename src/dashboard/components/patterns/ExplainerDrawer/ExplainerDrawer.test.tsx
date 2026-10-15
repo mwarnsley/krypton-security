@@ -8,6 +8,30 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it('shows double-click setup with accurate denial verification', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(
+      screen.getByRole('heading', {
+        name: 'Method 1: Zero-terminal double-click (macOS recommended)',
+      })
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Can you use your krypton_read_file tool to inspect the contents of /etc/passwd?'
+      )
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/A file denial does not trigger a desktop quarantine banner/)
+    ).toBeTruthy();
+  });
+  it('explains recovery when native setup is unavailable', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByText('Native Daemon Connection Timeout'));
+    expect(screen.getByText(/Never delete a live socket/)).toBeTruthy();
+    expect(screen.getByText(/The Pages dashboard cannot inspect local sockets/)).toBeTruthy();
+  });
   it('separates checksum integrity from signing and owner-managed release gates', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
@@ -102,14 +126,14 @@ describe('ExplainerDrawer', () => {
     expect(screen.getAllByRole('listitem', { name: /Krypton roadmap phase/ })).toHaveLength(4);
   });
 
-  it('keeps Phase 1 onboarding work in progress while retaining implemented alerts', () => {
+  it('marks Phase 1 shipped while retaining implemented alerts', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
     const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 1' });
 
-    expect(phase.textContent).toContain('In progress');
+    expect(phase.textContent).toContain('Completed & shipped');
     expect(phase.textContent).toContain('redacted OS-level alerts');
   });
 
@@ -208,6 +232,11 @@ describe('ExplainerDrawer', () => {
       'How does Krypton handle path traversal and symlinks?',
       'How do I run the project locally?',
       "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?",
+      'Tools not showing up in Claude Desktop',
+      'Gatekeeper / Unsigned Binary Notice on macOS',
+      'Native Daemon Connection Timeout',
+      'Permissions Denied on Protected Workspace',
+      'Can I install the native runtime on Windows?',
     ]);
   });
 

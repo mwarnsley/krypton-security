@@ -62,6 +62,21 @@ in `ROADMAP.md`.
   Claude Code and Cline storage; atomically back up and merge bounded settings
   with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Other servers
   remain intact; malformed files, symlinks and conflicting Krypton entries fail.
+- `scripts/Install-Mac.command` invokes shared source setup from its checkout and
+  attempts a bounded macOS completion notification only after setup succeeds.
+  Node on PATH and installed source dependencies are prerequisites; the script
+  does not install a daemon service or claim active containment. Notification
+  failure returns nonzero while preserving any settings already written.
+- `scripts/Install-Windows.cmd` invokes shared setup when Node is available and
+  reports unsupported native containment without editing client settings.
+  Windows remains demonstration-only; Linux retains experimental terminal setup.
+- Claude Desktop can open the macOS `.mcpb` by double-click, with Settings >
+  Extensions installation as a fallback. The generated MCPB 0.3 manifest remains
+  macOS-only because the archive includes only arm64/x64 Mach-O daemons.
+- The Field Guide and README separate file-denial receipts (`INTERCEPTED`) from
+  process-isolation banners and installer notices, and document missing-tool,
+  Gatekeeper, timeout, and workspace-permission recovery. Pages is static mock
+  data and never a live workstation verification surface.
 - `npm run build:mcpb` generates an unsigned and unnotarized deterministic MCPB
   0.3 archive at `dist/krypton-protected-fs.mcpb`. It contains the MCP server,
   standalone launcher, verified arm64/x64 native binaries, architecture metadata,

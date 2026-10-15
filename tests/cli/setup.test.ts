@@ -30,6 +30,22 @@ const locations = [
 ] as const;
 
 describe('universal client setup', () => {
+  it('explains Windows unavailability without touching existing settings', async () => {
+    await fs.mkdir(path.join(homeDir, '.cursor'));
+    const file = path.join(homeDir, '.cursor/mcp.json');
+    await fs.writeFile(file, '{"existing":true}');
+    const messages: string[] = [];
+    expect(
+      await main([], {
+        platform: 'win32',
+        homeDir,
+        writeError: (text: string) => messages.push(text),
+      })
+    ).toBe(1);
+    expect(messages.join('')).toContain('No client settings were changed');
+    expect(await fs.readFile(file, 'utf8')).toBe('{"existing":true}');
+    await expect(fs.stat(`${file}.bak`)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
   it('keeps another setup lock and config intact', async () => {
     const file = path.join(homeDir, '.claude.json');
     await fs.writeFile(file, '{}');

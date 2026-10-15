@@ -2,12 +2,14 @@
 
 ## Quick Start & Installation
 
-### Quick Start (Claude Desktop — Recommended)
+### Method 1: Zero-Terminal Double-Click (macOS Claude Desktop — Recommended)
 
 1. Download `krypton-protected-fs.mcpb` from
    [GitHub Releases](https://github.com/mwarnsley/krypton-security/releases).
-2. In Claude Desktop, open **Settings → Extensions** under **This computer**.
-3. Add the downloaded `.mcpb` file. You may select an existing directory for
+2. Double-click the downloaded `.mcpb` to open Claude Desktop and confirm installation.
+   If file association is unavailable, use **Settings → Extensions → Advanced settings
+   → Install Extension** and select the file. Organization policies may require IT approval.
+3. Configure the extension. You may select an existing directory for
    `protected_workspace_root`. If you omit it or leave it blank, Krypton creates
    and protects `~/Library/Application Support/KryptonSecurity/sandbox_workspace`.
 
@@ -23,7 +25,7 @@ The release artifacts are currently unsigned and unnotarized. Gatekeeper
 behavior and installation in a clean-machine Claude Desktop environment remain
 manual release gates; verify the release checksums before use.
 
-### Developer / Source Setup
+### Method 2: Terminal / Source Setup
 
 Source development requires Node.js 20.19.4, npm 10.x, Rust 1.97.0 through
 `rustup`, and the macOS command-line developer tools:
@@ -40,18 +42,65 @@ The checkout setup path configures detected clients with an absolute
 `KRYPTON_PROJECT_ROOT`. `npm run dev:full` launches the native daemon and the
 local Next.js telemetry dashboard at <http://localhost:3000>.
 
-### Verifying Installation (Smoke Test)
+### Source-checkout double-click setup
 
-Ask Claude to use the installed Krypton tool:
+After installing the prerequisites and running `npm ci`, close Claude Desktop,
+Cursor, Claude Code and Cline. Double-click `scripts/Install-Mac.command` inside
+the checkout. This opens Terminal and calls the same setup engine as
+`npm run setup`; it is not a standalone application or dependency installer.
+Node must be available on PATH in that Terminal session. If a version-manager
+installation is not found, run `npm run setup` from your configured terminal or
+use the standalone MCPB. Keep the scripts in the checkout rather than downloading
+an isolated script. Source users must separately start `npm run dev:full`.
 
-> Use krypton_read_file to read ../outside.txt
+The engine detects installed client storage, preserves other settings, and
+atomically backs up and merges JSON. Review each configured/skipped/failed row.
+A bounded `osascript` completion notice means setup finished, not that a daemon
+is running or containment is active. Notification failure returns exit 1 without
+rolling back settings. No privileged installation or background service is added.
 
-Expected result: Krypton denies the path traversal with an access-violation
-receipt and queues a local telemetry event. For a standalone installation, the
-bounded ledger is stored at
-`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
-This prompt must call `krypton_read_file`; similarly named built-in Claude tools
-do not cross Krypton's MCP boundary.
+`scripts/Install-Windows.cmd` reports unsupported native setup and exits 1
+without modifying client settings. If Node is installed it invokes the shared
+engine; otherwise it reports the missing prerequisite as well. Windows remains
+**dashboard demonstration-only**, and the MCPB declares only macOS compatibility.
+Linux retains its existing experimental terminal setup path.
+
+### Verifying Installation (Live Smoke Test)
+
+1. On macOS, fully quit Claude Desktop with **Cmd + Q** and reopen it. Source
+   installs need their local daemon running; standalone MCPB supervises its own.
+2. Open the tools / **+ → Connectors** menu and verify `krypton_read_file` and
+   `krypton_write_file`. Developer settings and extension logs show connection status.
+3. With the default protected workspace, submit:
+
+   > Can you use your krypton_read_file tool to inspect the contents of /etc/passwd?
+
+4. Confirm an actual Krypton tool call returns a native denial receipt with
+   `isError: true`, not file contents. A model refusal without a tool call proves
+   nothing about the runtime. Native denial evidence is queued for the ledger and
+   rendered as `INTERCEPTED` by the local dashboard; queue admission is not proof
+   of durable persistence. `/etc/passwd` must remain outside your selected workspace.
+
+**A file denial does not trigger a desktop quarantine banner.** Banners accompany
+confirmed isolation of an owned, registered child, and OS permissions/headless
+sessions can suppress delivery. The installer completion notice is separate.
+`npm run test:e2e` verifies isolated containment with mocked desktop delivery;
+it does not prove live Notification Center behavior.
+
+Source telemetry lives at `.krypton/telemetry/alerts.jsonl`. Standalone evidence
+lives at `~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+The source dashboard does not automatically attach to standalone instance ledgers.
+The public GitHub Pages dashboard is a static demonstration and cannot inspect
+local sockets or show your native workstation events.
+
+The generated manifest is owned by `createManifest` in
+`src/packaging/build_mcpb.cjs`; there is no separate source `manifest.json` to edit.
+Its MCPB 0.3 required metadata, Node entry point, bundle-relative launch arguments,
+optional directory setting, and `darwin` compatibility match the
+[official manifest specification](https://github.com/anthropics/mcpb/blob/main/MANIFEST.md).
+Schema compatibility alone does not make the bundled Mach-O daemons run on Windows.
+See [Claude Desktop installation guidance](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
+for current client UI and organization policy controls.
 
 Krypton is a local security workspace for untrusted package scripts, AI coding
 agents, automated developer tools, and the child processes they launch through
@@ -783,6 +832,29 @@ growth for 100, 1,000, and 10,000 deterministic events.
 
 ## Troubleshooting
 
+### Tools not showing up in Claude Desktop
+
+Fully quit with Cmd + Q on macOS and reopen Claude Desktop. Open the chat tools / + menu and Connectors to check krypton_read_file and krypton_write_file. For an MCPB install, review Settings > Extensions and its configuration/logs. For source setup only, validate JSON syntax in ~/Library/Application Support/Claude/claude_desktop_config.json, check mcpServers and absolute script paths, and ensure node is on the client PATH. Use Developer settings to open MCP logs (macOS logs are under ~/Library/Logs/Claude). Close the client before edits, keep its backup, and never share capabilities or complete settings/log files. Organization extension policies may require administrator approval.
+
+### Gatekeeper / Unsigned Binary Notice on macOS
+
+Krypton release binaries are unsigned and unnotarized. After verifying the release source and checksums, attempt opening the file; if macOS blocks a trusted download, review System Settings > Privacy & Security > Open Anyway when offered. Managed Macs may require IT approval. Do not globally disable Gatekeeper or strip quarantine recursively. Approval does not prove containment; repeat the live tool test after installation.
+
+### Native Daemon Connection Timeout
+
+A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, start npm run dev:full and inspect the existence and permissions of .krypton/runtime/ without printing capability or daemon.json contents. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.
+
+### Permissions Denied on Protected Workspace
+
+Choose an existing directory owned by your user in protected_workspace_root, or leave it blank to create ~/Library/Application Support/KryptonSecurity/sandbox_workspace. Invalid nonblank paths do not silently fall back. Check directory permissions and macOS privacy controls; do not run as root or grant broad disk access to bypass a denial. /etc/passwd is outside the default workspace and should be denied. A file denial produces a receipt and queues INTERCEPTED evidence; it does not trigger a desktop quarantine banner.
+
+### Can I install the native runtime on Windows?
+
+No. Install-Windows.cmd invokes the shared setup engine when Node is available and exits nonzero without editing client settings. Windows is dashboard demonstration-only until the native runtime ships. Claude Desktop configuration normally lives at %APPDATA%/Claude/claude_desktop_config.json (fallback: %USERPROFILE%/AppData/Roaming/Claude/claude_desktop_config.json), and Cursor uses %USERPROFILE%/.cursor/mcp.json; those locations are not enabled installation targets. The MCPB manifest intentionally supports darwin only.
+
+See [Apple’s Gatekeeper guidance](https://support.apple.com/en-us/102445) for
+per-app approval. Do not disable system-wide protections.
+
 - **`krypton` command not found:** run `npm link` in the source checkout using
   the pinned Node version, or invoke `node /absolute/path/to/src/cli.cjs` directly.
 - **Supervisor workspace unavailable:** set an absolute `KRYPTON_PROJECT_ROOT`
@@ -828,6 +900,16 @@ growth for 100, 1,000, and 10,000 deterministic events.
 ## Frequently Asked Questions (FAQ)
 
 <details>
+<summary>Where do I troubleshoot double-click installation?</summary>
+
+Use the [troubleshooting guide](#troubleshooting) for missing tools, invalid JSON,
+Gatekeeper prompts, daemon timeouts, workspace permissions, and unsupported Windows
+native setup. The Field Guide FAQ contains the same recovery paths. Source setup
+scripts require a prepared checkout; the macOS MCPB is the zero-terminal route.
+
+</details>
+
+<details>
 <summary>How do I verify a Krypton release?</summary>
 
 Tagged-release automation drafts Intel and Apple Silicon daemon binaries, the
@@ -861,8 +943,8 @@ Only `krypton_read_file` and `krypton_write_file` gain native path containment;
 built-in Claude tools remain outside the boundary. The unsigned, unnotarized
 bundle still requires manual clean-machine Claude Desktop and Gatekeeper QA.
 
-Source users can instead close clients, run `npm run setup` (or `krypton setup`
-after `npm link`), start the updated daemon with `npm run dev:full`, and restart
+Source users can instead close clients, double-click `scripts/Install-Mac.command`
+in a prepared macOS checkout, or run `npm run setup` (`krypton setup` after `npm link`), start the updated daemon with `npm run dev:full`, and restart
 configured clients. That flow preserves other servers, atomically backs up
 existing JSON, reports each client separately, and uses the canonical checkout as
 `KRYPTON_PROJECT_ROOT`. Avoid enabling both installation routes in one client.
