@@ -330,6 +330,11 @@ on the 5000 ms local Vitest default or unbounded subprocess/file-I/O waits.
 The CI default test timeout is at least 15 seconds; integration suites must
 override it with their larger operation-appropriate budgets.
 
+**Large-Payload Invariant:** Unit or integration tests allocating buffers of
+at least 128 MiB or computing stream CRCs must specify an explicit per-test
+timeout budget of at least 120,000 ms to avoid memory-churn timeouts on shared
+CI runners.
+
 These are test-harness budgets, not changes to production security deadlines.
 Keep intentional timeout/fail-closed regression checks short and deterministic
 using injected clocks or timers; preserve the native 1500 ms IPC contract and
