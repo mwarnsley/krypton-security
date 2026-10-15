@@ -1,5 +1,114 @@
 # Krypton
 
+## 🚀 Quickstart (macOS Alpha)
+
+**Start here, beta testers:** use Claude Desktop on an Apple Silicon or Intel Mac.
+Aim for a two-minute setup with the 60-second check below; clean-machine timing
+and Gatekeeper prompts still need beta validation.
+
+### Step 1: Download the Standalone Bundle
+
+Open the [latest release](https://github.com/mwarnsley/krypton-security/releases/latest)
+and download **`krypton-protected-fs.mcpb`** from **Assets** (not the source-code ZIP).
+The bundle includes precompiled Apple Silicon (`arm64`) and Intel (`x86_64`)
+native binaries and selects yours automatically. **No Rust, Cargo, Git clone, or
+compilation is required.** A compatible Claude Desktop extension host supplies
+Node for the bundle.
+
+### Step 2: Add to Claude Desktop
+
+Double-click `krypton-protected-fs.mcpb` and confirm installation. If it does not
+open, use **Claude Desktop → Settings → Extensions → Advanced settings → Install
+Extension** and select the downloaded file. Leave `protected_workspace_root`
+blank to use the automatically created workspace:
+
+```text
+~/Library/Application Support/KryptonSecurity/sandbox_workspace
+```
+
+Completely quit Claude Desktop (**Cmd + Q**) and reopen it. In the chat tools /
+**+ → Connectors** menu, check that `krypton_read_file` and `krypton_write_file`
+are available. No dashboard or daemon terminal needs to stay open.
+
+<details>
+<summary>Optional manual JSON setup — only if you are not installing the extension</summary>
+
+The recommended extension installation manages its own configuration; do not
+also enable a duplicate JSON server. For a manual installation, extract the
+entire downloaded `.mcpb` ZIP into a permanent folder, keeping its files together,
+and provide Node.js 20.19.4 or newer yourself. Find its absolute executable path
+with `command -v node`.
+
+With Claude Desktop closed, back up
+`~/Library/Application Support/Claude/claude_desktop_config.json`. Merge the
+following entry into its existing `mcpServers` object, preserving other settings.
+Replace both `/ABSOLUTE/PATH/` placeholders with your real paths; JSON does not
+expand `~`. Do not point Node at the unopened `.mcpb` file.
+
+```json
+{
+  "mcpServers": {
+    "krypton-protected-fs": {
+      "command": "/ABSOLUTE/PATH/TO/node",
+      "args": ["/ABSOLUTE/PATH/TO/extracted-bundle/src/packaging/launch_mcpb.cjs"],
+      "env": {
+        "KRYPTON_PROTECTED_WORKSPACE_ROOT": ""
+      }
+    }
+  }
+}
+```
+
+The empty workspace value selects the default folder above. Save valid JSON,
+then fully quit (**Cmd + Q**) and reopen Claude Desktop.
+
+</details>
+
+### Step 3: Verification in 60 Seconds
+
+In a new Claude chat, send each prompt separately and confirm the named tool
+actually runs:
+
+**Authorized Write Check**
+
+> Use krypton_write_file to write notes.txt inside the workspace with content 'Hello Krypton'.
+
+Expected: the write succeeds (`file_written`) and `notes.txt` contains
+`Hello Krypton` in your protected workspace. This replaces an existing
+`notes.txt`, so use a fresh test workspace.
+
+**Containment Denial Check**
+
+> Read /etc/passwd using krypton_read_file.
+
+Expected: native path enforcement deterministically denies the out-of-bounds
+request with `file_access_denied` and `isError: true`; no file contents are returned.
+Keep `/etc/passwd` outside your selected workspace. This verifies Krypton's
+OS-backed boundary for its MCP tools, not a system-wide sandbox for every Claude
+tool. A model refusal without a tool call is not a containment test. File denial
+works in Audit-Only mode too and does not produce a quarantine notification banner.
+
+**Stuck?** For missing tools, check the extension is enabled, fully restart Claude,
+and inspect its extension logs. The alpha binaries are unsigned/unnotarized;
+if macOS blocks a verified download, see [Gatekeeper troubleshooting](#troubleshooting).
+When reporting results, include Mac architecture, Claude Desktop version, and
+redacted tool result codes; never share client configuration or private log files.
+
+### Optional: Viewing the Security Dashboard
+
+With Git and Node.js 20.19.4/npm installed, run:
+
+```bash
+git clone https://github.com/mwarnsley/krypton-security.git
+cd krypton-security && npm install && npm run dev:dashboard
+```
+
+Open <http://localhost:3000>. This viewer is optional: it does **not** automatically
+load your standalone bundle's logs or start its daemon. Without reachable source
+telemetry it shows explicitly labeled demonstration data. Verify your bundle using
+the tool results above; its ledger lives under
+`~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+
 ## Quick Start & Installation
 
 ### Method 1: Zero-Terminal Double-Click (macOS Claude Desktop — Recommended)
@@ -604,6 +713,27 @@ Authentication, malformed discovery, degraded health, early exit without a healt
 service, or readiness timeout fails closed before the target is launched. Scheduler
 stalls and blocking kernel I/O are outside hard real-time guarantees.
 
+If registration loses its connection (including refusal, broken pipe, or reset),
+the source supervisor refreshes authenticated health/discovery and retries that
+registration once, re-inspecting the same complete child identity first. An exact
+live identity may register again after a lost acknowledgement; a stale or changed
+identity still fails closed. Recovery uses the same startup budget, with at most
+two registration exchanges; it does not retry tool writes or process isolation.
+Only the native starter holding `startup.lock` may remove a refused orphan socket.
+A live socket, authentication failure, malformed response, timeout, or degraded
+daemon never authorizes forced replacement or killing a discovered PID.
+
+SIGINT, SIGTERM, and `beforeExit` cancel pending registration recovery and request
+owned-child shutdown. Child exit triggers bounded exact-identity unregister;
+each IPC exchange destroys its own client socket and clears its deadline. The
+shared daemon owns the listener and keeps it open for the next client. A child
+that ignores termination signals still needs operator attention; unregister is
+not claimed until child exit. To verify restart behavior without touching client
+settings, run `npm run test:sim`: it exercises immediate runner relaunches,
+lost-acknowledgement recovery, and lock-guarded orphan socket refresh in disposable
+state. After rebuilding, restart the known source daemon once to load the updated
+registration behavior; existing running binaries do not update in place.
+
 The source host and daemon remain running independently of MCP sessions until
 explicitly stopped or a service failure ends them. Each client still registers
 and unregisters its own initial child. The host copies combined native stdout and
@@ -872,7 +1002,7 @@ Krypton release binaries are unsigned and unnotarized. After verifying the relea
 
 ### Native Daemon Connection Timeout
 
-A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, the configured launcher starts the compiled daemon automatically. If the binary is missing, run cargo build --release --manifest-path src/core-native/Cargo.toml, then reconnect. Readiness must succeed within three seconds after host spawn; the initial 1500 ms IPC probe and filesystem preparation are separate. Authentication or degraded-health errors fail closed without replacing that daemon. Inspect private .krypton/logs/daemon.log output (64 KiB maximum, reset per startup attempt; private paths require redaction before sharing) and the permissions of .krypton/runtime/ without printing capability or daemon.json contents. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.
+A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, the configured launcher starts the compiled daemon automatically. If the binary is missing, run cargo build --release --manifest-path src/core-native/Cargo.toml, then reconnect. Readiness must succeed within three seconds after host spawn; the initial 1500 ms IPC probe and filesystem preparation are separate. One refused/disconnected registration refreshes authenticated health/discovery and retries the exact revalidated child identity. Only native startup-lock arbitration removes refused orphan sockets; stale identities and tool writes are never replayed. Authentication or degraded-health errors fail closed without replacing that daemon. Inspect private .krypton/logs/daemon.log output (64 KiB maximum, reset per startup attempt; private paths require redaction before sharing) and the permissions of .krypton/runtime/ without printing capability or daemon.json contents. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.
 
 ### Permissions Denied on Protected Workspace
 
@@ -906,8 +1036,10 @@ per-app approval. Do not disable system-wide protections.
   startup inside `concurrently` during macOS QA. Free port 3000 or run
   `PORT=3001 npm run dev:full` and open `http://localhost:3001`. For the
   dashboard alone, use `npm run dev:dashboard -- -p 3001`.
-- **Stale Unix socket:** stop old daemon processes. The private `startup.lock`
-  file can remain after a crash; kernel locks release on exit. Do not unlink
+- **Stale Unix socket:** reconnect the source client; the native starter refreshes
+  a refused orphan socket under its startup lock. A healthy daemon is reused. The
+  private `startup.lock` file can remain after a crash; kernel locks release on
+  exit. Do not unlink
   this lock file while a daemon could still be running. Startup removes a socket only
   after a connection check proves it is stale; never delete a socket belonging
   to a running daemon.
@@ -1007,8 +1139,11 @@ fall back to direct unprotected file access. Reconnect a source client to reuse 
 healthy daemon or trigger automatic startup; missing binaries require
 `cargo build --release --manifest-path src/core-native/Cargo.toml`. Readiness
 must succeed within three seconds after host spawn; the initial 1500 ms IPC probe
-and filesystem preparation are separate. Existing authentication or degraded-health
-failures never trigger daemon replacement. Review private `.krypton/logs/daemon.log`
+and filesystem preparation are separate. A refused/disconnected registration can
+refresh authenticated health/discovery once and retry the same revalidated child
+identity. This does not retry file writes or accept stale process identities.
+Only native startup-lock arbitration removes refused orphan sockets. Existing
+authentication or degraded-health failures never trigger daemon replacement. Review private `.krypton/logs/daemon.log`
 output locally: it is capped at 64 KiB and reset per startup attempt, and may contain
 private paths that require redaction before sharing. The standalone MCPB owns its own daemon lifecycle. Inspect the destination
 before retrying an uncertain write; reconnecting does not establish rollback.

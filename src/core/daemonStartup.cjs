@@ -26,14 +26,17 @@ class DaemonStartupError extends Error {
 }
 
 /**
- * Recognizes only absent discovery or a refused socket as permission to start.
+ * Recognizes absent discovery, refused sockets and disconnected transports for lock-guarded startup.
  * @param {unknown} error Transport failure.
  * @returns {boolean} False for authentication, malformed data, timeout and unknown failures.
  * @complexity O(1) time and space.
  * @example unavailable(new NativeControlError('unavailable', 'Unavailable')); // true
  */
 function unavailable(error) {
-  return error instanceof NativeControlError && error.code === 'unavailable';
+  return (
+    error instanceof NativeControlError &&
+    (error.code === 'unavailable' || error.code === 'disconnected')
+  );
 }
 
 /**
@@ -188,8 +191,9 @@ async function stopHost(host, closed, deps) {
 
 /**
  * Reuses authenticated healthy service or starts a detached, bounded-log native host.
- * Startup probes are read-only and retry only absent/refused endpoints. Native startup.lock
+ * Startup probes are read-only and retry only absent/refused/disconnected endpoints. Native startup.lock
  * arbitrates simultaneous clients; a losing host may exit while the winning daemon becomes ready.
+ * Only the lock-holding native starter may remove a refused orphan socket; JS never unlinks it.
  * The three-second readiness deadline is separate from each 1500 ms transport deadline.
  * Filesystem/kernel calls cannot be forcibly cancelled. This service persists across client exits;
  * MCP children retain the supervisor's existing exit/unregister lifecycle.
@@ -218,7 +222,9 @@ async function ensureNativeDaemon(workspace, dependencies = {}) {
    * @example await probe(); // no permission to launch until this resolves
    */
   const probe = async () => {
+    if (deps.signal?.aborted) throw new DaemonStartupError('startup_cancelled');
     const health = await deps.dispatch({ type: 'health' }, workspace.projectRoot);
+    if (deps.signal?.aborted) throw new DaemonStartupError('startup_cancelled');
     if (health.ok !== true || health.health?.status !== 'healthy')
       throw new DaemonStartupError('daemon_unhealthy');
   };
@@ -252,6 +258,7 @@ async function ensureNativeDaemon(workspace, dependencies = {}) {
     cancel(cancellationError);
   };
   try {
+    if (deps.signal?.aborted) throw new DaemonStartupError('startup_cancelled');
     host = deps.spawn(process.execPath, [path.join(__dirname, 'daemonHost.cjs'), binary], {
       cwd: workspace.repositoryRoot,
       detached: true,
@@ -268,6 +275,7 @@ async function ensureNativeDaemon(workspace, dependencies = {}) {
     });
     deps.signals.on('SIGINT', cancelled);
     deps.signals.on('SIGTERM', cancelled);
+    deps.signal?.addEventListener('abort', cancelled, { once: true });
     deadlineTimer = deps.setTimer(() => {
       cancellationError = new DaemonStartupError('startup_timeout');
       cancel(cancellationError);
@@ -314,6 +322,7 @@ async function ensureNativeDaemon(workspace, dependencies = {}) {
     deps.clearTimer(pollTimer);
     deps.signals.removeListener('SIGINT', cancelled);
     deps.signals.removeListener('SIGTERM', cancelled);
+    deps.signal?.removeEventListener('abort', cancelled);
     try {
       await log.close();
     } catch (error) {

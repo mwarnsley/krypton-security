@@ -78,7 +78,7 @@ describe('ExplainerDrawer', () => {
     expect(answer).toContain('within three seconds after host spawn');
     expect(answer).toContain('cargo build --release --manifest-path src/core-native/Cargo.toml');
     expect(answer).toContain(
-      'Authentication errors and degraded health fail closed without replacing'
+      'Authentication errors, timeouts and degraded health fail closed without replacing'
     );
   });
 

@@ -129,8 +129,14 @@ impl ProcessRegistry {
             .state
             .try_write()
             .map_err(|_| RegistryError::RegistryUnavailable)?;
-        if state.processes.contains_key(&supplied.pid) {
-            return Err(RegistryError::AlreadyRegistered);
+        if let Some(registered) = state.processes.get(&supplied.pid) {
+            // A lost acknowledgement may repeat registration. Preserve the pinned
+            // identity, and authorize only after fresh independent live inspection.
+            return if registered.supplied == supplied && registered.canonical == live {
+                Ok(())
+            } else {
+                Err(RegistryError::AlreadyRegistered)
+            };
         }
         state.receipts.remove(&supplied);
         state.processes.insert(
@@ -302,6 +308,56 @@ mod tests {
             Ok(())
         );
         assert_eq!(registry.termination_receipt(&fixture.supplied()), Ok(true));
+    }
+
+    #[test]
+    fn repeated_registration_revalidates_the_exact_pinned_identity() {
+        let fixture = ExecutableFixture::new();
+        let registry = ProcessRegistry::default();
+        registry
+            .register(fixture.supplied(), &Inspector(Ok(fixture.live())))
+            .unwrap();
+        assert_eq!(
+            registry.register(fixture.supplied(), &Inspector(Ok(fixture.live()))),
+            Ok(())
+        );
+        let changed = ProcessIdentity {
+            start_time: fixture.live().start_time + 1,
+            ..fixture.live()
+        };
+        assert_eq!(
+            registry.register(fixture.supplied(), &Inspector(Ok(changed))),
+            Err(RegistryError::IdentityMismatch)
+        );
+        assert_eq!(registry.unregister(&fixture.supplied()), Ok(()));
+    }
+
+    #[test]
+    fn registration_retry_never_replaces_a_pinned_generation_or_alias_target() {
+        let fixture = ExecutableFixture::new();
+        let registry = ProcessRegistry::default();
+        registry
+            .register(fixture.supplied(), &Inspector(Ok(fixture.live())))
+            .unwrap();
+        let changed = ProcessIdentity {
+            start_time: fixture.live().start_time + 1,
+            ..fixture.live()
+        };
+        assert_eq!(
+            registry.register(changed.clone(), &Inspector(Ok(changed))),
+            Err(RegistryError::AlreadyRegistered)
+        );
+        std::fs::write(fixture.0.join("other"), b"other fixture").unwrap();
+        std::fs::remove_file(fixture.0.join("shim")).unwrap();
+        std::os::unix::fs::symlink(fixture.0.join("other"), fixture.0.join("shim")).unwrap();
+        let changed = ProcessIdentity {
+            executable_path: fixture.0.join("other"),
+            ..fixture.live()
+        };
+        assert_eq!(
+            registry.register(fixture.supplied(), &Inspector(Ok(changed))),
+            Err(RegistryError::AlreadyRegistered)
+        );
     }
 
     #[test]

@@ -54,8 +54,15 @@ in `ROADMAP.md`.
   time, and parent checks, and pins the inspected canonical identity for signaling.
   Cleanup and receipt lookup retain the original registered client identity even
   if the alias disappears; a changed live target cannot inherit the registration.
+- Recovers one refused/disconnected registration handshake by refreshing authenticated
+  health/discovery and revalidating the exact child identity before retrying.
+  Native registration is idempotent only for that same independently inspected,
+  pinned identity. Stale identities, authentication failures, timeouts and degraded
+  health still deny; tool writes and isolation are never replayed. Only the native
+  starter under `startup.lock` removes refused orphan sockets, never live sockets.
 - Registers complete initial-child identity, captures early exits, forwards
-  SIGINT/SIGTERM, waits for bounded unregister, and preserves nonzero child exit
+  SIGINT/SIGTERM and `beforeExit` shutdown, cancels pending registration recovery,
+  waits for bounded unregister after child exit, and preserves nonzero child exit
   codes. Lifecycle failure upgrades a zero child status to 1.
   Rejected registration triggers owned-child cleanup; refused or timed-out cleanup
   is reported without falsely claiming termination or unregistering a live child.
@@ -89,6 +96,10 @@ in `ROADMAP.md`.
 - Claude Desktop can open the macOS `.mcpb` by double-click, with Settings >
   Extensions installation as a fallback. The generated MCPB 0.3 manifest remains
   macOS-only because the archive includes only arm64/x64 Mach-O daemons.
+- The README opens with a macOS alpha quickstart: latest-release bundle import,
+  optional extracted-bundle JSON configuration, and authorized-write/denied-read
+  prompts. The Field Guide mirrors these verification checks. The two-minute
+  onboarding target remains unverified on clean tester machines.
 - The Field Guide and README separate file-denial receipts (`INTERCEPTED`) from
   process-isolation banners and installer notices, and document missing-tool,
   Gatekeeper, timeout, and workspace-permission recovery. Pages is static mock

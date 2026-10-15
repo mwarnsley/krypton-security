@@ -56,6 +56,9 @@ export function spawnProtectedProcess(
     ) => ProtectedChildLifecycle;
     inspect?: (pid: number) => Promise<ProcessIdentityPayload>;
     dispatch?: (command: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    /** Bounded refresh for one exact-identity registration retry, never tool operations. */
+    recoverRegistration?: () => Promise<void>;
+    signal?: AbortSignal;
   }
 ): Promise<import('node:child_process').ChildProcess>;
 

@@ -147,7 +147,7 @@ describe('supervisor runtime', () => {
       );
     }
   );
-  it.each(['SIGINT', 'SIGTERM'] as const)(
+  it.each(['SIGINT', 'SIGTERM', 'beforeExit'] as const)(
     'forwards %s to only the owned child and removes signal listeners',
     async (signal) => {
       const deps = fixture();
@@ -162,9 +162,11 @@ describe('supervisor runtime', () => {
       const running = main(['run', '--', 'node'], deps);
       await vi.waitFor(() => expect(deps.start).toHaveBeenCalled());
       deps.signals.emit(signal);
-      finish({ ...outcome, code: null, signal });
+      const forwarded = signal === 'beforeExit' ? 'SIGTERM' : signal;
+      finish({ ...outcome, code: null, signal: forwarded });
       expect(await running).toBe(signal === 'SIGINT' ? 130 : 143);
-      expect(deps.child.kill).toHaveBeenCalledWith(signal);
+      expect(deps.child.kill).toHaveBeenCalledWith(forwarded);
+      expect(deps.start.mock.calls[0]?.[3].signal.aborted).toBe(true);
       expect(deps.signals.listenerCount(signal)).toBe(0);
     }
   );
