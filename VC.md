@@ -249,3 +249,74 @@ into granular per-agent rules, durable evidence, fleet policy distribution, and
 centralized security operations integration. This is proactive risk management:
 define delegated authority before adoption accelerates, enforce it locally, and
 retain evidence that leadership can audit.
+
+## PART 4: THE COMMERCIAL ENGINE & EXIT ARCHITECTURE
+
+### The "Land-and-Expand" Open-Core Funnel
+
+The shipped v1.0.2 Community release gives solo engineers a free local entry
+point: install the standalone `.mcpb` in Claude Desktop and evaluate Krypton's
+contained file tools. Cursor users enter through the existing MCP source setup
+integration; native `.mcpb` installation in Cursor is not assumed. The native
+watchdog, local JSONL ledger, and separately run Next.js viewer make local
+containment and evidence accessible without a subscription.
+
+The commercial hypothesis is bottom-up adoption: engineers demonstrate useful
+local protection, teams accumulate independent deployments, and internal SecOps
+and CISOs seek fleet-wide visibility and policy governance. The planned Fleet
+tier turns that demand into organizational contracts without withholding local
+protection. Free installations do not automatically upload workstation telemetry;
+fleet enrollment and external evidence forwarding require explicit configuration.
+
+### Subscription Packaging & Unit Economics
+
+Paid tiers are proposed packaging, not capabilities shipped in v1.0.2.
+
+| Package                           | Target price                                                  | Buyer and value                                                                                                                                                                                                                                   |
+| :-------------------------------- | :------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Developer Pro**                 | $29/user/month                                                | Solo developers, freelancers, and small boutique agencies needing multi-agent local profiles and tracking, APFS rollback safety, desktop/webhook notifications (Slack/Discord), and cloud-synced dynamic threat feeds.                            |
+| **Enterprise Governance / Fleet** | $49–$99/seat/month; annual contracts with a $15,000 ARR floor | Engineering organizations needing centralized policy distribution, a fleet console, locally authorized remote kill-switch orchestration, OpenTelemetry streaming and SIEM forwarding (Splunk/Datadog), and tamper-evident audit evidence exports. |
+
+The Pro launch target sits within the roadmap's $19–$29 monthly pricing range.
+Annual Enterprise contract value is the greater of $15,000 or contracted seats
+multiplied by the monthly seat price and 12. Pro generates $348 annualized
+revenue per continuously subscribed user before churn, discounts, and costs.
+Neither price nor contract value establishes profitability: validate acquisition
+cost, retention, support effort, cloud ingestion/storage costs, gross margin,
+and acquisition-cost payback with paying cohorts. Local execution limits the
+need for cloud compute in containment, while Fleet evidence retention and support
+remain costs to measure and control.
+
+The individual local workstation containment boundary is never gated, degraded,
+or delayed by licensing state. Feeds and policy distribution operate outside the
+local enforcement loop. Remote orchestration must preserve local authorization,
+registered ownership, and live compound-identity checks. Compliance evidence
+supports customer audits; it does not itself confer SOC 2 certification or EU AI
+Act compliance.
+
+### Financial Milestones & Strategic Exit Multiple (Acquire.com & Private Equity)
+
+The operating target is $15k–$25k MRR, equivalent to $180k–$300k ARR. Potential
+exit channels include Acquire.com, strategic developer-security or AI
+infrastructure acquirers, and private-equity buyers seeking a durable recurring
+revenue business.
+
+A **5×–8× ARR multiple is an aspirational strategic-exit assumption**, not an
+established historical Acquire.com benchmark or a guaranteed offer.
+[Acquire.com's January 2026 report](https://blog.acquire.com/acquire-com-biannual-acquisition-multiples-report-jan-2026/)
+distinguishes revenue-based valuations for high-growth businesses from the
+profit-based multiples typically used for profitable SaaS acquisitions. Buyer
+fit, growth, retention, earnings, and diligence must support any premium.
+
+Applying the assumed range to the full ARR target produces $900k–$2.4M in
+illustrative gross valuation. The desired **$1.2M–$2.4M liquidity valuation** is a
+strategic target within that range, not its mathematical minimum: $240k ARR at
+5× implies $1.2M, while $300k ARR at 8× implies $2.4M. Gross purchase value is
+not net cash proceeds; taxes, transaction costs, earn-outs, and retained equity
+can change realized liquidity.
+
+**Capital allocation:** Distributable free cash flow or capital realized from a
+commercial exit is earmarked for physical cash-flowing assets, particularly
+real estate, after operating reserves, taxes, and contractual obligations. This
+is the intended allocation of realized capital, not an assumption that an exit
+or investment return is assured.
