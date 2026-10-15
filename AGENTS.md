@@ -298,6 +298,50 @@ Do not hide a failure behind a pre-existing-error claim. Record the exact
 command, exit status, and relevant error, and leave the workflow explicitly
 incomplete. Do not commit or push merely because verification passes.
 
+### Mandatory Pre-Push CI Gate
+
+No contributor or AI coding agent (including Codex, Claude, and Copilot) may
+push a branch, create a PR backed by unverified changes, or push a PR update
+until the full repository verification suite has passed for the exact final
+changes. Run `npm run verify` and `npm run format:check` from the repository
+root with the pinned Node and Rust toolchains. `verify` is the canonical
+consolidated command: it runs lint, both TypeScript projects, the full Vitest
+suite, the production dashboard build, design-system checks, Rust formatting,
+Clippy, and native tests. A focused test run alone does not satisfy this gate.
+
+Rerun the gate after further edits, conflict resolution, or rebasing onto new
+code. Record the commands and results; failed, skipped, or warning-producing
+required checks block a push. Also run the applicable simulation, coverage,
+security, and release checks required by `docs/RELEASE.md` and the workflows;
+the local aggregate does not replace hosted platform checks or branch protection.
+Passing verification does not authorize an agent to commit or push: explicit
+human instructions and all existing review requirements still apply.
+
+### CI Environment Invariants
+
+Packaging, bundle-building, and native process-spawning tests must tolerate
+resource-constrained CI virtual machines. Give integration test bodies and their
+filesystem-heavy setup/cleanup hooks explicit budgets of at least 30 seconds.
+Every subprocess used for those integration operations must have an explicit
+timeout of at least 20 seconds, normally 30 seconds, and bounded output capture
+of at least 128 KiB where archive listings or extracted contents are parsed.
+Choose larger finite limits when a fixture or build requires them. Do not rely
+on the 5000 ms local Vitest default or unbounded subprocess/file-I/O waits.
+The CI default test timeout is at least 15 seconds; integration suites must
+override it with their larger operation-appropriate budgets.
+
+**Large-Payload Invariant:** Unit or integration tests allocating buffers of
+at least 128 MiB or computing stream CRCs must specify an explicit per-test
+timeout budget of at least 120,000 ms to avoid memory-churn timeouts on shared
+CI runners.
+
+These are test-harness budgets, not changes to production security deadlines.
+Keep intentional timeout/fail-closed regression checks short and deterministic
+using injected clocks or timers; preserve the native 1500 ms IPC contract and
+other runtime limits. Diagnose hangs and missing cleanup before increasing a
+budget, and retain owned-child teardown and late-rejection handling. A test
+timeout cannot forcibly cancel an in-flight kernel filesystem call.
+
 ### Mandatory Completion Output Protocol
 
 Every completion response must include:
@@ -356,7 +400,7 @@ reshape the tree or create alternate roots.
 │   ├── core-native/             # Rust daemon, watcher, registry, telemetry, IPC
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   ├── dashboard/               # Next.js 16 AegisAgent Command Center
+│   ├── dashboard/               # Next.js 16 Krypton Security Command Center
 │   │   ├── app/                 # App Router pages and local API routes
 │   │   ├── components/
 │   │   │   ├── primitives/      # Semantic design-system building blocks
@@ -374,8 +418,10 @@ reshape the tree or create alternate roots.
     │   ├── daemon.json          # Socket discovery and daemon metadata
     │   ├── daemon.sock          # Workspace-specific Unix control socket
     │   └── capability           # Private daemon capability material
-    └── telemetry/
-        └── alerts.jsonl         # Bounded native telemetry ledger
+    ├── telemetry/
+    │   └── alerts.jsonl         # Bounded native telemetry ledger
+    └── logs/
+        └── daemon.log          # Private bounded output from latest source startup attempt
 ```
 
 ### Directory responsibilities
@@ -385,7 +431,7 @@ reshape the tree or create alternate roots.
 - `/src/core-native/` owns the Rust daemon, authenticated Unix-domain socket
   server, watcher, live compound process registry, signal delivery, and durable
   native telemetry.
-- `/src/dashboard/` owns the Next.js 16 AegisAgent Command Center. Routing and
+- `/src/dashboard/` owns the Next.js 16 Krypton Security Command Center. Routing and
   server-only behavior remain in `app/` and `server/`; reusable visual elements
   remain in the existing `components/primitives/`, `components/patterns/`, and
   `components/ui/` tiers.

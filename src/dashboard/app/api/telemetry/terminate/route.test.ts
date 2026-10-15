@@ -26,6 +26,20 @@ beforeEach(() => {
 });
 
 describe('telemetry termination route', () => {
+  it('rejects dashboard self-isolation with the current product name before dispatch', async () => {
+    ipcMocks.dispatchNativeCommand.mockClear();
+    const response = await POST(
+      request(JSON.stringify({ process: { ...PROCESS, pid: process.pid } }))
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      error: 'The Krypton Security dashboard process cannot isolate itself.',
+    });
+    expect(ipcMocks.dispatchNativeCommand).not.toHaveBeenCalled();
+  });
+
   it('rejects PID-only requests', async () => {
     expect((await POST(request('{"targetProcessId":4242}'))).status).toBe(400);
   });

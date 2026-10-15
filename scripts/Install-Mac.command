@@ -1,5 +1,6 @@
 #!/bin/bash
 # Source-checkout launcher. Client backups and merges belong to setup.cjs.
+# A built native binary starts on demand when a configured client connects.
 set -u
 if ! cd -- "$(dirname -- "$0")/.."; then
   printf '%s\n' 'Krypton setup failed: checkout_unavailable.' >&2

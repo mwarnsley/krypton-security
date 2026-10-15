@@ -56,6 +56,35 @@ it('keeps missing process counts unavailable', () => {
   expect(normalizeTelemetryPayload({ alerts: [] }).activeProcessCount).toBeNull();
 });
 
+it('explains audit mode and retained MCP denials when its information control receives focus', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    }
+  );
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ source: 'native', alerts: [], nativeDaemonReachable: false }),
+    }))
+  );
+  await act(async () => render(<DashboardPage />));
+  const trigger = screen.getByRole('button', { name: 'Info for Audit-Only Mode' });
+
+  act(() => trigger.focus());
+  const tooltip = screen.getByRole('tooltip');
+
+  expect(trigger.getAttribute('aria-describedby')).toBe(tooltip.id);
+  expect(tooltip.textContent).toContain('The native daemon starts in Audit-Only Mode (switch on)');
+  expect(tooltip.textContent).toContain(
+    'Krypton MCP reads and writes outside the protected workspace remain denied in both modes.'
+  );
+});
+
 it('never announces isolation for an unattributed observation', () => {
   const info = vi.spyOn(toast, 'info');
   showContainmentBreakoutToast(

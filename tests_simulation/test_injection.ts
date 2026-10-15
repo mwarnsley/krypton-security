@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
 import { dispatchNativeControl, inspectProcessIdentity } from '../src/core/processIsolation.cjs';
+import { ensureNativeDaemon } from '../src/core/daemonStartup.cjs';
 import { verifyPathAccess } from '../src/core/watchdog';
 import { runCli } from '../src/cli/runtime.cjs';
 
@@ -460,6 +461,118 @@ async function runMcpSimulation(root: string): Promise<string[]> {
   }
 }
 
+/** Exercises source cold startup without using test-only native fixture behavior. */
+async function runColdStartSimulation(): Promise<void> {
+  const build = execFileSync(
+    'cargo',
+    ['build', '--manifest-path', 'src/core-native/Cargo.toml', '--message-format=json'],
+    {
+      cwd: REPOSITORY,
+      encoding: 'utf8',
+      timeout: 120_000,
+      maxBuffer: 8 * 1024 * 1024,
+    }
+  );
+  const artifacts = build
+    .trim()
+    .split('\n')
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          executable?: string | null;
+          target?: { name?: string };
+        }
+    );
+  const binary = artifacts.find(
+    (item) => item.target?.name === 'krypton-core-native' && item.executable
+  )?.executable;
+  assert.ok(binary, 'compiled production native executable required');
+  const root = await fs.realpath(await fs.mkdtemp('/tmp/krypton-cold-'));
+  let host: ChildProcess | undefined;
+  try {
+    const protectedRoot = path.join(root, 'sandbox_workspace');
+    const target = path.join(root, 'src/core-native/target/debug');
+    await fs.mkdir(protectedRoot);
+    await fs.mkdir(path.join(root, 'outside'));
+    await fs.mkdir(target, { recursive: true });
+    await fs.symlink(binary, path.join(target, 'krypton-core-native'));
+    await fs.writeFile(path.join(root, 'package.json'), '{}');
+    await fs.writeFile(path.join(root, 'src/core-native/Cargo.toml'), '');
+    await fs.writeFile(
+      path.join(root, 'krypton.config.json'),
+      JSON.stringify({
+        projectRoot: '.',
+        protectedWorkspaceRoot: 'sandbox_workspace',
+        runtimeDirectory: '.krypton/runtime',
+        telemetryPath: '.krypton/telemetry/alerts.jsonl',
+        ignoredPaths: ['.git', 'node_modules', '.next', 'coverage', 'target'],
+        observedRoots: [],
+        sensitivePaths: [],
+        telemetryMaxEvents: 10_000,
+        telemetryMaxBytes: 8 * 1024 * 1024,
+        rateLimitWindowSeconds: 5,
+        rateLimitMaxBreakouts: 3,
+      })
+    );
+    await ensureNativeDaemon(
+      { repositoryRoot: root, projectRoot: root, cwd: protectedRoot },
+      {
+        targetDirectory: '',
+        spawn: (command, args, options) => {
+          host = spawn(command, args, options);
+          observeChild(host);
+          return host;
+        },
+        dispatch: async (command, projectRoot) => {
+          const response = await dispatchNativeControl(command, projectRoot);
+          const health = response.health as Record<string, unknown> | undefined;
+          if (health?.status === 'degraded' && health.watcher === 'starting') {
+            console.error('[FAIL] production cold startup exposed watcher:starting health.');
+          }
+          return response;
+        },
+      }
+    );
+    assert.ok(host, 'cold startup must launch its owned production host');
+    host.ref();
+    const initial = await dispatchNativeControl({ type: 'health' }, root);
+    assert.equal(initial.activeProcessCount, 0);
+    assert.equal((initial.health as Record<string, unknown>).status, 'healthy');
+    assert.equal((initial.health as Record<string, unknown>).mode, 'audit_only');
+    // This path only requests file tools. It never requests process isolation or a desktop banner.
+    await runMcpSimulation(root);
+    requireHealthyChild(host);
+    assert.equal(host.exitCode, null, 'daemon host must outlive the MCP session');
+    assert.equal(host.signalCode, null);
+    const remaining = await dispatchNativeControl({ type: 'health' }, root);
+    assert.equal(remaining.activeProcessCount, 0, 'MCP stdin closure unregisters its owned child');
+    assert.equal((remaining.health as Record<string, unknown>).status, 'healthy');
+    console.log(
+      '[PASS] production cold startup: authenticated healthy readiness, MCP audit denials, session unregister and persistent daemon'
+    );
+  } finally {
+    if (host && host.exitCode === null && host.signalCode === null) {
+      const state = observeChild(host);
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        if (!host.kill('SIGTERM')) throw new Error('Owned daemon host shutdown signal failed.');
+        // The host owns native teardown; allow its bounded cleanup before forcing host exit.
+        await Promise.race([
+          state.exited,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, 4000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+        await dispose(host);
+      }
+    }
+    // Preserve disposable evidence if owned-host cleanup failed before this point.
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
 export async function runInjectionSimulation(): Promise<void> {
   if (process.platform !== 'darwin' && process.platform !== 'linux')
     throw new Error('Native simulation requires a supported Unix host.');
@@ -625,6 +738,9 @@ export async function runInjectionSimulation(): Promise<void> {
     console.log(
       '[PASS] native registration → observational boundary event → authenticated SIGKILL → durable JSONL → mocked desktop receipt'
     );
+    stage = 'production cold startup';
+    await runColdStartSimulation();
+    assert.equal(interrupted, false, 'Simulation interrupted.');
   } catch (error: unknown) {
     const failure = error instanceof Error ? 'operation_failed' : 'unexpected_failure';
     console.error(`[FAIL] ${stage}: ${failure}`);

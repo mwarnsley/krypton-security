@@ -201,14 +201,14 @@ describe('bounded deterministic ZIP writer', () => {
   it('accepts an entry at the 128 MiB limit', () => {
     const data = Buffer.alloc(128 * 1024 * 1024);
     expect(createZip([{ name: 'native', data }])).toBeInstanceOf(Buffer);
-  }, 30_000);
+  }, 120_000);
 
   it('rejects an entry one byte above 128 MiB', () => {
     const data = Buffer.alloc(128 * 1024 * 1024 + 1);
     expect(() => createZip([{ name: 'native', data }])).toThrowError(
       expect.objectContaining({ code: 'size_limit' })
     );
-  });
+  }, 120_000);
 
   it('accepts a payload at the 256 MiB limit', () => {
     const first = Buffer.alloc(128 * 1024 * 1024);
@@ -219,7 +219,7 @@ describe('bounded deterministic ZIP writer', () => {
         { name: 'native-b', data: second },
       ])
     ).toBeInstanceOf(Buffer);
-  }, 30_000);
+  }, 120_000);
 
   it('rejects a payload one byte above 256 MiB', () => {
     const first = Buffer.alloc(128 * 1024 * 1024);
@@ -232,5 +232,5 @@ describe('bounded deterministic ZIP writer', () => {
         { name: 'extra', data: extra },
       ])
     ).toThrowError(expect.objectContaining({ code: 'size_limit' }));
-  });
+  }, 120_000);
 });

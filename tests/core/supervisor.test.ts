@@ -82,6 +82,29 @@ describe('supervisor arguments', () => {
 });
 
 describe('supervisor runtime', () => {
+  it('waits for automatic startup before launching the protected child', async () => {
+    const deps = fixture();
+    let ready: (() => void) | undefined;
+    const ensureDaemon = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          ready = resolve;
+        })
+    );
+    const running = main(['run', '--', 'node'], { ...deps, ensureDaemon });
+    await vi.waitFor(() => expect(ensureDaemon).toHaveBeenCalled());
+    expect(deps.start).not.toHaveBeenCalled();
+    ready?.();
+    expect(await running).toBe(0);
+    expect(deps.start).toHaveBeenCalledOnce();
+  });
+  it('does not launch an agent after failed automatic startup', async () => {
+    const deps = fixture();
+    const ensureDaemon = vi.fn().mockRejectedValue(new Error('private build path'));
+    expect(await main(['run', '--', 'node'], { ...deps, ensureDaemon })).toBe(1);
+    expect(deps.start).not.toHaveBeenCalled();
+    expect(deps.stderr.mock.calls.flat().join('')).not.toContain('private build path');
+  });
   it('checks daemon health before directly spawning with inherited stdio', async () => {
     const deps = fixture();
     await main(['run', '--', 'node', 'a b'], deps);
@@ -101,7 +124,7 @@ describe('supervisor runtime', () => {
     expect(await main(['run', '--', 'node'], deps)).toBe(1);
     expect(deps.start).not.toHaveBeenCalled();
     expect(deps.stderr).toHaveBeenCalledWith(
-      "Krypton native daemon is not running. Please start it with 'npm run dev:full' or 'krypton daemon:start'.\n"
+      expect.stringContaining('Krypton native startup failed; protection remains unavailable.')
     );
   });
   it.each([0, 7, 127])('preserves child exit code %s', async (code) => {

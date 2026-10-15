@@ -3,6 +3,7 @@ const { constants } = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { ensureNativeDaemon, DaemonStartupError } = require('./daemonStartup.cjs');
 const {
   dispatchNativeControl,
   startProtectedProcess,
@@ -10,18 +11,18 @@ const {
 } = require('./processIsolation.cjs');
 
 const DAEMON_ERROR =
-  "Krypton native daemon is not running. Please start it with 'npm run dev:full' or 'krypton daemon:start'.";
+  'Krypton native startup failed; protection remains unavailable. Build with cargo build --release --manifest-path src/core-native/Cargo.toml from the checkout, or install the standalone macOS MCPB. Inspect .krypton/logs/daemon.log and runtime permissions; never remove a live socket or startup.lock.';
 const USAGE = 'Usage: krypton run -- <command> [args...] | krypton daemon:start | krypton setup';
 
 /**
  * Classifies arbitrary operational failures without emitting raw messages or payloads.
  * @param {unknown} error - Caught failure from a runtime boundary.
- * @returns {'permission_denied'|'unavailable'|'invalid_input'|'unexpected_failure'|import('./processIsolation.cjs').NativeControlErrorCode} Safe diagnostic category.
+ * @returns {'permission_denied'|'unavailable'|'invalid_input'|'unexpected_failure'|import('./processIsolation.cjs').NativeControlErrorCode|import('./daemonStartup.cjs').DaemonStartupErrorCode} Safe diagnostic category.
  * @complexity O(1) time and space.
  * @example failureCode(null); // unexpected_failure
  */
 function failureCode(error) {
-  if (error instanceof NativeControlError) return error.code;
+  if (error instanceof NativeControlError || error instanceof DaemonStartupError) return error.code;
   if (error instanceof SyntaxError || error instanceof TypeError) return 'invalid_input';
   if (error && typeof error === 'object') {
     if (error.code === 'EACCES' || error.code === 'EPERM') return 'permission_denied';
@@ -348,9 +349,11 @@ async function main(argv, dependencies = {}) {
   const dispatch = (command) =>
     (dependencies.dispatch ?? dispatchNativeControl)(command, workspace.projectRoot);
   try {
-    const health = await dispatch({ type: 'health' });
-    if (health.ok !== true || health.health?.status !== 'healthy')
-      throw new Error('Daemon unavailable or degraded');
+    await (dependencies.ensureDaemon ?? ensureNativeDaemon)(workspace, {
+      dispatch: dependencies.dispatch ?? dispatchNativeControl,
+      spawn: dependencies.spawn ?? spawn,
+      signals,
+    });
   } catch (error) {
     reportFailure(error, stderr);
     stderr(`${DAEMON_ERROR}\n`);

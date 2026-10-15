@@ -54,13 +54,23 @@ with dual-architecture native daemon supervision (`arm64` and `x86_64`), a
 standalone `.mcpb` bundle, and verified release ancestry gates. Phase 1 delivers
 the local containment, telemetry rendering, and protected release workflow.
 The 60-second onboarding goal remains an unmeasured target, not a performance
-guarantee. Source setup separately requires dependencies and a running checkout
-daemon; the standalone bundle does not include the Next.js viewer.
+guarantee. Source setup separately requires dependencies and a compiled native binary. The
+source launcher reuses a healthy daemon or auto-starts one with bounded readiness;
+its detached Node host owns the daemon beyond MCP disconnect while each client
+retains its child registration lifecycle. The optional source Next.js viewer
+is started with `npm run dev:dashboard`; the standalone bundle does not include it.
+
+**v1.0.3 follow-up polish:** Source auto-spawning, unified dashboard branding, and
+accurate audit-mode guidance are implemented in the working tree. The package
+version remains `1.0.2`; these completed implementation items do not claim a
+published v1.0.3 release or completion of the public-trial gates below.
 
 ### 1. Local Frictionless Onboarding (Must-Have for HackerNoon)
 
 - [x] **Mandatory Error-Handling Audit Gate:** Document the three-tier contract, audit all native/core/CLI entry points, remediate failures and record fresh verification in `AGENTS.md` before further Phase 1 features.
 - [x] **Universal Single-Command Client Config (`krypton setup`):** Detect existing Claude Desktop, Cursor, Claude Code, and Cline storage on macOS/Linux; atomically back up existing JSON, preserve other servers, and install `krypton-protected-fs` with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Malformed files and conflicting entries fail closed. `npm run setup` works without global linking.
+- [x] **Supervisor Cold-Start & Daemon Lifecycle:** `src/cli.cjs run` probes authenticated IPC, reuses a healthy daemon, or starts the compiled background native daemon on demand before launching the MCP child. Readiness retries have a three-second budget after host spawn; the initial 1500 ms probe and filesystem preparation are separate. Authentication failures and degraded health fail closed. The source daemon survives client disconnect while each MCP child unregisters on exit; no manually running `npm run dev:full` or active daemon terminal is required before opening Claude Desktop.
+- [x] **Double-Click Source Setup:** `Install-Mac.command` invokes atomic client configuration and a bounded completion notice without instructing users to run terminal watchers. It opens Terminal automatically and still requires a prepared checkout, Node on PATH, installed dependencies, and a compiled native binary. Dependency-free, zero-terminal distribution is a separate public-trial gate; the standalone `.mcpb` remains the existing no-checkout route.
 - [x] **Standalone `.mcpb` Generator:** `npm run build:mcpb` outputs `dist/krypton-protected-fs.mcpb`, a deterministic MCPB 0.3 archive containing the production server, standalone launcher, required JavaScript dependencies, and verified arm64/x64 native daemons. `protected_workspace_root` is optional; blank input creates `~/Library/Application Support/KryptonSecurity/sandbox_workspace`. The launcher selects and supervises its exact native child, while private configuration and telemetry remain outside the protected root. No checkout or Rust toolchain is required after installation. The bundle is unsigned and unnotarized, excludes the Next.js dashboard and local runtime state, with clean-machine Claude Desktop and Gatekeeper checks retained for ongoing release QA.
 - [x] **Deterministic Local Test Harness (`npm run test:e2e`):** Boots a disposable native daemon fixture, exercises production MCP stdio read/write and traversal denial, verifies durable native receipts mapped to `INTERCEPTED`, fail-closed socket loss and owned-child `SIGKILL`, then cleans up and prints a pass/fail terminal report. Desktop notification delivery is mocked; live client and dashboard QA remain separate.
 - [x] **Isolated Packaged Harness (`npm run test:mcpb -- <archive>`):** Extracts only an allowlisted MCPB inventory into bounded temporary storage, isolates HOME and working directories, and verifies custom/fallback workspace selection, traversal denial, durable standalone telemetry, exact-child exit, and post-exit socket nonacceptance without repository markers. The private temporary runtime home may retain runtime files after shutdown. Local runs cover one architecture; the release workflow defines matching arm64 and x86_64 jobs.
@@ -72,7 +82,7 @@ daemon; the standalone bundle does not include the Next.js viewer.
 - [x] **Production Native MCP Server:** `src/core/mcp/server.cjs` serves bounded stdio `krypton_read_file` and `krypton_write_file` calls with local JSON Schema 2020-12 validation. `dispatchNativeControl` sends authenticated `mcp_file` requests to the Rust daemon, which evaluates paths and performs descriptor-relative file access. Denials return `isError: true` inside `result` with native receipts. Missing or incompatible daemons fail closed. Calls support up to 2 KiB of UTF-8 content and 1 KiB paths; only these tools are contained.
 - [x] **Live Telemetry Emission:** Native MCP denials queue structured receipts to the bounded source or standalone JSONL ledger, retaining tool, requested path, timestamp, and denial action. Queue admission is distinct from durable persistence; write/queue failures degrade health. Dashboard rows show `INTERCEPTED`, with no invented actor PID or SIGKILL claim. The standalone MCPB persists telemetry under its private Application Support instance and does not bundle or launch the dashboard.
 
-### 3. AegisAgent Dashboard & Telemetry Verification (Must-Have)
+### 3. Krypton Security Dashboard & Telemetry Verification (Must-Have)
 
 - [x] **Live Local Telemetry Stream:** Next.js dashboard parsing `.krypton/telemetry/alerts.jsonl` with clear distinctions between confirmed native receipts and unconfirmed observations.
 - [x] **Intercepted Breach Visualizer:** Delivered native denial telemetry rendering in v1.0.2: the local dashboard displays the timestamp, blocked path, Krypton tool name, and recorded enforcement action. Portable watcher evidence remains unattributed; built-in host tools remain outside the MCP boundary.
@@ -93,14 +103,29 @@ required check contexts, credential boundaries and activation verification.
 
 ## Phase 2: Transparent Developer Experience & Distribution (v1.1)
 
-**Status:** Planned.
+**Status:** In progress. Auto-spawn and dashboard polish are implemented; the
+public-trial gates and broader v1.1 distribution work remain open.
 
 **Release Objective:** Expand beyond source checkouts to system-wide developer adoption via native package managers and prebuilt binaries.
 
-- [x] **Source-checkout double-click onboarding:** `Install-Mac.command` reuses atomic client setup and attempts a bounded completion notification. A prepared checkout and Node on PATH are required. `Install-Windows.cmd` reports unsupported native setup without changing settings; Windows containment remains Phase 4. README and Field Guide cover live MCP denial verification and troubleshooting, separately from desktop quarantine banners.
+### Pre-HackerNoon & Public Trial Gate (Target: Early Next Week)
+
+Complete these milestones in order before the public trial. The timing is a
+target, not a claim of release readiness; manual evidence and distribution checks
+must pass before marking the remaining gates complete.
+
+1. [x] **Supervisor Daemon Auto-Spawn & Recovery:** On-demand background daemon startup during MCP client connection removes the manual daemon-terminal requirement. A new session can recover from an unavailable daemon by starting a compiled binary; authentication failures, degraded health, and failed tool writes are not retried into success. Existing healthy daemons are reused, readiness is bounded, and disconnect cleanup unregisters the client child without stopping the shared source service.
+2. [x] **Unified Krypton Dashboard Branding & Audit Mode Tooltips:** The Next.js UI uses Krypton Security branding and explains the native Audit-Only startup default: telemetry observation without child termination. Active Protection permits isolation only of owned, registered children after live identity verification. Both modes enforce hard fail-closed denial of unsafe MCP reads/writes; static demonstrations do not change native policy.
+3. [ ] **Active Quarantine & Desktop Alert Verification:** Run a controlled end-to-end scenario involving `sandbox_workspace`, verify confirmed isolation of an owned, registered child, and visually capture the native macOS **"Krypton quarantine confirmed"** banner. Record the native receipt and notification-permission conditions. Automated mocked-delivery tests already exist; an individual file denial or unattributed watcher event does not by itself prove quarantine or trigger this banner. This gate does not claim automatic file relocation or arbitrary process containment.
+4. [ ] **Release Packaging Audit (Zero-Terminal Distribution):** Audit the existing standalone `krypton-protected-fs.mcpb` release artifact for one-click Claude Desktop import on clean macOS systems, including checksums and unsigned/Gatekeeper behavior. Validate and package the proposed global npm/npx runner (`npx krypton-security setup`) before advertising it as supported; publication, native-binary delivery, and Node prerequisites remain to be resolved. An npx command is a terminal alternative, not itself a zero-terminal installer.
+5. [ ] **3-Minute Friends & Testers Quickstart:** Publish and time a concise clean-machine guide whose user workflow is double-clicking an installer or loading the `.mcpb` extension in a supported client, with no source-development prerequisites. Validate protected-tool registration and one native denial receipt, and explain where to inspect evidence. The three-minute target is unverified; the current source-checkout script does not satisfy the prerequisite-free installer goal.
+
+### Broader Distribution & Developer Experience Milestones
+
+- [x] **Source-checkout double-click onboarding:** `Install-Mac.command` reuses atomic client setup and attempts a bounded completion notification. A prepared checkout, Node on PATH, `npm ci`, and `cargo build --release --manifest-path src/core-native/Cargo.toml` are required. Restarting clients triggers automatic native startup with a three-second readiness budget after host spawn; the initial 1500 ms IPC probe and filesystem preparation are separate. Authentication and degraded health fail closed without replacing the existing daemon. `npm run dev:full` is not required for protection. `Install-Windows.cmd` reports unsupported native setup without changing settings; Windows containment remains Phase 4. README and Field Guide cover live MCP denial verification and troubleshooting, separately from desktop quarantine banners.
 - [ ] **Homebrew Tap:** Package prebuilt native binaries at `krypton-security/tap/krypton`.
 - [ ] **Shell One-Liner:** Host a hardened shell installer at `https://get.krypton.dev`.
-- [ ] **Client-Side Telemetry Visualizer (Web Dashboard Bridge):** Enable the static web dashboard (`mwarnsley.github.io/krypton-security/`) to read and visualize a local `alerts.jsonl` file via the browser File System Access API / file picker. This provides non-technical users with live audit inspection without requiring a local Next.js Node server or CLI execution before the Phase 3 Tauri desktop app ships.
+- [ ] **Client-Side Telemetry Visualizer (Web Dashboard Bridge):** Enable the static web dashboard (`mwarnsley.github.io/krypton-security/`) to read and visualize a local `alerts.jsonl` file via the browser File System Access API / file picker. This remains unavailable today: Pages uses mock data, and the source viewer does not automatically load standalone Application Support ledgers. The planned bridge would provide non-technical users with live audit inspection without requiring a local Next.js Node server or CLI execution before the Phase 3 Tauri desktop app ships.
 - [ ] **Process Tree & Descendant Containment:** Track agent child processes recursively through process generations.
 - [ ] **Network Egress Isolation:** Process-level macOS Seatbelt profiles and domain allowlisting.
 

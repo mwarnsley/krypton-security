@@ -111,6 +111,31 @@ nonblank input stops startup. Standalone mode has no project-root or repository
 marker dependency. Source client setup remains a separate checkout flow using an
 absolute `KRYPTON_PROJECT_ROOT`.
 
+The source supervisor first requires authenticated healthy daemon status and
+reuses an existing healthy daemon. Only absent discovery or a refused connection
+permits automatic startup; malformed discovery, authentication errors, timeouts,
+and degraded health fail closed without replacing an existing daemon. All release
+candidates precede debug candidates across `CARGO_TARGET_DIR` (absolute or relative
+to the checkout), the root target directory and the native package target directory.
+A detached Node host owns the native child, with a three-second readiness timer
+starting after host spawn and 100 ms polling. The initial 1500 ms IPC probe and
+filesystem preparation occur separately, so the full startup is not bounded to
+three seconds. Each IPC exchange retains its 1500 ms absolute deadline.
+
+The source service survives MCP disconnect until explicitly stopped or service
+failure; clients retain their separate child registration/unregister lifecycle.
+The host asynchronously copies combined native stdout/stderr into private
+`.krypton/logs/daemon.log`, capped at 64 KiB, then drains and discards later output.
+Each startup attempt atomically publishes a fresh log file. Existing hosts retain
+their original private file handles, so concurrent output is not mixed; the visible
+log can describe a losing concurrent starter. This diagnostic replacement does not
+affect the telemetry ledger. The log may contain native output and private
+paths; it must be inspected and redacted before sharing, unlike redacted CLI status
+messages. Log output is separate from JSON-RPC stdout and the telemetry ledger.
+Automatic startup is not a login service and does not extend the containment
+boundary to arbitrary child syscalls. OS scheduling and blocking kernel calls
+remain outside hard real-time guarantees.
+
 The standalone launcher publishes a bounded private absolute-path configuration,
 spawns only the verified installed daemon with `--standalone-config`, and requires
 authenticated healthy readiness before serving MCP. One persistent per-workspace
@@ -155,7 +180,9 @@ write the reserved `.krypton-mcp-` basename namespace, including case variants,
 so concurrent requests cannot replace each other's staging files. Concurrent directory relocation,
 mount changes and same-user host tampering remain outside this protection.
 
-Unsafe file calls are denied in both runtime modes. Denials return native
+The native daemon initially starts in `audit_only`. Unsafe file calls are denied
+in both runtime modes; audit mode suppresses process termination, not MCP path
+denials. Denials return native
 receipts inside an MCP `result` with `isError: true`; they do not request signals
 or claim an actor identity. The client can continue using the server after a
 denial. Missing/incompatible native IPC and failed telemetry health deny access.

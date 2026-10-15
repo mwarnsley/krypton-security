@@ -25,7 +25,21 @@ in `ROADMAP.md`.
   `krypton daemon:start` for the foreground Cargo daemon. `npm link` exposes the
   executable; `node /absolute/path/to/src/cli.cjs` works without global linking.
 - Discovers the configured checkout, checks authenticated healthy daemon status
-  before spawning, and launches in its canonical protected workspace. Explicit
+  before spawning, reuses a healthy daemon, or automatically starts the compiled
+  binary when unavailable. Readiness is bounded to three seconds after host spawn; the initial
+  1500 ms IPC probe and filesystem preparation are separate. Authentication,
+  malformed discovery, degraded health, and startup failure deny target launch.
+  All release candidates precede debug candidates across `CARGO_TARGET_DIR`
+  (absolute or relative to the checkout), root and core-native target directories.
+  A detached Node host owns the native daemon beyond MCP disconnect; each client
+  still registers/unregisters its own initial child. Authentication failures and
+  degraded daemons are never replaced automatically. Combined native stdout/stderr
+  goes to private `.krypton/logs/daemon.log`, capped at 64 KiB then discarded, and
+  atomically replaced per startup attempt without mixing existing host output.
+  The visible log can describe a losing concurrent starter; the telemetry ledger
+  is unaffected. Native output may contain private paths; redact before
+  sharing. Launches the target
+  in its canonical protected workspace. Explicit
   `KRYPTON_PROJECT_ROOT` supports desktop hosts without working-directory control.
 - Normalizes redundant discovery dot segments while requiring the exact absolute
   workspace socket/capability paths, rejecting traversal and socket symlinks.
@@ -64,8 +78,10 @@ in `ROADMAP.md`.
   remain intact; malformed files, symlinks and conflicting Krypton entries fail.
 - `scripts/Install-Mac.command` invokes shared source setup from its checkout and
   attempts a bounded macOS completion notification only after setup succeeds.
-  Node on PATH and installed source dependencies are prerequisites; the script
-  does not install a daemon service or claim active containment. Notification
+  Node on PATH, installed source dependencies, and a release native build are
+  prerequisites; the script does not install Node, Rust, dependencies, or a login
+  service. Client connection triggers automatic daemon startup; the setup completion
+  notice does not claim active containment. Notification
   failure returns nonzero while preserving any settings already written.
 - `scripts/Install-Windows.cmd` invokes shared setup when Node is available and
   reports unsupported native containment without editing client settings.
@@ -76,7 +92,9 @@ in `ROADMAP.md`.
 - The Field Guide and README separate file-denial receipts (`INTERCEPTED`) from
   process-isolation banners and installer notices, and document missing-tool,
   Gatekeeper, timeout, and workspace-permission recovery. Pages is static mock
-  data and never a live workstation verification surface.
+  data and never a live workstation verification surface. The local-file bridge
+  remains planned for Phase 2; the source viewer does not automatically attach to
+  standalone Application Support ledgers.
 - `npm run build:mcpb` generates an unsigned and unnotarized deterministic MCPB
   0.3 archive at `dist/krypton-protected-fs.mcpb`. It contains the MCP server,
   standalone launcher, verified arm64/x64 native binaries, architecture metadata,
@@ -154,7 +172,7 @@ in `ROADMAP.md`.
   Delivery denial, headless execution, and unavailable
   notification services degrade without changing the quarantine result.
 
-## Capability 3: AegisAgent Dashboard Command Center
+## Capability 3: Krypton Security Dashboard Command Center
 
 - **Status:** Implemented
 - Returns one typed native/mock telemetry envelope with source, daemon
@@ -169,6 +187,7 @@ in `ROADMAP.md`.
   routes that do not exist in the export.
 - Keeps Audit-Only Mode local to the static demonstration while preserving
   authenticated daemon confirmation and failure notification in native local mode.
+  The native initial mode is `audit_only`, which preserves unsafe MCP file denials.
   Native toggles follow live `health.mode`; unknown mode disables the control.
 - Aggregates watcher, IPC, ledger, registry, notification, and telemetry-queue
   health. Queue loss and component errors are degraded, not hardcoded readiness;
@@ -220,10 +239,12 @@ in `ROADMAP.md`.
   and records the exact package-manager version used to produce it.
 - Documents clean-macOS Apple Silicon onboarding with Node 20 LTS v20.19.4,
   npm 10.x, and Rust 1.97.0 selected by rustup for the host architecture.
-  The sequence is `npm ci`, `cargo check --manifest-path src/core-native/Cargo.toml`,
-  and `npm run build`. `npm run dev:full` concurrently starts the native Unix
-  socket daemon and Next.js 16 Turbopack dashboard. Keep port 3000 free or use
-  `PORT=3001 npm run dev:full` after the port collision observed during QA.
+  The source sequence is `npm ci`,
+  `cargo build --release --manifest-path src/core-native/Cargo.toml`,
+  `scripts/Install-Mac.command`, then restarting clients. `npm run dev:dashboard`
+  optionally opens the source ledger viewer at localhost:3000; use
+  `npm run dev:dashboard -- -p 3001` if occupied. `npm run dev:full` is optional
+  foreground development only and is not required for protection.
   The README and public Explainer Drawer share this runtime guidance.
 - Uses conventional `tests/` and `docs/CONTRIBUTION_SECURITY.md` paths so first
   contact with the repository is unambiguous.
