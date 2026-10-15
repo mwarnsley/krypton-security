@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+const packageManifest = require('../../package.json') as { version: string };
 const { NativeControlError } =
   require('../../src/core/processIsolation.cjs') as typeof import('../../src/core/processIsolation.cjs');
 import type { LauncherDependencies, LauncherOptions } from '../../src/packaging/launch_mcpb.cjs';
@@ -208,7 +209,7 @@ describe('standalone host and spawn boundary', () => {
     expect(await runStandaloneMcpb({ ...f.options, arch }, f.dependencies)).toBe(0);
     expect(f.dependencies.prepareRuntime).toHaveBeenCalledWith({
       bundleRoot: path.resolve('.'),
-      version: '1.0.0',
+      version: packageManifest.version,
       platform: 'darwin',
       arch,
       homeDirectory: '/home/test',
