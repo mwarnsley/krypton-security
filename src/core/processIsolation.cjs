@@ -43,6 +43,8 @@ function nativeFailure(error) {
   if (error instanceof SyntaxError)
     return new NativeControlError('invalid_response', 'Native JSON data is invalid.');
   const code = error && typeof error === 'object' ? error.code : undefined;
+  if (code === 'EPIPE' || code === 'ECONNRESET')
+    return new NativeControlError('disconnected', 'The native connection closed unexpectedly.');
   if (code === 'ENOENT' || code === 'ECONNREFUSED')
     return new NativeControlError(
       'unavailable',
@@ -442,7 +444,9 @@ async function dispatchNativeRequest(command, runtimeHome, signal) {
  * @param {string} command - Executable passed directly to spawn without a shell.
  * @param {readonly string[]} args - Executable arguments.
  * @param {import("node:child_process").SpawnOptions & {maxRuntimeMs?: number}} options - Spawn options and optional deadline.
- * @param {{spawn?: Function, inspect?: Function, dispatch?: Function}} dependencies - Injected OS and IPC test boundaries.
+ * Registration alone may retry once after a bounded daemon refresh. Native registration
+ * is idempotent only for the exact revalidated identity; tool writes and isolation never retry.
+ * @param {{spawn?: Function, inspect?: Function, dispatch?: Function, recoverRegistration?: Function, signal?: AbortSignal}} dependencies - Injected OS/IPC boundaries and optional bounded recovery.
  * @returns {{child: import("node:child_process").ChildProcess, registered: Promise<object>, completed: Promise<object>}} Registration and terminal cleanup promises.
  * @complexity O(A + L) time and space for arguments A and bounded identity/frame length L; session duration follows the child.
  * @example
@@ -491,9 +495,42 @@ function startProtectedProcess(command, args = [], options = {}, dependencies = 
         throw new Error('The protected child process did not expose a PID.');
       }
       identity = await inspect(child.pid);
-      if (exited) throw new Error('The child exited before native registration.');
+      if (exited || dependencies.signal?.aborted)
+        throw new NativeControlError(
+          'disconnected',
+          'The child stopped before native registration.'
+        );
       attemptedRegistration = true;
-      const reply = await dispatch({ process: identity, type: 'register_process' });
+      let reply;
+      try {
+        reply = await dispatch({ process: identity, type: 'register_process' });
+      } catch (error) {
+        if (
+          !(error instanceof NativeControlError) ||
+          !['unavailable', 'disconnected'].includes(error.code) ||
+          !dependencies.recoverRegistration ||
+          exited ||
+          dependencies.signal?.aborted
+        )
+          throw error;
+        await dependencies.recoverRegistration();
+        if (exited || dependencies.signal?.aborted)
+          throw new NativeControlError('disconnected', 'Registration recovery was cancelled.');
+        const live = await inspect(child.pid);
+        if (
+          live.pid !== identity.pid ||
+          live.startTime !== identity.startTime ||
+          live.parentPid !== identity.parentPid ||
+          live.executablePath !== identity.executablePath
+        )
+          throw new NativeControlError(
+            'permission_denied',
+            'The protected child identity changed.'
+          );
+        if (exited || dependencies.signal?.aborted)
+          throw new NativeControlError('disconnected', 'Registration recovery was cancelled.');
+        reply = await dispatch({ process: identity, type: 'register_process' });
+      }
       if (reply.ok !== true || reply.code !== 'process_registered') {
         throw new Error('The native daemon rejected child-process registration.');
       }

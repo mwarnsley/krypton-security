@@ -55,17 +55,40 @@ describe('source daemon startup', () => {
     expect(f.deps.spawn).not.toHaveBeenCalled();
     expect(await fs.readdir(root)).toEqual([]);
   });
-  it.each([
-    'permission_denied',
-    'invalid_response',
-    'timeout',
-    'disconnected',
-    'transport_failed',
-  ] as const)('does not start over a %s failure', async (code) => {
+  it.each(['permission_denied', 'invalid_response', 'timeout', 'transport_failed'] as const)(
+    'does not start over a %s failure',
+    async (code) => {
+      const f = fixture();
+      f.deps.dispatch.mockReset().mockRejectedValue(new NativeControlError(code, 'redacted'));
+      await expect(ensureNativeDaemon(f.workspace, f.deps)).rejects.toHaveProperty('code', code);
+      expect(f.deps.spawn).not.toHaveBeenCalled();
+    }
+  );
+  it('refreshes a disconnected endpoint through native lock arbitration', async () => {
+    await binary();
     const f = fixture();
-    f.deps.dispatch.mockReset().mockRejectedValue(new NativeControlError(code, 'redacted'));
-    await expect(ensureNativeDaemon(f.workspace, f.deps)).rejects.toHaveProperty('code', code);
+    f.deps.dispatch
+      .mockReset()
+      .mockRejectedValueOnce(new NativeControlError('disconnected', 'redacted'))
+      .mockResolvedValue(healthy);
+    await ensureNativeDaemon(f.workspace, f.deps);
+    expect(f.deps.spawn).toHaveBeenCalledOnce();
+    expect(f.deps.signals.eventNames()).toEqual([]);
+  });
+  it('does not spawn when shutdown arrives during recovery preparation', async () => {
+    await binary();
+    const f = fixture();
+    const controller = new AbortController();
+    const realpath = fs.realpath.bind(fs);
+    vi.spyOn(fs, 'realpath').mockImplementation(async (file) => {
+      controller.abort();
+      return realpath(file);
+    });
+    await expect(
+      ensureNativeDaemon(f.workspace, { ...f.deps, signal: controller.signal })
+    ).rejects.toHaveProperty('code', 'startup_cancelled');
     expect(f.deps.spawn).not.toHaveBeenCalled();
+    expect(f.deps.signals.eventNames()).toEqual([]);
   });
   it('does not replace degraded service', async () => {
     const f = fixture();
@@ -329,19 +352,22 @@ describe('source daemon startup', () => {
       }
     }
   );
-  it('stops its host on shutdown during readiness', async () => {
+  it.each(['signal', 'abort'])('stops its host on %s shutdown during readiness', async (kind) => {
     await binary();
     const f = fixture();
+    const controller = new AbortController();
+    const removed = vi.spyOn(controller.signal, 'removeEventListener');
     f.deps.dispatch
       .mockImplementationOnce(() => Promise.reject(unavailable()))
       .mockImplementation(async () => {
-        f.deps.signals.emit('SIGTERM');
+        if (kind === 'abort') controller.abort();
+        else f.deps.signals.emit('SIGTERM');
         throw unavailable();
       });
-    await expect(ensureNativeDaemon(f.workspace, f.deps)).rejects.toHaveProperty(
-      'code',
-      'startup_cancelled'
-    );
+    await expect(
+      ensureNativeDaemon(f.workspace, { ...f.deps, signal: controller.signal })
+    ).rejects.toHaveProperty('code', 'startup_cancelled');
+    expect(removed).toHaveBeenCalledWith('abort', expect.any(Function));
     expect(f.host.kill).toHaveBeenCalledWith('SIGTERM');
     expect(f.deps.signals.listenerCount('SIGTERM')).toBe(0);
   });

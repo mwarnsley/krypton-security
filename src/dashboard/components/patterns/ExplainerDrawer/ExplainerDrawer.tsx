@@ -105,7 +105,7 @@ const PROTECTION_CYCLE: readonly GuideItem[] = [
   },
   {
     description:
-      'The Node supervisor owns child registration and lifecycle. The MCP server validates JSON-RPC and sends its two file tools to Rust for native path checks and file access. Portable filesystem events remain unattributed and never authorize signals.',
+      'The Node supervisor owns child registration and lifecycle. Source clients reuse a healthy daemon across restarts and can refresh one dropped registration handshake after exact identity revalidation. The MCP server validates JSON-RPC and sends its two file tools to Rust for native path checks and file access. Portable filesystem events remain unattributed and never authorize signals.',
     icon: Activity,
     title: '2. Monitor the Process',
   },
@@ -120,7 +120,7 @@ const PROTECTION_CYCLE: readonly GuideItem[] = [
 const CORE_FEATURES: readonly GuideItem[] = [
   {
     description:
-      'The two Krypton MCP file tools use native path checks and descriptor-relative access inside the workspace. The supervisor registers the initial child; arbitrary child syscalls, host tools, and descendants are not sandboxed.',
+      'The two Krypton MCP file tools use native path checks and descriptor-relative access inside the workspace. The supervisor registers the initial child; a lost registration acknowledgement may repeat only that exact revalidated identity. Tool writes are never replayed. Arbitrary child syscalls, host tools, and descendants are not sandboxed.',
     icon: FolderLock,
     title: 'Active Workspace Containment',
   },
@@ -279,7 +279,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: 'Native Daemon Connection Timeout',
     answer:
-      'A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, the launcher auto-starts the compiled daemon and requires authenticated healthy readiness within three seconds after host spawn; the initial 1500 ms IPC probe and filesystem preparation are separate. If the binary is missing, run cargo build --release --manifest-path src/core-native/Cargo.toml, then reconnect. Authentication errors and degraded health fail closed without replacing the existing daemon. Inspect private .krypton/logs/daemon.log output (64 KiB maximum, reset per startup attempt; it can contain private paths, so redact before sharing) and .krypton/runtime/ permissions without printing capability or daemon.json contents. Each attempt atomically replaces the log while existing hosts retain private file handles. The visible log may describe a losing concurrent starter; the separate telemetry ledger is unaffected. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.',
+      'A missing socket, disconnect, authentication error or 1500 ms absolute IPC deadline denies the pending operation; there is no permissive fallback. In source mode, the launcher auto-starts the compiled daemon and requires authenticated healthy readiness within three seconds after host spawn; the initial 1500 ms IPC probe and filesystem preparation are separate. If the binary is missing, run cargo build --release --manifest-path src/core-native/Cargo.toml, then reconnect. A refused/disconnected registration refreshes authenticated health and discovery once, revalidates the same child, and retries registration; stale identities and tool writes are not retried. Native startup.lock arbitration alone can remove a refused orphan socket. SIGINT/SIGTERM/beforeExit cancel recovery and request child shutdown; unregister follows child exit while the shared listener stays available for new sessions. Authentication errors, timeouts and degraded health fail closed without replacing the existing daemon. After rebuilding, restart the known source daemon once to load updated registration behavior. Inspect private .krypton/logs/daemon.log output (64 KiB maximum, reset per startup attempt; it can contain private paths, so redact before sharing) and .krypton/runtime/ permissions without printing capability or daemon.json contents. Each attempt atomically replaces the log while existing hosts retain private file handles. The visible log may describe a losing concurrent starter; the separate telemetry ledger is unaffected. Standalone MCPB supervises its own daemon using a short temporary runtime directory and stores evidence at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. Restart the MCP session and inspect redacted client logs. Never delete a live socket or startup.lock, and inspect the destination before retrying a timed-out write. The Pages dashboard cannot inspect local sockets or display native workstation evidence.',
   },
   {
     question: 'How do I view native telemetry, and is the dashboard required?',
@@ -753,20 +753,28 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       krypton_write_file are registered.
                     </li>
                     <li>
-                      3. With the default protected workspace, ask the following and confirm the
-                      actual Krypton tool runs:
+                      3. In a fresh protected test workspace, send these prompts separately and
+                      confirm each actual Krypton tool runs:
                     </li>
                   </ol>
+                  <code className="mt-2 block overflow-x-auto rounded-krypton-radius-control bg-krypton-bg-main p-krypton-space-3 font-mono text-xs leading-5 text-krypton-accent-cyan">
+                    Use krypton_write_file to write notes.txt inside the workspace with content
+                    &apos;Hello Krypton&apos;.
+                  </code>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    Expect file_written and notes.txt containing Hello Krypton. This replaces an
+                    existing notes.txt; use a fresh test workspace. Then check containment:
+                  </p>
                   <code className="mt-2 block overflow-x-auto rounded-krypton-radius-control bg-krypton-bg-main p-krypton-space-3 font-mono text-xs leading-5 text-krypton-accent-cyan">
                     Can you use your krypton_read_file tool to inspect the contents of /etc/passwd?
                   </code>
                   <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    4. Expect a native denial receipt and queued INTERCEPTED ledger evidence, not
-                    file contents. A refusal by the model without a tool call does not verify
-                    containment. A file denial does not trigger a desktop quarantine banner; banners
-                    accompany confirmed registered-child isolation. GitHub Pages shows simulated
-                    data only. Use the local source dashboard for its source ledger; the standalone
-                    bundle has a separate Application Support ledger.
+                    4. Expect file_access_denied, isError: true, a native denial receipt and queued
+                    INTERCEPTED ledger evidence, not file contents. A refusal by the model without a
+                    tool call does not verify containment. A file denial does not trigger a desktop
+                    quarantine banner; banners accompany confirmed registered-child isolation.
+                    GitHub Pages shows simulated data only. Use the local source dashboard for its
+                    source ledger; the standalone bundle has a separate Application Support ledger.
                   </p>
                 </aside>
                 <h2 className="mt-5 text-sm font-bold text-krypton-fg-primary">
@@ -818,8 +826,11 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     filesystem preparation are separate. Authentication or degraded-health failures
                     deny startup without replacing the existing daemon. The detached source daemon
                     remains running after MCP disconnect, owned by a detached Node host; each client
-                    retains its registration/unregister lifecycle. Combined native stdout/stderr
-                    goes to private
+                    retains its registration/unregister lifecycle. A refused or disconnected
+                    registration gets one authenticated refresh and exact-identity retry. Only the
+                    lock-holding native starter removes refused orphan sockets; live endpoints
+                    remain intact. Shutdown cancels recovery and child exit triggers unregister.
+                    Combined native stdout/stderr goes to private
                     <code> .krypton/logs/daemon.log</code>, capped at 64 KiB then discarded and
                     atomically replaced per startup attempt without mixing existing host output. The
                     visible log may describe a losing concurrent starter; the telemetry ledger is

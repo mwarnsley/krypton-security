@@ -68,6 +68,18 @@ function reply(overrides: Record<string, unknown> = {}) {
 }
 
 describe('native launcher IPC wire', () => {
+  it.each(['EPIPE', 'ECONNRESET'])(
+    'classifies %s as disconnected and closes its socket',
+    async (code) => {
+      const result = dispatchNativeControl({ type: 'health' }, root).catch(
+        (error: unknown) => error
+      );
+      await connected();
+      socket.emit('error', Object.assign(new Error('private diagnostic'), { code }));
+      expect(await result).toMatchObject({ code: 'disconnected' });
+      expect(socket.destroy).toHaveBeenCalledOnce();
+    }
+  );
   it('discovers an explicit runtime home without checkout markers', async () => {
     expect(await fs.readdir(root)).toEqual(['.krypton']);
     expect(await discoverNativeEndpoint(root)).toMatchObject({

@@ -25,6 +25,7 @@ export interface DaemonStartupDependencies {
   uid?: number;
   targetDirectory?: string;
   signals?: EventEmitter;
+  signal?: AbortSignal;
   setTimer?: (callback: () => void, milliseconds: number) => ReturnType<typeof setTimeout>;
   clearTimer?: (timer: ReturnType<typeof setTimeout> | undefined) => void;
 }

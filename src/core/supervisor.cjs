@@ -185,12 +185,13 @@ async function resolveWorkspace(cwd = process.env.KRYPTON_PROJECT_ROOT ?? proces
  * Forwards only requested termination signals to an owned live child.
  * @param {import('node:child_process').ChildProcess} child - Child object returned by spawn, never a user-supplied PID.
  * @param {import('node:events').EventEmitter} signals - Supervisor signal source.
+ * @param {() => void} onShutdown - Cancels pending registration recovery before signaling.
  * @returns {() => string|undefined} Idempotent listener removal callback reporting a safe failed-forwarding category.
  * @complexity O(1) time and space.
  * @example
  * const remove = forwardSignals(child, process); remove();
  */
-function forwardSignals(child, signals) {
+function forwardSignals(child, signals, onShutdown = () => {}) {
   let exited = false;
   let forwardingFailed;
   /**
@@ -210,6 +211,7 @@ function forwardSignals(child, signals) {
    * @example interrupt(); // child.kill('SIGINT') while live
    */
   const interrupt = () => {
+    onShutdown();
     if (!exited && child.pid !== undefined) {
       try {
         if (child.kill('SIGINT') === false) forwardingFailed = 'unavailable';
@@ -225,6 +227,7 @@ function forwardSignals(child, signals) {
    * @example terminate(); // child.kill('SIGTERM') while live
    */
   const terminate = () => {
+    onShutdown();
     if (!exited && child.pid !== undefined) {
       try {
         if (child.kill('SIGTERM') === false) forwardingFailed = 'unavailable';
@@ -235,9 +238,11 @@ function forwardSignals(child, signals) {
   };
   signals.on('SIGINT', interrupt);
   signals.on('SIGTERM', terminate);
+  signals.on('beforeExit', terminate);
   return () => {
     signals.removeListener('SIGINT', interrupt);
     signals.removeListener('SIGTERM', terminate);
+    signals.removeListener('beforeExit', terminate);
     child.removeListener('exit', markExited);
     return forwardingFailed;
   };
@@ -360,19 +365,30 @@ async function main(argv, dependencies = {}) {
     return 1;
   }
   let session;
+  const controller = new AbortController();
   try {
     session = (dependencies.start ?? startProtectedProcess)(
       invocation.command,
       invocation.args,
       { cwd: workspace.cwd, stdio: 'inherit', shell: false },
-      { dispatch }
+      {
+        dispatch,
+        signal: controller.signal,
+        recoverRegistration: () =>
+          (dependencies.ensureDaemon ?? ensureNativeDaemon)(workspace, {
+            dispatch: dependencies.dispatch ?? dispatchNativeControl,
+            spawn: dependencies.spawn ?? spawn,
+            signals,
+            signal: controller.signal,
+          }),
+      }
     );
   } catch (error) {
     reportFailure(error, stderr);
     stderr('[KRYPTON] Could not spawn the requested executable.\n');
     return 1;
   }
-  const remove = forwardSignals(session.child, signals);
+  const remove = forwardSignals(session.child, signals, () => controller.abort());
   try {
     const result = await session.completed;
     if (result.spawnError) {

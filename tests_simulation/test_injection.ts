@@ -4,7 +4,12 @@ import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
-import { dispatchNativeControl, inspectProcessIdentity } from '../src/core/processIsolation.cjs';
+import {
+  dispatchNativeControl,
+  inspectProcessIdentity,
+  NativeControlError,
+  startProtectedProcess,
+} from '../src/core/processIsolation.cjs';
 import { ensureNativeDaemon } from '../src/core/daemonStartup.cjs';
 import { verifyPathAccess } from '../src/core/watchdog';
 import { runCli } from '../src/cli/runtime.cjs';
@@ -461,6 +466,117 @@ async function runMcpSimulation(root: string): Promise<string[]> {
   }
 }
 
+/** Leaves a disposable refused socket to exercise the native startup-lock cleanup path. */
+async function createOrphanSocket(root: string): Promise<void> {
+  const runtime = path.join(root, '.krypton/runtime');
+  await fs.mkdir(runtime, { recursive: true, mode: 0o700 });
+  const endpoint = path.join(runtime, 'daemon.sock');
+  const child = spawn(
+    process.execPath,
+    ['-e', "require('node:net').createServer().listen(process.argv[1])", endpoint],
+    { stdio: 'ignore' }
+  );
+  observeChild(child);
+  try {
+    await waitUntil(async () => {
+      requireHealthyChild(child);
+      try {
+        return (await fs.lstat(endpoint)).isSocket() || undefined;
+      } catch (error: unknown) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+        throw error;
+      }
+    });
+  } finally {
+    await dispose(child);
+  }
+  assert.ok((await fs.lstat(endpoint)).isSocket(), 'fixture must leave an orphan socket');
+}
+
+/** Exercises immediate source-runner restarts and a lost registration acknowledgement. */
+async function runReconnectSimulation(root: string): Promise<void> {
+  const cwd = path.join(root, 'sandbox_workspace');
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGTERM'] as const) {
+    const runner = spawn(
+      process.execPath,
+      [
+        path.join(REPOSITORY, 'src/cli.cjs'),
+        'run',
+        '--',
+        process.execPath,
+        '-e',
+        'setInterval(() => {}, 1000)',
+      ],
+      {
+        cwd,
+        env: { ...process.env, KRYPTON_PROJECT_ROOT: root },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
+    const state = observeChild(runner);
+    let diagnostics = '';
+    runner.stderr?.on('data', (chunk: Buffer) => {
+      diagnostics = (diagnostics + chunk.toString('utf8')).slice(-8192);
+    });
+    try {
+      await waitUntil(async () => {
+        requireHealthyChild(runner);
+        return (
+          (await dispatchNativeControl({ type: 'health' }, root)).activeProcessCount === 1 ||
+          undefined
+        );
+      });
+      assert.ok(runner.kill(signal));
+      await bounded(state.exited, 'supervisor signal cleanup');
+      requireHealthyChild(runner);
+      assert.equal(runner.exitCode, signal === 'SIGINT' ? 130 : 143, diagnostics);
+      assert.equal(diagnostics, '');
+      assert.equal((await dispatchNativeControl({ type: 'health' }, root)).activeProcessCount, 0);
+    } finally {
+      await dispose(runner);
+    }
+  }
+  let registrations = 0;
+  let refreshed = 0;
+  const session = startProtectedProcess(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'],
+    { cwd, stdio: 'ignore' },
+    {
+      dispatch: async (command) => {
+        const response = await dispatchNativeControl(command, root);
+        if (command.type === 'register_process' && ++registrations === 1) {
+          assert.equal(response.code, 'process_registered');
+          throw new NativeControlError('disconnected', 'Simulated lost acknowledgement.');
+        }
+        return response;
+      },
+      recoverRegistration: async () => {
+        refreshed++;
+        await ensureNativeDaemon({ repositoryRoot: root, projectRoot: root, cwd });
+      },
+    }
+  );
+  observeChild(session.child);
+  try {
+    await bounded(session.registered, 'registration acknowledgement recovery');
+    assert.equal(registrations, 2);
+    assert.equal(refreshed, 1);
+    assert.equal((await dispatchNativeControl({ type: 'health' }, root)).activeProcessCount, 1);
+    assert.ok(session.child.kill('SIGTERM'));
+    const outcome = await bounded(session.completed, 'recovered session cleanup');
+    assert.equal(outcome.registrationError, undefined);
+    assert.equal(outcome.cleanupFailed, false);
+    assert.equal((await dispatchNativeControl({ type: 'health' }, root)).activeProcessCount, 0);
+  } finally {
+    await dispose(session.child);
+    await bounded(session.completed, 'recovered child teardown');
+  }
+  console.log(
+    '[PASS] immediate SIGINT/SIGTERM runner relaunches and lost registration acknowledgement: no disconnect diagnostics, exact-child unregister'
+  );
+}
+
 /** Exercises source cold startup without using test-only native fixture behavior. */
 async function runColdStartSimulation(): Promise<void> {
   const build = execFileSync(
@@ -514,6 +630,7 @@ async function runColdStartSimulation(): Promise<void> {
         rateLimitMaxBreakouts: 3,
       })
     );
+    await createOrphanSocket(root);
     await ensureNativeDaemon(
       { repositoryRoot: root, projectRoot: root, cwd: protectedRoot },
       {
@@ -541,6 +658,7 @@ async function runColdStartSimulation(): Promise<void> {
     assert.equal((initial.health as Record<string, unknown>).mode, 'audit_only');
     // This path only requests file tools. It never requests process isolation or a desktop banner.
     await runMcpSimulation(root);
+    await runReconnectSimulation(root);
     requireHealthyChild(host);
     assert.equal(host.exitCode, null, 'daemon host must outlive the MCP session');
     assert.equal(host.signalCode, null);
@@ -548,7 +666,7 @@ async function runColdStartSimulation(): Promise<void> {
     assert.equal(remaining.activeProcessCount, 0, 'MCP stdin closure unregisters its owned child');
     assert.equal((remaining.health as Record<string, unknown>).status, 'healthy');
     console.log(
-      '[PASS] production cold startup: authenticated healthy readiness, MCP audit denials, session unregister and persistent daemon'
+      '[PASS] production cold startup: refused orphan socket refresh, authenticated healthy readiness, MCP audit denials, session unregister and persistent daemon'
     );
   } finally {
     if (host && host.exitCode === null && host.signalCode === null) {
