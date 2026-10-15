@@ -75,6 +75,27 @@ const TABS: readonly ExplainerTabDefinition[] = [
   { id: 'faq', label: 'FAQ' },
 ];
 
+const SECURITY_LAYERS = [
+  [
+    'Claude / Codex / Gemini Safety',
+    'Application and prompt layer: model alignment and safety filters.',
+    'The model and filters correctly recognize unsafe intent and untrusted instructions.',
+    'Reduces harmful requests, but jailbreaks, indirect injections and obfuscated payloads can evade these defenses.',
+  ],
+  [
+    "Client 'YOLO' / Bypass Modes",
+    'Approval settings that skip some or all human confirmation prompts; exact behavior depends on the client.',
+    'The user delegates decisions to the agent and its configured tools.',
+    'Removes human review; skipping prompts is not itself sandboxing. Clients may provide separate sandbox controls.',
+  ],
+  [
+    'Krypton Security Core',
+    'Native Rust path enforcement for protected MCP file tools, with an authenticated local watchdog and OS process signals.',
+    'No trust in prompt intent: deterministic local policy and revalidated process identity.',
+    'Denies out-of-workspace MCP reads/writes in both modes. Enforcement Mode can terminate only owned, registered children after live identity checks, independently of client approval settings.',
+  ],
+] as const;
+
 const PROTECTION_CYCLE: readonly GuideItem[] = [
   {
     description:
@@ -338,7 +359,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
 
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-krypton-muted-overlay backdrop-blur-sm data-[state=closed]:animate-krypton-overlay-out data-[state=open]:animate-krypton-overlay-in" />
-        <Dialog.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-krypton-border-muted bg-krypton-bg-main text-krypton-fg-primary shadow-2xl shadow-krypton-shadow focus:outline-none data-[state=closed]:animate-krypton-drawer-out data-[state=open]:animate-krypton-drawer-in">
+        <Dialog.Content className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-krypton-border-muted bg-krypton-bg-main text-krypton-fg-primary shadow-2xl shadow-krypton-shadow focus:outline-none lg:max-w-4xl data-[state=closed]:animate-krypton-drawer-out data-[state=open]:animate-krypton-drawer-in">
           <header className="flex items-start justify-between gap-krypton-space-4 border-b border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-krypton-space-4 sm:px-krypton-space-6">
             <div>
               <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-accent-cyan">
@@ -449,6 +470,100 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     })}
                   </div>
                 </div>
+
+                <section
+                  aria-labelledby="security-model-heading"
+                  className="space-y-krypton-space-4"
+                >
+                  <h2
+                    id="security-model-heading"
+                    className="text-lg font-bold text-krypton-fg-primary"
+                  >
+                    The Security Model: Prompt Alignment vs. Kernel Containment
+                  </h2>
+                  <p className="text-sm leading-6 text-krypton-fg-secondary">
+                    Krypton does not replace model alignment; even if an agent is tricked,
+                    jailbroken, or runs in full auto-pilot, unauthorized file access through its
+                    protected MCP tools fails closed.
+                  </p>
+                  <div
+                    role="region"
+                    aria-label="Security model comparison, scroll horizontally for all columns"
+                    tabIndex={0}
+                    className="overflow-x-auto rounded-krypton-radius-card border border-krypton-border-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring"
+                  >
+                    <table
+                      aria-labelledby="security-model-heading"
+                      className="w-full min-w-krypton-comparison border-collapse text-left text-sm leading-6"
+                    >
+                      <thead className="bg-krypton-bg-surface text-krypton-fg-primary">
+                        <tr>
+                          {[
+                            'Security Layer',
+                            'Scope & Mechanism',
+                            'Trust Assumption',
+                            'Failure Mode Addressed',
+                          ].map((heading) => (
+                            <th
+                              key={heading}
+                              scope="col"
+                              className="px-krypton-space-4 py-krypton-space-3 align-top"
+                            >
+                              {heading}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-krypton-border-muted text-krypton-fg-secondary">
+                        {SECURITY_LAYERS.map(([layer, ...details]) => (
+                          <tr key={layer}>
+                            <th
+                              scope="row"
+                              className="px-krypton-space-4 py-krypton-space-3 align-top font-semibold text-krypton-fg-primary"
+                            >
+                              {layer}
+                            </th>
+                            {details.map((detail) => (
+                              <td
+                                key={detail}
+                                className="px-krypton-space-4 py-krypton-space-3 align-top"
+                              >
+                                {detail}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-sm leading-6 text-krypton-fg-muted">
+                    This is defense in depth, not universal kernel isolation: arbitrary syscalls and
+                    unrelated host tools remain outside this boundary. Audit-Only is the native
+                    startup default and suppresses process termination, while unsafe MCP file calls
+                    are still denied. Portable watcher events alone never authorize isolation.
+                  </p>
+                  <p className="text-sm leading-6 text-krypton-fg-muted">
+                    Further reading:{' '}
+                    <a
+                      className="text-krypton-accent-cyan underline"
+                      href="https://www.anthropic.com/news/prompt-injection-defenses"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      prompt-injection defenses
+                    </a>
+                    {' and '}
+                    <a
+                      className="text-krypton-accent-cyan underline"
+                      href="https://geminicli.com/docs/cli/sandbox/"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      client sandbox controls
+                    </a>
+                    .
+                  </p>
+                </section>
 
                 <aside className="rounded-krypton-radius-card border border-krypton-warning-amber/40 bg-krypton-warning-amber/10 p-krypton-space-4">
                   <h2 className="text-base font-bold text-krypton-warning-foreground">

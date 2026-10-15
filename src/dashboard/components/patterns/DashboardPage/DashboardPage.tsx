@@ -1104,7 +1104,7 @@ export default function DashboardPage(): React.JSX.Element {
       className="min-h-screen bg-krypton-bg-main px-krypton-space-4 py-krypton-space-5 text-krypton-fg-primary sm:px-krypton-space-5 lg:px-krypton-space-6 lg:py-krypton-space-6"
       data-system-status={systemStatus}
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex w-full min-w-0 max-w-krypton-dashboard flex-col gap-6">
         <header className="relative overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-7 shadow-2xl shadow-krypton-shadow sm:px-krypton-space-6">
           <div
             aria-hidden="true"

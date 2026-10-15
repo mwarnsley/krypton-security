@@ -496,7 +496,7 @@ export function AlertTable(props: AlertTableProps): React.JSX.Element {
           />
         ),
         cell: ({ getValue }) => (
-          <span className="inline-flex max-w-56 rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-krypton-nano font-semibold tracking-krypton-mono text-krypton-fg-secondary">
+          <span className="block min-w-krypton-signature max-w-krypton-signature whitespace-normal break-all rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-2 py-krypton-space-1 font-mono text-xs font-semibold tracking-krypton-mono text-krypton-fg-secondary">
             {getValue<string>()}
           </span>
         ),
