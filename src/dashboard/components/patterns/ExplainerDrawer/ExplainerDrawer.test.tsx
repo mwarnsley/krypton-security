@@ -325,6 +325,7 @@ describe('ExplainerDrawer', () => {
       'How do I run the project locally?',
       "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?",
       'Tools not showing up in Claude Desktop',
+      'Extension asks for a required Krypton checkout directory',
       'Gatekeeper / Unsigned Binary Notice on macOS',
       'Native Daemon Connection Timeout',
       'How do I view native telemetry, and is the dashboard required?',

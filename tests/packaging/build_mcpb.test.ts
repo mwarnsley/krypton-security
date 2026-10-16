@@ -114,14 +114,24 @@ describe('MCPB build', () => {
     ]);
   });
 
-  it('requests a workspace directory without embedding the build host path', () => {
-    const manifest = createManifest('1.0.0');
+  it('ships zero mandatory setup fields and uses only the bundled launcher', () => {
+    const manifest = JSON.parse(archiveFile('manifest.json').toString('utf8')) as ReturnType<
+      typeof createManifest
+    >;
     expect(manifest.user_config).toEqual({
       protected_workspace_root: expect.objectContaining({ type: 'directory', required: false }),
     });
-    expect(manifest.server.mcp_config.env).toEqual({
-      KRYPTON_PROTECTED_WORKSPACE_ROOT: '${user_config.protected_workspace_root}',
+    expect(manifest.server).toEqual({
+      type: 'node',
+      entry_point: 'src/packaging/launch_mcpb.cjs',
+      mcp_config: {
+        command: 'node',
+        args: ['${__dirname}/src/packaging/launch_mcpb.cjs'],
+        env: { KRYPTON_PROTECTED_WORKSPACE_ROOT: '${user_config.protected_workspace_root}' },
+      },
     });
+    expect(JSON.stringify(manifest)).not.toContain('npm run dev:full');
+    expect(archiveFile(manifest.server.entry_point).byteLength).toBeGreaterThan(0);
     expect(manifest.compatibility).toEqual({
       platforms: ['darwin'],
       runtimes: { node: '>=20.19.4' },

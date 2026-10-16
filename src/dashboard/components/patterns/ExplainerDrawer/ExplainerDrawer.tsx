@@ -272,6 +272,11 @@ const FAQ_ITEMS: readonly FaqItem[] = [
       'Fully quit with Cmd + Q on macOS and reopen Claude Desktop. Open the chat tools / + menu and Connectors to check krypton_read_file and krypton_write_file. For an MCPB install, review Settings > Extensions and its configuration/logs. For source setup only, validate JSON syntax in ~/Library/Application Support/Claude/claude_desktop_config.json, check mcpServers and absolute script paths, and ensure node is on the client PATH. Use Developer settings to open MCP logs (macOS logs are under ~/Library/Logs/Claude). Close the client before edits, keep its backup, and never share capabilities or complete settings/log files. Organization extension policies may require administrator approval.',
   },
   {
+    question: 'Extension asks for a required Krypton checkout directory',
+    answer:
+      'That prompt does not match the current standalone manifest. Cancel it, remove the obsolete Krypton extension entry in Claude Desktop Settings > Extensions, and install the freshly downloaded or rebuilt krypton-protected-fs.mcpb. Avoid older downloads with the same filename. Fully quit with Cmd + Q and reopen Claude. The current bundle has zero required setup fields, starts its own native daemon, and does not require a checkout, krypton.config.json, or npm run dev:full. Leave the optional protected_workspace_root blank for the private Application Support sandbox. Replacing the extension does not require deleting your workspace or evidence ledger; repeat the write-success and read-denial checks afterward.',
+  },
+  {
     question: 'Gatekeeper / Unsigned Binary Notice on macOS',
     answer:
       'Krypton release binaries are unsigned and unnotarized. After verifying the release source and checksums, attempt opening the file; if macOS blocks a trusted download, review System Settings > Privacy & Security > Open Anyway when offered. Managed Macs may require IT approval. Do not globally disable Gatekeeper or strip quarantine recursively. Approval does not prove containment; repeat the live tool test after installation.',
@@ -713,8 +718,9 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     Download <code>krypton-protected-fs.mcpb</code> from GitHub Releases.
                     Double-click it to open Claude Desktop and confirm installation. If that does
                     not open the installer, use Settings &gt; Extensions &gt; Advanced settings &gt;
-                    Install Extension. The optional <code>protected_workspace_root</code> selects an
-                    existing protected directory. A blank value creates{' '}
+                    Install Extension. There are zero required setup fields. The optional{}
+                    <code>protected_workspace_root</code> selects an existing protected directory. A
+                    blank value creates{' '}
                     <code>~/Library/Application Support/KryptonSecurity/sandbox_workspace</code>.
                     The standalone macOS bundle selects its arm64 or x64 daemon and supervises that
                     exact child for the MCP session, so this install does not need a repository

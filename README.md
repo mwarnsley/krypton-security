@@ -20,7 +20,8 @@ Node for the bundle.
 Double-click `krypton-protected-fs.mcpb` and confirm installation. If it does not
 open, use **Claude Desktop → Settings → Extensions → Advanced settings → Install
 Extension** and select the downloaded file. Leave `protected_workspace_root`
-blank to use the automatically created workspace:
+blank to use the automatically created workspace. **There are zero required setup
+fields**; the bundle starts its own native daemon:
 
 ```text
 ~/Library/Application Support/KryptonSecurity/sandbox_workspace
@@ -995,6 +996,18 @@ growth for 100, 1,000, and 10,000 deterministic events.
 ### Tools not showing up in Claude Desktop
 
 Fully quit with Cmd + Q on macOS and reopen Claude Desktop. Open the chat tools / + menu and Connectors to check krypton_read_file and krypton_write_file. For an MCPB install, review Settings > Extensions and its configuration/logs. For source setup only, validate JSON syntax in ~/Library/Application Support/Claude/claude_desktop_config.json, check mcpServers and absolute script paths, and ensure node is on the client PATH. Use Developer settings to open MCP logs (macOS logs are under ~/Library/Logs/Claude). Close the client before edits, keep its backup, and never share capabilities or complete settings/log files. Organization extension policies may require administrator approval.
+
+### Extension asks for a required Krypton checkout directory
+
+That prompt does not match the current standalone manifest. The bundle has only
+an optional `protected_workspace_root`; it never requires a checkout,
+`krypton.config.json`, or `npm run dev:full`. Cancel that dialog. In Claude Desktop
+**Settings → Extensions**, remove the obsolete Krypton extension entry and install
+the freshly downloaded `krypton-protected-fs.mcpb` (or the newly rebuilt file in
+`dist/`). Do not select an old download with the same filename. Fully quit with
+**Cmd + Q** and reopen Claude, then repeat the two Quickstart tool checks. You do
+not need to delete your workspace or Application Support evidence to replace the
+extension. Leave the optional directory blank to use the private sandbox.
 
 ### Gatekeeper / Unsigned Binary Notice on macOS
 
