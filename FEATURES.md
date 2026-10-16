@@ -95,7 +95,11 @@ in `ROADMAP.md`.
   Windows remains demonstration-only; Linux retains experimental terminal setup.
 - Claude Desktop can open the macOS `.mcpb` by double-click, with Settings >
   Extensions installation as a fallback. The generated MCPB 0.3 manifest remains
-  macOS-only because the archive includes only arm64/x64 Mach-O daemons.
+  macOS-only because the archive includes only arm64/x64 Mach-O daemons. Its
+  serialized archive manifest has zero mandatory setup fields and uses the
+  bundled launcher; a required checkout-directory prompt identifies an obsolete
+  or different installed artifact. Reinstall the current bundle instead of
+  supplying a checkout or starting development watchers.
 - The README opens with a macOS alpha quickstart: latest-release bundle import,
   optional extracted-bundle JSON configuration, and authorized-write/denied-read
   prompts. The Field Guide mirrors these verification checks. The two-minute
