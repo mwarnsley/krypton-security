@@ -99,7 +99,7 @@ const SECURITY_LAYERS = [
 const PROTECTION_CYCLE: readonly GuideItem[] = [
   {
     description:
-      'Krypton gives protected tools an explicit project workspace and evaluates integrated file actions against that boundary.',
+      'Krypton gives protected tools an explicit project workspace and evaluates integrated file actions against that boundary. Claude Desktop, Claude Code, Cursor, Codex CLI and standard stdio hosts can use the two MCP file tools on supported macOS installations.',
     icon: FolderLock,
     title: '1. Define the Safe Zone',
   },
@@ -120,7 +120,7 @@ const PROTECTION_CYCLE: readonly GuideItem[] = [
 const CORE_FEATURES: readonly GuideItem[] = [
   {
     description:
-      'The two Krypton MCP file tools use native path checks and descriptor-relative access inside the workspace. The supervisor registers the initial child; a lost registration acknowledgement may repeat only that exact revalidated identity. Tool writes are never replayed. Arbitrary child syscalls, host tools, and descendants are not sandboxed.',
+      'Bare node src/cli.cjs run serves standard stdio MCP from a prepared macOS source installation without bundle extraction; run -- <command> retains child supervision. The two Krypton MCP file tools use native path checks and descriptor-relative access inside the workspace. The supervisor registers the initial child; a lost registration acknowledgement may repeat only that exact revalidated identity. Tool writes are never replayed. Arbitrary child syscalls, host tools, and descendants are not sandboxed.',
     icon: FolderLock,
     title: 'Active Workspace Containment',
   },
@@ -204,7 +204,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: 'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
     answer:
-      'Download krypton-protected-fs.mcpb from https://github.com/mwarnsley/krypton-security/releases, then double-click it on macOS to open Claude Desktop and confirm installation. If file association is unavailable, use Settings > Extensions > Advanced settings > Install Extension. protected_workspace_root is optional; select an existing directory to protect, or leave it blank to create and protect ~/Library/Application Support/KryptonSecurity/sandbox_workspace. The launcher selects the bundled arm64 or x64 daemon, installs a verified private copy, and starts, supervises and stops that exact child with the MCP session. This route needs no repository checkout or Rust toolchain. Standalone telemetry remains local at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. The MCPB does not include or launch the Next.js dashboard. Only krypton_read_file and krypton_write_file are contained; built-in Claude tools remain outside this boundary. The bundle is unsigned and unnotarized, and manual clean-machine Claude Desktop QA remains a release gate. Source users can instead double-click scripts/Install-Mac.command in a prepared checkout, run npm run setup, or krypton setup after npm link; that checkout flow keeps KRYPTON_PROJECT_ROOT, auto-starts the compiled daemon when unavailable, reuses a healthy existing daemon, and can configure Claude Desktop, Cursor, Claude Code or Cline. Install-Windows.cmd reports unsupported native setup without modifying settings; Windows remains demonstration-only. Avoid enabling duplicate Krypton servers.',
+      'Download krypton-protected-fs.mcpb from https://github.com/mwarnsley/krypton-security/releases, then double-click it on macOS to open Claude Desktop and confirm installation. If file association is unavailable, use Settings > Extensions > Advanced settings > Install Extension. protected_workspace_root is optional; select an existing directory to protect, or leave it blank to create and protect ~/Library/Application Support/KryptonSecurity/sandbox_workspace. The launcher selects the bundled arm64 or x64 daemon, installs a verified private copy, and starts, supervises and stops that exact child with the MCP session. This route needs no repository checkout or Rust toolchain. Standalone telemetry remains local at ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl. The MCPB does not include or launch the Next.js dashboard. Claude Code, Cursor, Codex CLI and other stdio hosts can instead launch node /absolute/path/krypton-security/src/cli.cjs run after npm ci and cargo build --release --manifest-path src/core-native/Cargo.toml. Set KRYPTON_PROTECTED_WORKSPACE_ROOT to an existing absolute directory, or omit it for the private default sandbox. Bare run owns and stops its daemon; run -- <command> keeps the existing supervisor behavior. npm link exposes krypton-mcp run locally; registry npx installation is not verified. Live client UI compatibility remains manual QA. Only krypton_read_file and krypton_write_file are contained; built-in Claude tools remain outside this boundary. The bundle is unsigned and unnotarized, and manual clean-machine Claude Desktop QA remains a release gate. Source users can instead double-click scripts/Install-Mac.command in a prepared checkout, run npm run setup, or krypton setup after npm link; that checkout flow keeps KRYPTON_PROJECT_ROOT, auto-starts the compiled daemon when unavailable, reuses a healthy existing daemon, and can configure Claude Desktop, Cursor, Claude Code or Cline. Install-Windows.cmd reports unsupported native setup without modifying settings; Windows remains demonstration-only. Avoid enabling duplicate Krypton servers.',
   },
   {
     question: 'What happens when a Krypton MCP file tool crosses the boundary?',
@@ -728,6 +728,22 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     does not launch the Next.js dashboard. The artifacts are unsigned and
                     unnotarized; Gatekeeper behavior and clean-machine Claude Desktop installation
                     remain manual release checks.
+                  </p>
+                </aside>
+                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                    Universal stdio MCP clients
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                    After npm ci and the release native build above, configure Claude Desktop,
+                    Claude Code, Cursor, Codex CLI or any stdio host to run an absolute Node path
+                    with <code>/absolute/path/krypton-security/src/cli.cjs run</code>. No MCPB
+                    extraction is needed. Set <code>KRYPTON_PROTECTED_WORKSPACE_ROOT</code> to an
+                    existing absolute directory, or leave it blank for the private Application
+                    Support sandbox. Invalid selections fail closed. Bare run starts and stops its
+                    own daemon; keep one standalone session per workspace. The local npm link alias
+                    is <code>krypton-mcp run</code>; registry npx installation is not verified.
+                    Native support remains macOS arm64/x64. Live client UI checks remain manual QA.
                   </p>
                 </aside>
                 <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">

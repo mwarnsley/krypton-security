@@ -2,6 +2,7 @@ import { ChildProcess, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 const packageManifest = require('../../package.json') as { version: string };
@@ -85,17 +86,29 @@ function realServiceFixture() {
 }
 
 // Static preload replaces only destructive boundaries in an owned disposable Node process.
-function invokeEntry(serverMode: 'throw' | 'stdout' | 'stderr') {
+function invokeEntry(
+  serverMode: 'throw' | 'stdout' | 'stderr' | 'real' | 'readiness-failure',
+  cli = false
+) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'krypton-launcher-test-'));
   const signals = path.join(root, 'signals');
   try {
     const result = spawnSync(
       process.execPath,
-      ['--unhandled-rejections=strict', '--require', launcherPreloadPath, launcherPath],
+      [
+        '--unhandled-rejections=strict',
+        '--require',
+        launcherPreloadPath,
+        ...(cli ? [path.resolve('src/cli.cjs'), 'run'] : [launcherPath]),
+      ],
       {
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: 30000,
+        maxBuffer: 128 * 1024,
         cwd: root,
+        input:
+          initializeFrame +
+          '{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n',
         env: {
           ...process.env,
           KRYPTON_TEST_SIGNALS_PATH: signals,
@@ -161,7 +174,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('standalone launcher entry boundary', () => {
+describe('standalone launcher entry boundary', { timeout: 30000 }, () => {
   it('redacts an arbitrary server failure through the shared CLI boundary', () => {
     const result = invokeEntry('throw');
     expect(result.status).toBe(1);
@@ -183,12 +196,177 @@ describe('standalone launcher entry boundary', () => {
   it('rejects CLI arguments before launching any runtime', () => {
     const result = spawnSync(process.execPath, [launcherPath, 'unexpected'], {
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: 30000,
+      maxBuffer: 128 * 1024,
       env: { ...process.env, KRYPTON_PROJECT_ROOT: '/missing-private-workspace' },
     });
     expect(result.status).toBe(2);
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('invalid_usage');
+  });
+});
+
+describe('host shim entry guard', () => {
+  it.each(['matching', 'symlink', 'import', 'missing'] as const)(
+    'handles a %s argv entry without require.main identity',
+    (mode) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'krypton-guard-'));
+      try {
+        const alias = path.join(root, 'launcher.cjs');
+        fs.symlinkSync(launcherPath, alias);
+        const entry =
+          mode === 'matching'
+            ? launcherPath
+            : mode === 'symlink'
+              ? alias
+              : mode === 'missing'
+                ? path.join(root, 'missing')
+                : process.execPath;
+        const script = `process.argv = [process.execPath, ${JSON.stringify(entry)}, 'unexpected']; require(${JSON.stringify(launcherPath)});`;
+        const result = spawnSync(process.execPath, ['-e', script], {
+          encoding: 'utf8',
+          timeout: 30000,
+          maxBuffer: 128 * 1024,
+        });
+        expect(result.status).toBe(['matching', 'symlink'].includes(mode) ? 2 : 0);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toBe(
+          ['matching', 'symlink'].includes(mode)
+            ? '[KRYPTON] invalid_usage; launcher accepts no arguments.\n'
+            : ''
+        );
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    },
+    30000
+  );
+});
+
+// Electron-style input exposes events and flow control, but no async iterator or readableEnded.
+class SyntheticInput extends EventEmitter {
+  destroyed = false;
+  paused = false;
+  pause() {
+    this.paused = true;
+    return this;
+  }
+  resume() {
+    this.paused = false;
+    return this;
+  }
+  destroy() {
+    this.destroyed = true;
+    this.emit('close');
+    return this;
+  }
+}
+
+describe('synthetic stdin adapter', () => {
+  it('completes an input that reached EOF before the launcher attached', async () => {
+    const f = fixture();
+    const input = new PassThrough({ autoDestroy: false });
+    streams.push(input);
+    const ended = new Promise<void>((resolve) => input.once('end', resolve));
+    input.resume();
+    input.end();
+    await ended;
+    vi.useFakeTimers();
+    const { serve } =
+      require('../../src/core/mcp/server.cjs') as typeof import('../../src/core/mcp/server.cjs');
+    let status: number | undefined;
+    const running = runStandaloneMcpb({ ...f.options, input }, { ...f.dependencies, serve }).then(
+      (code) => {
+        status = code;
+        return code;
+      }
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const completedAtEof = status;
+    if (status === undefined) process.emit('SIGTERM');
+    await vi.advanceTimersByTimeAsync(0);
+    await running;
+    expect(completedAtEof).toBe(0);
+  });
+
+  it('serves the full handshake from event-only stdin and releases listeners', async () => {
+    const f = fixture();
+    const input = new SyntheticInput();
+    const { serve } =
+      require('../../src/core/mcp/server.cjs') as typeof import('../../src/core/mcp/server.cjs');
+    let output = '';
+    f.output.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    const running = runStandaloneMcpb({ ...f.options, input }, { ...f.dependencies, serve });
+    input.emit(
+      'data',
+      Buffer.from(
+        initializeFrame +
+          '{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
+      )
+    );
+    input.emit('end');
+    input.destroy();
+    expect(await running).toBe(0);
+    const responses = output
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(responses).toMatchObject([
+      { id: 1, result: { protocolVersion: '2025-11-25' } },
+      { id: 2, result: { tools: [{ name: 'krypton_read_file' }, { name: 'krypton_write_file' }] } },
+    ]);
+    expect(input.eventNames()).toEqual([]);
+  });
+  it('pauses a full adapter before readiness and resumes it when consumed', async () => {
+    const f = fixture();
+    const input = new SyntheticInput();
+    let release!: () => void;
+    f.dependencies.prepareRuntime.mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return runtime;
+    });
+    let received = 0;
+    const running = runStandaloneMcpb(
+      { ...f.options, input },
+      {
+        ...f.dependencies,
+        serve: async (adapted) => {
+          for await (const chunk of adapted!) {
+            received += chunk.length;
+          }
+        },
+      }
+    );
+    input.emit('data', Buffer.alloc(128 * 1024));
+    const pausedBeforeReady = input.paused;
+    release();
+    await vi.waitFor(() => expect(input.paused).toBe(false));
+    input.emit('end');
+    expect(await running).toBe(0);
+    expect({ pausedBeforeReady, received }).toEqual({
+      pausedBeforeReady: true,
+      received: 128 * 1024,
+    });
+    expect(input.eventNames()).toEqual([]);
+  });
+  it.each(['error', 'close'] as const)('fails closed on premature synthetic %s', async (event) => {
+    const f = fixture();
+    const input = new SyntheticInput();
+    const running = runStandaloneMcpb({ ...f.options, input }, f.dependencies);
+    input.emit(event, new Error('private input'));
+    expect(await running).toBe(1);
+    expect(input.eventNames()).toEqual([]);
+  });
+  it('owns immediate startup rejection while stdin is idle', async () => {
+    const f = fixture();
+    f.dependencies.discover.mockRejectedValue(new Error('private startup'));
+    expect(await runStandaloneMcpb(f.options, f.dependencies)).toBe(1);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(f.kill.mock.calls).toEqual([['SIGTERM']]);
   });
 });
 
@@ -235,7 +413,7 @@ describe('standalone host and spawn boundary', () => {
       ['--standalone-config', runtime.configPath],
       { shell: false, stdio: ['ignore', 'ignore', 'ignore'] }
     );
-    expect(f.dependencies.serve).toHaveBeenCalledWith(f.input, f.output, {
+    expect(f.dependencies.serve).toHaveBeenCalledWith(expect.any(PassThrough), f.output, {
       runtimeHome: '/private/runtime-home',
     });
   });
@@ -849,4 +1027,30 @@ describe('standalone MCP lifecycle', () => {
     expect(f.kill.mock.calls).toEqual([['SIGTERM'], ['SIGKILL']]);
     f.exit();
   });
+});
+
+describe('standalone CLI pipes', () => {
+  it('routes bare run to the real MCP handshake from an unrelated cwd', () => {
+    const result = invokeEntry('real', true);
+    expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
+    expect(
+      result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+    ).toMatchObject([
+      { id: 1, result: { protocolVersion: '2025-11-25' } },
+      { id: 2, result: { tools: [{ name: 'krypton_read_file' }, { name: 'krypton_write_file' }] } },
+    ]);
+    expect(result.signals).toBe('SIGTERM\n');
+  }, 30000);
+  it('fails startup under strict unhandled rejection handling and reaps its owned daemon', () => {
+    const result = invokeEntry('readiness-failure');
+    expect({ status: result.status, stdout: result.stdout, signals: result.signals }).toEqual({
+      status: 1,
+      stdout: '',
+      signals: 'SIGTERM\n',
+    });
+    expect(result.stderr).toBe('[KRYPTON] operation_failed; command failed closed.\n');
+  }, 30000);
 });
