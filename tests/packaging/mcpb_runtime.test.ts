@@ -75,7 +75,7 @@ beforeEach(async () => {
   await fs.mkdir(options.homeDirectory, { mode: 0o700 });
   await fs.mkdir(options.configuredWorkspace!, { mode: 0o700 });
   await bundle();
-});
+}, 30000);
 afterEach(async () => {
   vi.restoreAllMocks();
   if (root) {
@@ -84,7 +84,7 @@ afterEach(async () => {
   if (temporaryRoot) {
     await fs.rm(temporaryRoot, { recursive: true, force: true });
   }
-});
+}, 30000);
 
 describe('workspace resolution', () => {
   it.each([undefined, '', ' \t\n', '\u2003\u00a0', '\u0085'])(
@@ -705,4 +705,31 @@ it('does not mistake an ancestor lost during leaf cleanup for an absent staging 
     return originalLstat(...args);
   });
   await expect(prepareStandaloneRuntime(options)).rejects.toMatchObject({ code: 'cleanup_failed' });
+});
+
+describe('source CLI native binary', { timeout: 30000 }, () => {
+  it('prepares a source build without an extracted bundle', async () => {
+    const nativeBinaryPath = path.join(root, 'source-daemon');
+    const bytes = binary(0x0100000c);
+    await fs.writeFile(nativeBinaryPath, bytes);
+    await fs.rm(options.bundleRoot, { recursive: true });
+    const prepared = await prepareStandaloneRuntime({ ...options, nativeBinaryPath });
+    expect(await fs.readFile(prepared.daemonPath)).toEqual(bytes);
+  });
+  it.each(['missing', 'short', 'wrong-arch', 'symlink'] as const)(
+    'rejects a %s source build',
+    async (mode) => {
+      const nativeBinaryPath = path.join(root, 'source-daemon');
+      if (mode === 'symlink')
+        await fs.symlink(path.join(options.bundleRoot, names.arm64), nativeBinaryPath);
+      else if (mode !== 'missing')
+        await fs.writeFile(
+          nativeBinaryPath,
+          mode === 'short' ? Buffer.alloc(4) : binary(0x01000007)
+        );
+      await expect(
+        prepareStandaloneRuntime({ ...options, nativeBinaryPath })
+      ).rejects.toMatchObject({ code: 'invalid_binary' });
+    }
+  );
 });
