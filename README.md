@@ -6,6 +6,9 @@
 Aim for a two-minute setup with the 60-second check below; clean-machine timing
 and Gatekeeper prompts still need beta validation.
 
+For Claude Code, Cursor, Codex CLI, or another stdio host with a prepared source
+installation, use the [universal stdio entrypoint](#universal-stdio-mcp-clients).
+
 ### Step 1: Download the Standalone Bundle
 
 Open the [latest release](https://github.com/mwarnsley/krypton-security/releases/latest)
@@ -163,6 +166,76 @@ The checkout setup path configures detected clients with an absolute
 `KRYPTON_PROJECT_ROOT`. To view source telemetry optionally run
 `npm run dev:dashboard` and open <http://localhost:3000>. The dashboard does not
 start the daemon and is not required for protected MCP tools.
+
+### Universal stdio MCP clients
+
+On macOS arm64/x64, a prepared source installation can run MCP directly without
+extracting an MCPB. Install the pinned Node/Rust toolchains, then run `npm ci`
+and `cargo build --release --manifest-path src/core-native/Cargo.toml` once.
+Configure the host to execute an absolute Node path with arguments
+`["/absolute/path/krypton-security/src/cli.cjs", "run"]`. The working directory
+does not need to be the checkout. Bare `run` serves newline-delimited JSON-RPC
+on stdin/stdout; `run -- <command>` still supervises a registered child.
+
+`KRYPTON_PROTECTED_WORKSPACE_ROOT` selects an existing absolute directory.
+Omitted or blank values create the private default
+`~/Library/Application Support/KryptonSecurity/sandbox_workspace`. Invalid,
+missing or symlink workspace selections fail closed instead of falling back.
+The launcher validates the locally compiled daemon, publishes a private copy,
+starts it, checks authenticated readiness, and stops that exact child on EOF or
+shutdown. Keep only one standalone session per workspace; concurrent startup
+fails closed under native lock ownership. MCPB hosts retain bundled checksum
+validation and support event-only Electron stdin with bounded backpressure.
+
+For **Cursor**, put this in `.cursor/mcp.json`; the same `mcpServers` entry can
+be used by **Claude Desktop** in its manually managed MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "krypton": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/krypton-security/src/cli.cjs", "run"],
+      "env": {
+        "KRYPTON_PROTECTED_WORKSPACE_ROOT": "/absolute/path/to/existing/workspace"
+      }
+    }
+  }
+}
+```
+
+For **Claude Code** or **Codex CLI**, use the applicable command after replacing
+the absolute paths:
+
+```bash
+claude mcp add --transport stdio --env KRYPTON_PROTECTED_WORKSPACE_ROOT=/absolute/path/to/existing/workspace krypton -- /absolute/path/to/node /absolute/path/krypton-security/src/cli.cjs run
+codex mcp add krypton --env KRYPTON_PROTECTED_WORKSPACE_ROOT=/absolute/path/to/existing/workspace -- /absolute/path/to/node /absolute/path/krypton-security/src/cli.cjs run
+```
+
+These examples follow the [Cursor MCP configuration](https://docs.cursor.com/context/model-context-protocol),
+[Claude Code stdio configuration](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server),
+and [Codex MCP configuration](https://developers.openai.com/codex/mcp).
+Restart or reconnect the host and confirm `krypton_read_file` and
+`krypton_write_file` appear. Only these tools receive Krypton's containment.
+
+`npm link` also exposes the local `krypton-mcp run` alias. The npm package is
+named `krypton-security`; adding this bin alias does not publish an unrelated
+`krypton-mcp` package. Registry-based `npx krypton-mcp run` is not a verified
+installation path. Use the absolute Node command above for reproducible setup.
+This change adds host compatibility, not native Linux/Windows support; Linux
+remains experimental and Windows demonstration-only. Live client UI and
+clean-machine installation remain manual QA.
+
+A plain Node pipe can check the handshake (expect responses for IDs 1 and 2,
+no response to the notification, and both tools in the list):
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"stdio-check","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | node src/cli.cjs run
+```
 
 ### Source-checkout setup notices
 
@@ -1106,7 +1179,15 @@ unverified until the workflow runs after these changes are pushed. See
 </details>
 
 <details>
-<summary>How do I connect Claude Desktop, Cursor, Claude Code or Cline?</summary>
+<summary>How do I connect Claude Desktop, Cursor, Claude Code, Codex CLI or Cline?</summary>
+
+For standard stdio hosts, including Codex CLI, use the
+[universal stdio entrypoint](#universal-stdio-mcp-clients):
+`node /absolute/path/krypton-security/src/cli.cjs run`. A prepared macOS source
+installation needs no bundle extraction. Set `KRYPTON_PROTECTED_WORKSPACE_ROOT`
+or leave it blank for the private default sandbox. This session owns its daemon
+and stops it on disconnect; the older setup-managed supervisor route below
+retains its shared daemon lifecycle.
 
 For Claude Desktop on macOS, download `krypton-protected-fs.mcpb` from
 [GitHub Releases](https://github.com/mwarnsley/krypton-security/releases), open

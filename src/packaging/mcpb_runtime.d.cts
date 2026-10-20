@@ -16,6 +16,8 @@ export class StandaloneRuntimeError extends Error {
 }
 export interface StandaloneRuntimeOptions {
   bundleRoot: string;
+  /** Explicit trusted local build; absent for checksum-verified MCPB binaries. */
+  nativeBinaryPath?: string;
   version: string;
   platform: NodeJS.Platform;
   arch: string;

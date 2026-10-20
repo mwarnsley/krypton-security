@@ -2,6 +2,8 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
+const { PassThrough } = require('node:stream');
 const os = require('node:os');
 const { performance } = require('node:perf_hooks');
 const { spawn } = require('node:child_process');
@@ -129,6 +131,8 @@ async function nativeReady(runtimeHome, child, dependencies, signal) {
     }),
     cancelled,
   ]);
+  // Own rejection immediately, including failures before the first probe is awaited.
+  void stopped.catch(() => undefined);
   // Private metadata ties readiness to the exact still-live spawned child. Its PID
   // is comparison evidence only; it never becomes authority to signal a process.
   const checkDiscovery = async () => {
@@ -190,8 +194,6 @@ async function nativeReady(runtimeHome, child, dependencies, signal) {
     clearTimeout(timer);
     signal?.removeEventListener('abort', cancel);
     controller.abort();
-    // A later exit after healthy readiness must not create an unhandled rejection.
-    void stopped.catch(() => undefined);
   }
 }
 
@@ -270,10 +272,13 @@ async function runOwned(options, dependencies, owned) {
   let service;
   let serviceFinished = false;
   let inputClosedObserved = false;
+  let inputEnded = false;
   let outputClosedObserved = false;
   let stop;
   const input = options.input ?? process.stdin;
   const output = options.output ?? process.stdout;
+  // Host stdin may be event-only (Electron utilityProcess), not an async iterable.
+  const adaptedInput = new PassThrough({ highWaterMark: 16384 });
   const startup = new AbortController();
   const interrupted = new Promise((resolve) => {
     stop = resolve;
@@ -290,19 +295,44 @@ async function runOwned(options, dependencies, owned) {
     inputClosedObserved = true;
     if (!stopping) {
       // Clean EOF belongs to serve: it may still be flushing a bounded response.
-      if (!input.readableEnded) streamFailed(new LauncherError('server_failed'));
+      if (!inputEnded && !input.readableEnded) streamFailed(new LauncherError('server_failed'));
     }
   };
   const outputClosed = () => {
     outputClosedObserved = true;
     if (!stopping) streamFailed(new LauncherError('server_failed'));
   };
+  const inputData = (chunk) => {
+    try {
+      if (!adaptedInput.write(chunk)) input.pause();
+    } catch (error) {
+      streamFailed(error);
+    }
+  };
+  const inputEnd = () => {
+    inputEnded = true;
+    adaptedInput.end();
+  };
+  const inputDrain = () => {
+    try {
+      if (!stopping && !inputEnded) input.resume();
+    } catch (error) {
+      streamFailed(error);
+    }
+  };
+  adaptedInput.on('error', streamFailed);
+  adaptedInput.once('close', () => adaptedInput.off('error', streamFailed));
+  adaptedInput.on('drain', inputDrain);
+  input.on('end', inputEnd);
+  input.on('data', inputData);
   process.on('SIGINT', signal);
   process.on('SIGTERM', signal);
   input.on('error', streamFailed);
   input.on('close', inputClosed);
   output.on('error', streamFailed);
   output.on('close', outputClosed);
+  // A caller may supply a stream that already emitted its clean EOF.
+  if (input.readableEnded) inputEnd();
   try {
     const platform = options.platform ?? process.platform;
     const arch = options.arch ?? process.arch;
@@ -317,11 +347,15 @@ async function runOwned(options, dependencies, owned) {
       platform,
       arch,
       homeDirectory: options.homeDirectory ?? os.homedir(),
+      ...(options.nativeBinaryPath === undefined
+        ? {}
+        : { nativeBinaryPath: options.nativeBinaryPath }),
       configuredWorkspace:
         options.configuredWorkspace ?? process.env.KRYPTON_PROTECTED_WORKSPACE_ROOT,
     });
     if (!signaled) {
-      if (failure || input.destroyed || output.destroyed) throw new LauncherError('server_failed');
+      if (failure || (input.destroyed && !inputEnded) || output.destroyed)
+        throw new LauncherError('server_failed');
       child = (dependencies.spawn ?? spawn)(
         prepared.daemonPath,
         ['--standalone-config', prepared.configPath],
@@ -329,8 +363,15 @@ async function runOwned(options, dependencies, owned) {
       );
       owned(child);
       const state = observe(child);
+      const readinessPromise = nativeReady(
+        prepared.runtimeHome,
+        child,
+        dependencies,
+        startup.signal
+      );
+      void readinessPromise.catch(() => undefined);
       const readiness = await Promise.race([
-        nativeReady(prepared.runtimeHome, child, dependencies, startup.signal).then(() => true),
+        readinessPromise.then(() => true),
         interrupted.then((result) => {
           code = result;
           return false;
@@ -339,7 +380,7 @@ async function runOwned(options, dependencies, owned) {
       if (readiness && !signaled) {
         service = Promise.resolve()
           .then(() =>
-            (dependencies.serve ?? require('../core/mcp/server.cjs').serve)(input, output, {
+            (dependencies.serve ?? require('../core/mcp/server.cjs').serve)(adaptedInput, output, {
               runtimeHome: prepared.runtimeHome,
             })
           )
@@ -362,10 +403,13 @@ async function runOwned(options, dependencies, owned) {
   } finally {
     stopping = true;
     startup.abort();
+    input.off('data', inputData);
+    input.off('end', inputEnd);
+    adaptedInput.off('drain', inputDrain);
     const cancelService = service && !serviceFinished;
     // Destroy both sides on forced stop so an in-flight write rejects and buffered
     // requests cannot produce more output. Normal EOF reaches here only after serve settles.
-    for (const stream of cancelService ? [input, output] : [input]) {
+    for (const stream of cancelService ? [adaptedInput, input, output] : [adaptedInput, input]) {
       try {
         stream.destroy();
       } catch (error) {
@@ -427,21 +471,20 @@ function invalidUsage() {
   });
 }
 
-module.exports = { LauncherError, runStandaloneMcpb, waitForNativeReady, terminateOwnedDaemon };
-
-if (require.main === module) {
+/** Terminal entry shared by MCPB hosts and the bare-run CLI, including exact-child fallback. */
+function launchStandaloneMcpb(options = {}, argv = []) {
   let child;
   let terminalFailed = false;
-  void runCli(
+  return runCli(
     async (argv) => {
       if (argv.length !== 0) return invalidUsage();
-      const code = await runOwned({}, {}, (spawned) => {
+      const code = await runOwned(options, {}, (spawned) => {
         child = spawned;
       });
       if (code !== 0 && !terminalFailed) throw new LauncherError('operation_failed');
       return code;
     },
-    process.argv.slice(2),
+    argv,
     () => {
       // Streams may be broken: synchronous exact-child fallback with no recursive logging.
       terminalFailed = true;
@@ -452,3 +495,27 @@ if (require.main === module) {
     }
   );
 }
+
+/** Host shims may require the entry module; canonical argv identity excludes ordinary imports. */
+function isEntryPoint() {
+  if (require.main === module) return true;
+  try {
+    return (
+      Boolean(process.argv[1]) &&
+      fs.realpathSync.native(process.argv[1]) === fs.realpathSync.native(__filename)
+    );
+  } catch (error) {
+    // Missing/unresolvable argv is not authority to auto-launch an imported module.
+    void error;
+    return false;
+  }
+}
+
+module.exports = {
+  LauncherError,
+  runStandaloneMcpb,
+  waitForNativeReady,
+  terminateOwnedDaemon,
+  launchStandaloneMcpb,
+};
+if (isEntryPoint()) void launchStandaloneMcpb({}, process.argv.slice(2));
