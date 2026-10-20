@@ -682,3 +682,27 @@ theme primitives.
 7. **Enforce mechanically.** Run `npm run design-system:check` after every
    dashboard change. Fix violations at the approved token or primitive layer;
    do not weaken, bypass, or suppress the checker to make a change pass.
+
+## UI, Design & Accessibility Guidelines
+
+1. **Mandatory WCAG 2.1 AA compliance.** All components, pages, drawers,
+   tables, and documentation views must meet WCAG 2.1 AA at minimum; aim for
+   AAA on primary copy. Automated scores supplement keyboard, screen-reader,
+   reflow, and contrast verification; they do not establish compliance alone.
+2. **Minimum text contrast.** Body copy and primary content must maintain at
+   least 4.5:1 contrast against their rendered backgrounds (7:1 preferred).
+   Muted/secondary text and icon metadata must also maintain at least 4.5:1.
+   Never use muted grays or dark blues that fail contrast on deep-dark surfaces.
+3. **Dual-theme requirement (light and dark).** Explicitly design and verify
+   every visual component, layout, modal, drawer, table, and state in both modes.
+   Hardcoded color utilities or values without light/dark variants or semantic
+   CSS variables are prohibited. Define palette values at the token layer.
+4. **Affordances and focus.** Tabs, toggles, buttons, and links need clear active
+   and inactive states, discernible control boundaries with at least 3:1
+   non-text contrast, and visible keyboard `focus-visible` rings. Decorative
+   surface dividers are distinct from interactive control boundaries.
+5. **Readability and layout.** Avoid unbroken walls of text in drawers and
+   modals. Use scannable cards, numbered sequences, and dedicated monospace
+   blocks with copy affordances for paths, environment variables, and commands.
+   Announce copy success or failure without exposing exception details, and
+   retain selectable text when clipboard access is unavailable.

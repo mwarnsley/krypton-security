@@ -82,7 +82,7 @@ describe('native MCP evidence', () => {
     expect(payload.alerts[0]?.enforcementStatus).toBe('INTERCEPTED');
     const markup = renderToStaticMarkup(<AlertTable alerts={payload.alerts} />);
     expect(markup).toContain('krypton_write_file');
-    expect(markup).toContain('Denied (actor unattributed)');
+    expect(markup).toContain('Blocked (Unattributed)');
   });
   it('shows the denied tool and interception without inventing process isolation', () => {
     const row = normalizePersistedEvent(mcpEvent);

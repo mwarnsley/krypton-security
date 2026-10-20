@@ -79,9 +79,14 @@ it('explains audit mode and retained MCP denials when its information control re
   const tooltip = screen.getByRole('tooltip');
 
   expect(trigger.getAttribute('aria-describedby')).toBe(tooltip.id);
-  expect(tooltip.textContent).toContain('The native daemon starts in Audit-Only Mode (switch on)');
   expect(tooltip.textContent).toContain(
-    'Krypton MCP reads and writes outside the protected workspace remain denied in both modes.'
+    'When enabled, Krypton logs sandbox violations without stopping the AI process.'
+  );
+  expect(tooltip.textContent).toContain(
+    'When disabled, Krypton can stop supervised AI processes that try to escape the sandbox.'
+  );
+  expect(tooltip.textContent).toContain(
+    'File access outside the allowed folder stays blocked in both modes.'
   );
 });
 

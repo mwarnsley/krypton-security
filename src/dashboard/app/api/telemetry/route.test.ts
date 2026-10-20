@@ -68,6 +68,36 @@ describe('telemetry route', () => {
     );
   });
 
+  it('forwards the native protected workspace root', async () => {
+    serverMocks.queryNativeHealth.mockResolvedValue({
+      ...HEALTHY,
+      protectedWorkspaceRoot: '/sandbox_workspace',
+    });
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
+    expect(body).toMatchObject({ source: 'native', protectedWorkspaceRoot: '/sandbox_workspace' });
+  });
+
+  it('supports native health without optional folder metadata', async () => {
+    const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
+    expect(body).not.toHaveProperty('protectedWorkspaceRoot');
+  });
+
+  it.each(['degraded', 'invalid-ledger'])(
+    'omits native folder metadata from %s mock data',
+    async (failure) => {
+      serverMocks.queryNativeHealth.mockResolvedValue({
+        ...HEALTHY,
+        protectedWorkspaceRoot: '/sandbox_workspace',
+        ...(failure === 'degraded' ? { health: { ...HEALTHY.health, status: 'degraded' } } : {}),
+      });
+      if (failure === 'invalid-ledger')
+        serverMocks.readLedgerPage.mockRejectedValue(new TypeError('invalid'));
+      const body = await (await GET(new Request('http://localhost/api/telemetry'))).json();
+      expect(body.source).toBe('mock');
+      expect(body).not.toHaveProperty('protectedWorkspaceRoot');
+    }
+  );
+
   it('sets no-store caching on every successful response', async () => {
     const response = await GET(new Request('http://localhost/api/telemetry'));
     expect(response.headers.get('Cache-Control')).toBe('no-store, max-age=0');

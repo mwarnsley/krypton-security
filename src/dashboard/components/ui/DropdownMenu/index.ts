@@ -7,4 +7,6 @@ export {
   DropdownMenuSeparator,
   type DropdownMenuSeparatorProps,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuGroup,
 } from './DropdownMenu';

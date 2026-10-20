@@ -23,11 +23,11 @@ describe('mobile alert stream', () => {
   it('expands the complete signature without changing denied actor attribution', () => {
     render(<AlertTable alerts={[alert]} />);
     const stream = screen.getByRole('list', { name: 'Security alert telemetry cards' });
-    const summary = within(stream).getByText('Verified Signature');
+    const summary = within(stream).getByText('Security Verification');
     fireEvent.click(summary);
     expect(summary.closest('details')?.open).toBe(true);
     expect(within(stream).getByText(alert.origin_attribution, { selector: 'code' })).toBeTruthy();
-    expect(within(stream).getByText('Denied (actor unattributed)')).toBeTruthy();
+    expect(within(stream).getByText('Blocked (Unattributed)')).toBeTruthy();
   });
 
   it('does not expose native isolation authority for an unattributed denial', () => {

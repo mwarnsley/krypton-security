@@ -54,6 +54,35 @@ describe('native control client', () => {
     nativeMocks.dispatch.mockResolvedValue(value);
     await expect(dispatchNativeCommand({ type: 'health' })).rejects.toThrow();
   });
+  it('supports older daemons that omit the protected workspace root', async () => {
+    expect(await queryNativeHealth()).not.toHaveProperty('protectedWorkspaceRoot');
+  });
+  it.each(['/sandbox_workspace', '/' + 'a'.repeat(1023), '/' + 'é'.repeat(511)])(
+    'preserves a bounded absolute protected workspace root',
+    async (protectedWorkspaceRoot) => {
+      const response = await nativeMocks.dispatch();
+      nativeMocks.dispatch.mockResolvedValue({ ...response, protectedWorkspaceRoot });
+      expect(await queryNativeHealth()).toHaveProperty(
+        'protectedWorkspaceRoot',
+        protectedWorkspaceRoot
+      );
+    }
+  );
+  it.each([
+    null,
+    42,
+    '',
+    'relative/folder',
+    '/root\nfolder',
+    '/root\u0085folder',
+    '/root\ud800folder',
+    '/' + 'a'.repeat(1024),
+    '/' + 'é'.repeat(512),
+  ])('rejects malformed protected workspace root %j', async (protectedWorkspaceRoot) => {
+    const response = await nativeMocks.dispatch();
+    nativeMocks.dispatch.mockResolvedValue({ ...response, protectedWorkspaceRoot });
+    await expect(queryNativeHealth()).rejects.toThrow(TypeError);
+  });
   it('requires valid native health', async () => {
     nativeMocks.dispatch.mockResolvedValue({
       ok: true,

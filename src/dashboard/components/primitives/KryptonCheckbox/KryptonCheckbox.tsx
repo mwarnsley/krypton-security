@@ -23,7 +23,7 @@ export const KryptonCheckbox = forwardRef<HTMLInputElement, KryptonCheckboxProps
       <label className="inline-flex cursor-pointer items-center gap-krypton-space-2 text-sm text-krypton-fg-secondary">
         <span className={`relative inline-flex shrink-0 ${BOX_SIZE_CLASSES[size]}`}>
           <input
-            className="peer h-full w-full appearance-none rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface checked:border-krypton-accent-cyan checked:bg-krypton-accent-cyan focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="peer h-full w-full appearance-none rounded-krypton-radius-control border border-krypton-control-border bg-krypton-bg-surface checked:border-krypton-accent-cyan checked:bg-krypton-accent-cyan focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
             ref={ref}
             type="checkbox"
             {...checkboxProps}

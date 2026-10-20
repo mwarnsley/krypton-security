@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { forwardRef, type SelectHTMLAttributes } from 'react';
 
 export interface KryptonSelectOption {
@@ -20,24 +21,30 @@ export interface KryptonSelectProps extends Omit<
 }
 
 const SIZE_CLASSES: Readonly<Record<NonNullable<KryptonSelectProps['size']>, string>> = {
-  sm: 'h-8 pl-3 pr-8 text-xs',
-  md: 'h-10 pl-3 pr-9 text-sm',
+  sm: 'h-8 pl-2.5 pr-7 py-krypton-space-1 text-xs',
+  md: 'h-10 pl-2.5 pr-7 py-krypton-space-1 text-xs',
 };
 
 export const KryptonSelect = forwardRef<HTMLSelectElement, KryptonSelectProps>(
   function KryptonSelect({ options, size = 'sm', ...selectProps }, ref): React.JSX.Element {
     return (
-      <select
-        className={`cursor-pointer appearance-auto rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary focus-visible:border-krypton-focus-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${SIZE_CLASSES[size]}`}
-        ref={ref}
-        {...selectProps}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <span className="relative inline-flex shrink-0">
+        <select
+          className={`cursor-pointer appearance-none rounded-krypton-radius-control border border-krypton-control-border bg-krypton-bg-surface text-krypton-fg-secondary focus-visible:border-krypton-focus-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring disabled:cursor-not-allowed disabled:opacity-50 ${SIZE_CLASSES[size]}`}
+          ref={ref}
+          {...selectProps}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-krypton-space-2 top-1/2 h-4 w-4 -translate-y-1/2 text-krypton-fg-secondary"
+        />
+      </span>
     );
   }
 );

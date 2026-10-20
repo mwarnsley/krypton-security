@@ -4,6 +4,11 @@ This ledger describes implemented behavior. Its capability groupings are not
 release phases; the versioned four-phase release plan and all planned work live
 in `ROADMAP.md`.
 
+The Field Guide's Full Access FAQ explains that client approval settings do not
+bypass the native checks for krypton_read_file / krypton_write_file. Installing
+the bundle does not intercept built-in host tools or raw sh/bash operations.
+Native denials queue local ledger evidence; Pages remains mock-only.
+
 ## Capability 1: Local policy reference engine
 
 - **Status:** Implemented
@@ -225,6 +230,61 @@ in `ROADMAP.md`.
 
 ## Capability 3: Krypton Security Dashboard Command Center
 
+- Uses the full available viewport width without a maximum-width cap, with
+  16px side padding below the small breakpoint and 24px above it. At 1024px,
+  the summary becomes two equal-height cards: workspace identity, guide/theme
+  utilities and Engine Overview on the left; Watchdog status, active processes
+  and audit/telemetry controls on the right. Smaller screens stack workspace,
+  runtime, then the full-width activity log. Both cards share 24px padding. The page starts with 32px top padding and
+  leaves 32px between the summary and activity log. About Guide sits beside Engine Overview; the theme switch stays at the top
+  right of the workspace header. The runtime
+  three-column metrics grid shows supervised MCP child count, a centered retained
+  alert-list count and right-aligned boundary status with the dashboard release
+  version. It stacks below 640px; counts above 9,999 use compact notation with an
+  exact tooltip and accessible label. The count is not a lifetime rejection total
+  and can include retained observations; degraded/offline states never claim
+  active containment. The footer aligns audit left and telemetry right, wrapping
+  within narrow cards. The info icon before Intercepted Alerts reveals Critical, High, Medium, Low and
+  Info counts from the same loaded list on hover/focus or tap, with Escape dismissal.
+  The count and caption remain simple. Table badges share AA-tested semantic
+  colors with softly tinted borders matching their text tone. Process counts use emerald; the alert total uses primary copy. Table help
+  icons precede labels, sorting follows labels, and action menus align right in
+  bordered controls with hover/focus feedback. The Actions header info icon stays
+  unboxed and to the left of ACTIONS. Hover or click opens an icon-led four-section guide to the available developer utilities
+  with a centered trigger anchor and Escape dismissal. Plain-language headings read Target
+  Path and Security Verification; unattributed denials read Blocked (Unattributed).
+  Security Verification describes recorded evidence, not cryptographic signing.
+  Audit-only and active modes keep outside-folder file access blocked, and process
+  termination remains limited to supervised children. Pages metrics remain simulated.
+- Row menus group raw event JSON, process-detail clipboard copy, current allowed
+  folder inspection and unsigned Markdown threat reports as the four available utilities. Missing identity facts remain null; arbitrary transport properties are
+  excluded. Clipboard, serialization and download failures return safe diagnostics.
+  Allowed-folder metadata is optional, bounded and supplied only by authenticated
+  native health; old daemons and Pages show unavailable rather than guessing a path.
+- Always renders About Guide in development, production and Pages. The former
+  guide visibility helper and public Pages guide marker are removed. Static
+  export still uses its existing telemetry marker to remain mock-only; guide
+  availability grants no native authority. Wider signature badges preserve full
+  text with word-boundary wrapping; the named horizontal table viewport supports
+  keyboard focus. Sortable headings align without duplicate button insets.
+
+- Provides semantic light/dark palettes with a Sun/Moon header switch, system
+  preference selection, optional browser persistence, stronger control borders,
+  visible keyboard focus and reduced-motion support. Text and status tokens are
+  contrast-tested; browser/screen-reader and Lighthouse audits remain manual QA.
+- Embeds the v1.0.3 peer-test walkthrough in Install & Setup. Method 1 uses a
+  bordered card with separate download/install sections, generous spacing and
+  copyable filename, optional workspace field and default-folder boxes. Plain
+  language preserves exact paths, Cmd + , and Cmd + Q. The walkthrough includes
+  copyable commands,
+  baseline and boundary prompts, symlink fixture prerequisites, receipt
+  expectations, and theme/keyboard checks. Clipboard failures retain selectable
+  text and announce a safe diagnostic. The release asset link does not establish
+  availability; private bundles require direct maintainer sharing.
+- Keeps Pages mock-only, standalone Application Support ledgers and source
+  dashboard evidence distinct. Viewing three native denial events requires
+  repeating those tests through the source-configured client.
+
 - **Status:** Implemented
 - Returns one typed native/mock telemetry envelope with source, daemon
   reachability, fallback reason, generation time, health, and cursor metadata.
@@ -254,10 +314,12 @@ in `ROADMAP.md`.
   rendering is removed.
 - Presents the same sorted, paginated alerts as a desktop table or mobile/tablet
   cards. Cards preserve process attribution and action permissions, wrap access
-  paths, and expand complete signatures on tap or keyboard activation. Header
-  controls wrap independently of the title; the wide Field Guide comparison
-  remains horizontally scrollable on smaller screens.
-- Requires compound process identity for Force Isolate actions.
+  paths, and expand complete signatures on tap or keyboard activation. The workspace
+  card contains guide/theme utilities; the runtime card contains audit/telemetry
+  controls that wrap when space is limited. The wide Field Guide comparison
+  also remains horizontally scrollable on smaller screens.
+- Native isolation control requests require compound process identity; the table
+  exposes diagnostic utilities only.
 - Preserves portable watcher rows with a null PID as observed, unattributed
   evidence; attributed native identities include `parentPid` (number or null).
 - Rejects mutation requests without JSON and matching loopback Host/Origin
@@ -331,7 +393,7 @@ in `ROADMAP.md`.
 The versioned plans in `ROADMAP.md` do not change this implemented-feature
 ledger. In particular:
 
-- No Tauri desktop application, installer, tray integration, paid tier, dynamic
+- No Tauri desktop application, installer, tray integration, dynamic
   threat feed, snapshot rollback, AI incident explainer, or fleet control plane
   is implemented today. The implemented headless macOS notification adapter is
   daemon infrastructure, not a Tauri application or tray integration.
@@ -345,9 +407,6 @@ ledger. In particular:
 - A planned Phase 3 Windows Tauri application initially provides only the desktop
   shell and explicitly simulated demonstration data. True Windows native
   containment requires the Phase 4 Named Pipe and Job Object runtime.
-- The target open-core matrix keeps individual local containment equally
-  available across Free, Pro, and Enterprise after each supported platform ships;
-  commercial entitlements must not weaken or remotely gate the local policy loop.
 
 ## How to verify
 

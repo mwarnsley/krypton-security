@@ -36,6 +36,9 @@ export interface NativeControlResponse {
   /** Whether the native command completed successfully. */
   readonly ok: boolean;
 
+  /** Bounded canonical workspace folder, supplied only by authenticated health responses. */
+  readonly protectedWorkspaceRoot?: string;
+
   /** Native-control protocol version echoed by the daemon. */
   readonly protocolVersion: number;
 

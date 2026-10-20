@@ -86,10 +86,10 @@ describe('DashboardPage', () => {
     expect(markup).toContain('Krypton Security Command');
   });
 
-  it('renders the About and Guide drawer trigger in the command header', () => {
+  it('renders the About Guide drawer trigger in the overview', () => {
     const markup = renderToStaticMarkup(<DashboardPage />);
 
-    expect(markup).toContain('About &amp; Guide');
+    expect(markup).toContain('>About Guide</button>');
   });
 
   it('renders the active workspace protection summary', () => {
@@ -544,4 +544,24 @@ describe('DashboardPage', () => {
 
     expect(markup).not.toContain('Newest enforcement events appear first');
   });
+});
+
+it('accepts bounded current folder metadata only for a connected native source', () => {
+  const payload = {
+    source: 'native',
+    nativeDaemonReachable: true,
+    protectedWorkspaceRoot: '/safe/workspace',
+    alerts: [],
+  };
+  expect(normalizeTelemetryPayload(payload).protectedWorkspaceRoot).toBe('/safe/workspace');
+  for (const changes of [
+    { source: 'mock' },
+    { nativeDaemonReachable: false },
+    { protectedWorkspaceRoot: '../relative' },
+    { protectedWorkspaceRoot: '/bad\npath' },
+  ]) {
+    expect(
+      normalizeTelemetryPayload({ ...payload, ...changes }).protectedWorkspaceRoot
+    ).toBeUndefined();
+  }
 });

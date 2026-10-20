@@ -104,6 +104,9 @@ pub struct NativeControlResponse {
     pub active_process_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<DaemonHealth>,
+    /// Read-only pinned folder metadata, present only on authenticated health.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protected_workspace_root: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -193,6 +196,7 @@ fn response(request_id: String, ok: bool, code: &str) -> NativeControlResponse {
         code: code.to_owned(),
         active_process_count: None,
         health: None,
+        protected_workspace_root: None,
     }
 }
 
@@ -299,6 +303,11 @@ where
                 ok: true,
                 code: if degraded { "degraded" } else { "ready" }.to_owned(),
                 active_process_count: count,
+                protected_workspace_root: state
+                    .mcp
+                    .as_ref()
+                    .and_then(McpBoundary::protected_workspace_root)
+                    .map(str::to_owned),
                 health: Some(DaemonHealth {
                     status: if degraded { "degraded" } else { "healthy" }.to_owned(),
                     watcher: if watcher_failed {
@@ -1206,6 +1215,50 @@ mod tests {
         );
         assert!(response.ok);
         assert!(response.health.is_some());
+    }
+
+    #[test]
+    fn health_exposes_only_authenticated_pinned_workspace_metadata() {
+        let mut state = state();
+        let root = std::env::temp_dir();
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(1);
+        state.mcp = Some(crate::mcp::McpBoundary::new(&root, sender).unwrap());
+        let expected = std::fs::canonicalize(root).unwrap();
+        let reply = handle_request(
+            request("secret", NativeControlCommand::Health),
+            "secret",
+            &state,
+        );
+        assert_eq!(
+            serde_json::to_value(reply).unwrap()["protectedWorkspaceRoot"],
+            expected.to_str().unwrap()
+        );
+        for (capability, command) in [
+            ("wrong", NativeControlCommand::Health),
+            (
+                "secret",
+                NativeControlCommand::SetAuditMode { enabled: true },
+            ),
+        ] {
+            let reply = handle_request(request(capability, command), "secret", &state);
+            assert!(serde_json::to_value(reply)
+                .unwrap()
+                .get("protectedWorkspaceRoot")
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn health_omits_workspace_metadata_when_boundary_is_unavailable() {
+        let reply = handle_request(
+            request("secret", NativeControlCommand::Health),
+            "secret",
+            &state(),
+        );
+        assert!(serde_json::to_value(reply)
+            .unwrap()
+            .get("protectedWorkspaceRoot")
+            .is_none());
     }
 
     #[test]

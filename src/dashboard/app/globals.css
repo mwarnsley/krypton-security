@@ -5,6 +5,66 @@
 @layer base {
   :root {
     color-scheme: dark;
+    --krypton-accent-blue: 96 165 250;
+    --krypton-accent-cyan: 34 211 238;
+    --krypton-accent-violet: 196 181 253;
+    --krypton-alert-rose: 251 113 133;
+    --krypton-bg-main: 2 6 23;
+    --krypton-bg-surface: 15 23 42;
+    --krypton-border-muted: 30 41 59;
+    --krypton-control-border: 148 163 184;
+    --krypton-control-active: 22 78 99;
+    --krypton-control-hover: 30 58 74;
+    --krypton-danger-foreground: 254 205 211;
+    --krypton-focus-ring: 103 232 249;
+    --krypton-fg-inverse: 2 6 23;
+    --krypton-fg-muted: 148 163 184;
+    --krypton-fg-primary: 241 245 249;
+    --krypton-fg-secondary: 203 213 225;
+    --krypton-fg-body: 203 213 225;
+    --krypton-spinner-foreground: 34 211 238;
+    --krypton-spinner-track: 51 65 85;
+    --krypton-success: 110 231 183;
+    --krypton-severity-medium: 253 224 71;
+    --krypton-severity-low: 125 211 252;
+    --krypton-table-header: 148 163 184;
+    --krypton-table-row-hover: 23 32 51;
+    --krypton-warning-foreground: 253 230 138;
+    --krypton-warning-amber: 251 191 36;
+    --krypton-muted-overlay: rgb(2 6 23 / 0.65);
+    --krypton-shadow: rgb(0 0 0 / 0.4);
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --krypton-accent-blue: 29 78 216;
+    --krypton-accent-cyan: 3 105 161;
+    --krypton-accent-violet: 109 40 217;
+    --krypton-alert-rose: 190 18 60;
+    --krypton-bg-main: 248 250 252;
+    --krypton-bg-surface: 255 255 255;
+    --krypton-border-muted: 226 232 240;
+    --krypton-control-border: 100 116 139;
+    --krypton-control-active: 224 242 254;
+    --krypton-control-hover: 224 242 254;
+    --krypton-danger-foreground: 159 18 57;
+    --krypton-focus-ring: 3 105 161;
+    --krypton-fg-inverse: 255 255 255;
+    --krypton-fg-muted: 71 85 105;
+    --krypton-fg-primary: 15 23 42;
+    --krypton-fg-secondary: 71 85 105;
+    --krypton-fg-body: 51 65 85;
+    --krypton-spinner-foreground: 3 105 161;
+    --krypton-spinner-track: 203 213 225;
+    --krypton-success: 6 95 70;
+    --krypton-severity-medium: 133 77 14;
+    --krypton-severity-low: 7 89 133;
+    --krypton-table-header: 71 85 105;
+    --krypton-table-row-hover: 224 242 254;
+    --krypton-warning-foreground: 120 53 15;
+    --krypton-warning-amber: 146 64 14;
+    --krypton-muted-overlay: rgb(2 6 23 / 0.65);
+    --krypton-shadow: rgb(0 0 0 / 0.12);
   }
 
   html {
@@ -15,8 +75,46 @@
     @apply min-h-screen bg-krypton-bg-main text-krypton-fg-primary antialiased;
   }
 
+  :where(a, button, input, select, summary, [tabindex]):focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-krypton-focus-ring;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   button,
-  [role="button"] {
+  [role='button'] {
     @apply touch-manipulation;
   }
+}
+
+/* Sonner notifications follow the selected palette, including rich status colors. */
+body [data-sonner-toaster][data-sonner-theme] {
+  --normal-bg: rgb(var(--krypton-bg-surface));
+  --normal-bg-hover: rgb(var(--krypton-control-hover));
+  --normal-text: rgb(var(--krypton-fg-primary));
+  --normal-border: rgb(var(--krypton-control-border));
+  --success-bg: rgb(var(--krypton-bg-surface));
+  --success-text: rgb(var(--krypton-success));
+  --success-border: rgb(var(--krypton-success));
+  --info-bg: rgb(var(--krypton-bg-surface));
+  --info-text: rgb(var(--krypton-accent-cyan));
+  --info-border: rgb(var(--krypton-accent-cyan));
+  --warning-bg: rgb(var(--krypton-bg-surface));
+  --warning-text: rgb(var(--krypton-warning-foreground));
+  --warning-border: rgb(var(--krypton-warning-amber));
+  --error-bg: rgb(var(--krypton-bg-surface));
+  --error-text: rgb(var(--krypton-danger-foreground));
+  --error-border: rgb(var(--krypton-alert-rose));
+}
+
+body [data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: rgb(var(--krypton-fg-secondary));
 }

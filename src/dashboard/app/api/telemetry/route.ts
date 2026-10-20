@@ -81,6 +81,9 @@ export async function GET(request: Request): Promise<Response> {
       hasMore: page.hasMore,
       nativeDaemonReachable: true,
       source: 'native',
+      ...(nativeHealth.protectedWorkspaceRoot === undefined
+        ? {}
+        : { protectedWorkspaceRoot: nativeHealth.protectedWorkspaceRoot }),
       ...(nativeHealth.health === undefined ? {} : { health: nativeHealth.health }),
       ...(page.nextAfter === undefined ? {} : { nextAfter: page.nextAfter }),
     };

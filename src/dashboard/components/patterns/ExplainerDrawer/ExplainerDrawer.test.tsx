@@ -8,9 +8,42 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it.each(['overview', 'features', 'setup', 'faq'] as const)(
+    'keeps commercial planning out of the %s tab',
+    (defaultTab) => {
+      render(<ExplainerDrawer defaultTab={defaultTab} />);
+      fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
+      expect(screen.getByRole('dialog').textContent).not.toMatch(
+        /force stop|\bpro\b|\benterprise\b|\bpricing\b|\btiers?\b|paid activation|licensing|signing keys|cryptographic report verification/i
+      );
+    }
+  );
+
+  it('expands the Full Access FAQ and explains the protected-tool and shell limits', () => {
+    render(<ExplainerDrawer defaultTab="faq" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
+    const question = screen.getByText(
+      "How does Krypton protect against autonomous AI actions if 'Full Access' is enabled in my client?"
+    );
+    const item = question.closest('details');
+    expect(item?.open).toBe(false);
+    fireEvent.click(question);
+    expect(item?.open).toBe(true);
+    expect(item?.textContent).toContain(
+      'only file operations routed through krypton_read_file and krypton_write_file'
+    );
+    expect(item?.textContent).toContain('native Rust boundary supervisor');
+    expect(item?.textContent).toContain('../');
+    expect(item?.textContent).toContain('~/.ssh');
+    expect(item?.textContent).toContain('sh/bash');
+    expect(item?.textContent).toContain('GitHub Pages shows mock data');
+    fireEvent.click(question);
+    expect(item?.open).toBe(false);
+  });
+
   it('compares alignment, approval settings and scoped native containment', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     const matrix = screen.getByRole('table', {
       name: 'The Security Model: Prompt Alignment vs. Kernel Containment',
     });
@@ -29,7 +62,7 @@ describe('ExplainerDrawer', () => {
 
   it('does not present the comparison as universal kernel isolation', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     expect(screen.getByText(/Krypton does not replace model alignment/).textContent).toContain(
       'through its protected MCP tools fails closed'
     );
@@ -43,7 +76,7 @@ describe('ExplainerDrawer', () => {
 
   it('shows double-click setup with accurate denial verification', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     expect(
       screen.getByRole('heading', {
         name: 'Method 1: Zero-terminal double-click (macOS recommended)',
@@ -58,9 +91,40 @@ describe('ExplainerDrawer', () => {
       screen.getByText(/A file denial does not trigger a desktop quarantine banner/)
     ).toBeTruthy();
   });
+  it('groups bundle download and installation in a card with exact copyable setup values', () => {
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
+    const heading = screen.getByRole('heading', {
+      name: 'Method 1: Zero-terminal double-click (macOS recommended)',
+    });
+    const card = heading.closest('article');
+    expect(card).not.toBeNull();
+    const download = within(card!).getByRole('region', { name: '1. Download the security bundle' });
+    const install = within(card!).getByRole('region', { name: '2. Install in Claude Desktop' });
+    expect(
+      within(download).getByRole('link', { name: 'Download v1.0.3 bundle' }).getAttribute('href')
+    ).toContain('/releases/download/v1.0.3/krypton-protected-fs.mcpb');
+    expect(within(download).getByText('krypton-protected-fs.mcpb').tagName).toBe('CODE');
+    expect(within(download).getByRole('button', { name: 'Copy Bundle filename' })).toBeTruthy();
+    expect(within(install).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(install).getByText('protected_workspace_root').tagName).toBe('CODE');
+    expect(
+      within(install).getByRole('button', { name: 'Copy Optional workspace root (leave blank)' })
+    ).toBeTruthy();
+    expect(
+      within(install).getByText('~/Library/Application Support/KryptonSecurity/sandbox_workspace')
+        .tagName
+    ).toBe('CODE');
+    expect(
+      within(install).getByRole('button', { name: 'Copy Default automatic workspace folder' })
+    ).toBeTruthy();
+    expect(install.textContent).toContain('Cmd + ,');
+    expect(install.textContent).toContain('Cmd + Q');
+  });
+
   it('offers three source setup steps and automatic daemon startup', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     expect(
       screen.getByRole('heading', { name: '3. Restart Claude Desktop and use the protected tools' })
     ).toBeTruthy();
@@ -72,7 +136,7 @@ describe('ExplainerDrawer', () => {
 
   it('documents bounded cold-start failure and missing-binary recovery', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByText('Native Daemon Connection Timeout'));
     const answer = screen.getByText(/A missing socket, disconnect/).textContent;
     expect(answer).toContain('within three seconds after host spawn');
@@ -84,7 +148,7 @@ describe('ExplainerDrawer', () => {
 
   it('separates readiness timing from preparation and protects private logs', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByText('Native Daemon Connection Timeout'));
     const answer = screen.getByText(/A missing socket, disconnect/).textContent;
     expect(answer).toContain(
@@ -96,7 +160,7 @@ describe('ExplainerDrawer', () => {
 
   it('keeps unsafe MCP operations denied in audit mode', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(
       screen.getByText('What is the difference between Audit-Only Mode and Enforcement Mode?')
     );
@@ -107,7 +171,7 @@ describe('ExplainerDrawer', () => {
 
   it('distinguishes the optional source viewer from standalone ledgers and Pages', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(
       screen.getByText('How do I view native telemetry, and is the dashboard required?')
     );
@@ -119,14 +183,14 @@ describe('ExplainerDrawer', () => {
 
   it('explains recovery when native setup is unavailable', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByText('Native Daemon Connection Timeout'));
     expect(screen.getByText(/Never delete a live socket/)).toBeTruthy();
     expect(screen.getByText(/The Pages dashboard cannot inspect local sockets/)).toBeTruthy();
   });
   it('separates checksum integrity from signing and owner-managed release gates', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByText('How do I verify a Krypton release?'));
     const answer = screen.getByText(/Tagged-release automation runs/);
     expect(answer.textContent).toContain('shasum -a 256 -c SHA256SUMS');
@@ -138,7 +202,7 @@ describe('ExplainerDrawer', () => {
   });
   it('explains standalone Claude Desktop installation and its containment boundary', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(
       screen.getByText('How do I connect Claude Desktop, Cursor, Claude Code or Cline?')
     );
@@ -159,7 +223,7 @@ describe('ExplainerDrawer', () => {
   });
   it('explains bounded IPC failure and uncertain write recovery', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(
       screen.getByText('What happens when a Krypton MCP file tool crosses the boundary?')
     );
@@ -170,7 +234,7 @@ describe('ExplainerDrawer', () => {
   });
   it('explains live mode and observational status boundaries', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
     expect(screen.getByText(/Unknown mode disables the toggle/)).toBeTruthy();
     expect(screen.getByText(/OBSERVED events are not confirmed isolation receipts/)).toBeTruthy();
@@ -184,23 +248,23 @@ describe('ExplainerDrawer', () => {
   it('opens the guide from its labeled trigger', () => {
     render(<ExplainerDrawer />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     expect(screen.getByRole('dialog', { name: 'About Krypton' })).toBeTruthy();
   });
 
   it('closes the open guide from its close control', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close About Guide' }));
 
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('switches from the overview to core features', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
@@ -210,7 +274,7 @@ describe('ExplainerDrawer', () => {
 
   it('shows the four release phases with current work identified', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
@@ -220,7 +284,7 @@ describe('ExplainerDrawer', () => {
 
   it('marks Phase 1 shipped while retaining implemented alerts', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
     const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 1' });
@@ -231,7 +295,7 @@ describe('ExplainerDrawer', () => {
 
   it('describes the authenticated OS-level quarantine alert boundary', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
     expect(screen.getByRole('heading', { name: 'OS-Level Quarantine Alerts' })).toBeTruthy();
@@ -240,7 +304,7 @@ describe('ExplainerDrawer', () => {
 
   it('distinguishes the Phase 3 Windows demo from Phase 4 native containment', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
     expect(screen.getByRole('listitem', { name: 'Krypton roadmap phase 3' }).textContent).toContain(
@@ -253,7 +317,7 @@ describe('ExplainerDrawer', () => {
 
   it('labels distribution, incident exports, and the playground as planned work', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Core Features' }));
 
     expect(screen.getByRole('listitem', { name: 'Krypton roadmap phase 2' }).textContent).toContain(
@@ -266,7 +330,7 @@ describe('ExplainerDrawer', () => {
 
   it('moves to the next tab with the right arrow key', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Overview' }), { key: 'ArrowRight' });
 
@@ -277,7 +341,7 @@ describe('ExplainerDrawer', () => {
 
   it('opens the FAQ tab and renders its guide heading', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
 
@@ -286,7 +350,7 @@ describe('ExplainerDrawer', () => {
 
   it('distinguishes the isolated native test from live dashboard and OS delivery', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
     fireEvent.click(screen.getByText('How do I run the project locally?'));
     expect(screen.getByText(/real authenticated IPC and SIGKILL/).textContent).toContain(
@@ -302,7 +366,7 @@ describe('ExplainerDrawer', () => {
 
   it('renders the onboarding, MCP boundary and existing FAQ questions in order', () => {
     const { container } = render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
 
     const questions = [...container.ownerDocument.querySelectorAll('details > summary')].map(
@@ -313,6 +377,7 @@ describe('ExplainerDrawer', () => {
       'How do I verify a Krypton release?',
       'How do I connect Claude Desktop, Cursor, Claude Code or Cline?',
       'What happens when a Krypton MCP file tool crosses the boundary?',
+      "How does Krypton protect against autonomous AI actions if 'Full Access' is enabled in my client?",
       'What is Krypton in simple terms?',
       'Is Krypton an antivirus program?',
       'Does Krypton slow down my computer or development workflow?',
@@ -338,7 +403,7 @@ describe('ExplainerDrawer', () => {
 
   it('explains the unexpanded Desktop workspace reference in the timeout FAQ', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
     fireEvent.click(
       screen.getByText('Claude Desktop reports Request timed out for the Krypton extension')
@@ -350,7 +415,7 @@ describe('ExplainerDrawer', () => {
 
   it('explains that concurrent Desktop launches attach without signaling the owner', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
     fireEvent.click(
       screen.getByText('Claude Desktop launches the Krypton extension several times at once')
@@ -360,7 +425,7 @@ describe('ExplainerDrawer', () => {
 
   it('explains the loopback HTTP boundary without claiming caller authentication', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
     fireEvent.click(screen.getByText('Can host malware disable or manipulate Krypton?'));
     expect(
@@ -370,7 +435,7 @@ describe('ExplainerDrawer', () => {
 
   it('opens the agent bypass FAQ with the current containment boundary', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
 
     const question = screen.getByText(
@@ -384,7 +449,7 @@ describe('ExplainerDrawer', () => {
 
   it('moves from setup to FAQ with the right arrow key', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Install & Setup' }), {
       key: 'ArrowRight',
@@ -393,9 +458,34 @@ describe('ExplainerDrawer', () => {
     expect(screen.getByRole('tab', { name: 'FAQ' }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it.each([
+    ['Overview', 'ArrowLeft', 'FAQ'],
+    ['FAQ', 'ArrowRight', 'Overview'],
+    ['FAQ', 'Home', 'Overview'],
+    ['Overview', 'End', 'FAQ'],
+  ])('moves focus from %s using %s to %s', (from, key, to) => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
+    const current = screen.getByRole('tab', { name: from });
+    fireEvent.click(current);
+    fireEvent.keyDown(current, { key });
+    const selected = screen.getByRole('tab', { name: to });
+    expect(selected.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(selected);
+    expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(selected.id);
+  });
+
+  it('leaves the selected tab unchanged for unrelated keys', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
+    const selected = screen.getByRole('tab', { name: 'Overview' });
+    expect(fireEvent.keyDown(selected, { key: 'a', cancelable: true })).toBe(true);
+    expect(selected.getAttribute('aria-selected')).toBe('true');
+  });
+
   it('renders the external repository link in the setup guide', () => {
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Install & Setup' }));
 
     const repositoryLink = screen.getByRole('link', { name: 'View Repository on GitHub' });
@@ -409,7 +499,7 @@ describe('ExplainerDrawer', () => {
 
   it('documents the validated native toolchains in setup', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     expect(screen.getByRole('tabpanel').textContent).toContain('Node.js v20.19.4');
     expect(screen.getByRole('tabpanel').textContent).toContain('npm 10.x');
@@ -418,7 +508,7 @@ describe('ExplainerDrawer', () => {
 
   it('documents optional dashboard port recovery without changing native IPC', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
 
     expect(screen.getByText('npm run dev:dashboard -- -p 3001')).toBeTruthy();
     expect(screen.getByText(/The override changes only the dashboard/).textContent).toContain(
@@ -428,7 +518,7 @@ describe('ExplainerDrawer', () => {
 
   it('keeps the local-run FAQ aligned with the port override', () => {
     render(<ExplainerDrawer defaultTab="faq" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByText('How do I run the project locally?'));
 
     expect(screen.getByText(/Use Node.js v20.19.4/).textContent).toContain(
@@ -438,7 +528,7 @@ describe('ExplainerDrawer', () => {
 
   it('documents executable symlink identity without weakening generation checks', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     expect(screen.getByText(/Executable symlinks used by version managers/).textContent).toContain(
       'PID, start time and parent remain strict'
     );
@@ -449,7 +539,7 @@ describe('ExplainerDrawer', () => {
 
   it('documents the supervisor and evidence limits in setup', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     expect(screen.getByText('krypton run -- <command> [args...]')).toBeTruthy();
     expect(screen.getByText('KRYPTON_PROJECT_ROOT')).toBeTruthy();
     expect(screen.getByText(/at most 1,024 receipts remain available/)).toBeTruthy();
@@ -457,7 +547,7 @@ describe('ExplainerDrawer', () => {
 
   it('keeps Phase 2 distribution planned while identifying the existing supervisor', () => {
     render(<ExplainerDrawer defaultTab="features" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     const phase = screen.getByRole('listitem', { name: 'Krypton roadmap phase 2' });
     expect(phase.textContent).toContain('Planned');
     expect(phase.textContent).toContain('initial-child supervisor');
@@ -466,7 +556,7 @@ describe('ExplainerDrawer', () => {
 
   it('separates benign local verification from direct-read containment limitations', () => {
     render(<ExplainerDrawer defaultTab="setup" />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     expect(screen.getByText("krypton run -- node -e 'console.log(process.cwd())'")).toBeTruthy();
     expect(screen.getByText(/is a limitation probe, not a containment test/)).toBeTruthy();
     expect(screen.getByText(/Successful native SIGKILL creates an/)).toBeTruthy();
@@ -478,14 +568,42 @@ describe('ExplainerDrawer', () => {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
     render(<ExplainerDrawer />);
-    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Install & Setup' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy native setup command' }));
 
-    expect(await screen.findByText('Setup command copied')).toBeTruthy();
+    expect(await screen.findByText('Copied')).toBeTruthy();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       'git clone https://github.com/mwarnsley/krypton-security.git && cd krypton-security && npm ci && cargo build --release --manifest-path src/core-native/Cargo.toml && npm run setup'
     );
+  });
+  it.each([
+    [
+      'baseline verification prompt',
+      'Use krypton_write_file to write "testing 1.0.3" to release_test.txt, then read it back using krypton_read_file.',
+    ],
+    [
+      'traversal test prompt',
+      'We are testing sandbox containment. Call krypton_read_file with path "../escaped_test.txt" to verify the boundary holds.',
+    ],
+    [
+      'outward symlink test prompt',
+      'Call krypton_read_file with path "symlink_out.txt" to verify symlink rejection.',
+    ],
+    [
+      'absolute host path test prompt',
+      'Call krypton_read_file with the absolute path "/etc/hostname" to test host isolation.',
+    ],
+  ])('copies the %s without modification', async (label, prompt) => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    render(<ExplainerDrawer defaultTab="setup" />);
+    fireEvent.click(screen.getByRole('button', { name: 'About Guide' }));
+    fireEvent.click(screen.getByRole('button', { name: `Copy ${label}` }));
+    expect(await screen.findByText('Copied')).toBeTruthy();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(prompt);
   });
 });

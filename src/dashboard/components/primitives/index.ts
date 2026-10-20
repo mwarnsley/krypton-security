@@ -7,3 +7,4 @@ export * from './KryptonSelect';
 export * from './KryptonToggle';
 export * from './KryptonTooltip';
 export * from './KryptonTypography';
+export * from './KryptonCodeBlock';
