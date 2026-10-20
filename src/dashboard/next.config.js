@@ -13,6 +13,7 @@ const nextConfig = {
         assetPrefix: '/krypton-security',
         basePath: '/krypton-security',
         output: 'export',
+        trailingSlash: true,
       }
     : {}),
 };

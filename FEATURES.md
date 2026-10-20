@@ -4,6 +4,11 @@ This ledger describes implemented behavior. Its capability groupings are not
 release phases; the versioned four-phase release plan and all planned work live
 in `ROADMAP.md`.
 
+The [documentation index](docs/index.md) and [end-user testing guide](docs/testing-guide.md)
+are also rendered in the Next.js public site under `/docs/`, linked from
+**About & Guide**. Static dashboard data remains demonstration-only; the guide
+explains how to distinguish native acceptance evidence.
+
 ## Capability 1: Local policy reference engine
 
 - **Status:** Implemented
