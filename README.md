@@ -1675,6 +1675,14 @@ published or included in this repository.
 
 ## Documentation
 
+- [Documentation index](docs/index.md) — [rendered public documentation](https://mwarnsley.github.io/krypton-security/docs/).
+- [End-user testing guide](docs/testing-guide.md) — benign Claude Desktop acceptance prompts and native receipt verification.
+- [v1.0.3 validation report](docs/RELEASE_v1.0.3_VALIDATION_REPORT.md) — supplied macOS acceptance evidence.
+
+The Next.js Pages export renders these guides from Markdown, with navigation
+from **About & Guide**. Locally, open `/docs/` after `npm run dev`. No Jekyll
+frontmatter is required. Public dashboard rows remain demonstration data.
+
 - [THREAT_MODEL.md](THREAT_MODEL.md) — trust boundaries and technical limitations.
 - [SECURITY.md](SECURITY.md) — private vulnerability reporting and release integrity.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contributor workflow and verification rules.

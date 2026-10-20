@@ -14,6 +14,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useState, type KeyboardEvent } from 'react';
 
 import { KryptonButton, KryptonCodeBlock, KryptonIconButton } from '../../primitives';
@@ -391,6 +392,14 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
               />
             </Dialog.Close>
           </header>
+
+          <nav
+            aria-label="Documentation"
+            className="flex gap-krypton-space-4 border-b border-krypton-border-muted px-krypton-space-5 py-krypton-space-3 text-sm text-krypton-accent-cyan"
+          >
+            <Link href="/docs/">Documentation index</Link>
+            <Link href="/docs/testing-guide/">End-user testing guide</Link>
+          </nav>
 
           <nav
             aria-label="About Krypton sections"
