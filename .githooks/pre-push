@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+checkout_root=$(git rev-parse --show-toplevel)
+cd "$checkout_root"
+checked_out_commit=$(git rev-parse --verify HEAD)
+worktree_state=$(git status --porcelain --untracked-files=normal)
+if [ -n "$worktree_state" ]; then
+  printf '%s\n' '[krypton pre-push] Commit or otherwise preserve uncommitted files before verifying a push.' >&2
+  exit 1
+fi
+
+# Verify the commit actually being pushed, including peeled annotated tags.
+while read -r local_ref local_oid remote_ref remote_oid; do
+  case "$local_oid" in *[!0]*) ;; *) continue ;; esac
+  pushed_commit=$(git rev-parse --verify --end-of-options "${local_oid}^{commit}")
+  if [ "$pushed_commit" != "$checked_out_commit" ]; then
+    printf '%s\n' '[krypton pre-push] Check out the commit being pushed before running its verification.' >&2
+    exit 1
+  fi
+done
+
+npm run test:actions
+npm run verify
+npm run format:check
+
+worktree_state=$(git status --porcelain --untracked-files=normal)
+if [ -n "$worktree_state" ] || [ "$(git rev-parse --verify HEAD)" != "$checked_out_commit" ]; then
+  printf '%s\n' '[krypton pre-push] The checkout changed during verification; verify and push again.' >&2
+  exit 1
+fi

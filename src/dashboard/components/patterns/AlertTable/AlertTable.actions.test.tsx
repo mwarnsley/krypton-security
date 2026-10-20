@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AlertTable, type SecurityAlert } from './AlertTable';
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  vi.unstubAllGlobals();
+  vi.unstubAllGlobals(); // Includes the navigator/clipboard stub owned by this suite.
   vi.restoreAllMocks();
   if (originalScrollIntoView)
     Object.defineProperty(Element.prototype, 'scrollIntoView', originalScrollIntoView);
@@ -95,18 +95,33 @@ it('shows actual current boundary metadata in the folder dialog', () => {
   expect(screen.getByRole('dialog').textContent).not.toContain('/outside/file');
 }, 30000);
 it('copies process facts and reports clipboard failure accessibly', async () => {
+  const writeText = vi.fn().mockRejectedValue(new Error('private-failure'));
   vi.stubGlobal('navigator', {
     userAgent: navigator.userAgent,
-    clipboard: { writeText: vi.fn().mockRejectedValue(new Error('private-failure')) },
+    clipboard: { writeText },
   });
   render(<AlertTable alerts={[alert]} />);
   openMenu();
-  await act(async () => {
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Process Details' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Process Details' }));
+  // Poll only the named clipboard error; never drain unrelated UI work with async act.
+  await waitFor(
+    () => {
+      const feedback = screen.queryByRole('alert', { name: 'Event action feedback' });
+      expect(feedback?.textContent).toContain('Copy unavailable');
+    },
+    {
+      timeout: 3000,
+      onTimeout: () => new Error('Clipboard feedback was not rendered within 3000 ms.'),
+    }
+  );
+  expect(writeText).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(writeText.mock.calls[0]![0])).toMatchObject({
+    pid: 4,
+    executablePath: '/bin/node',
+    parentPid: 2,
   });
-  expect(screen.getByRole('alert').textContent).toContain('Copy unavailable');
   expect(document.body.textContent).not.toContain('private-failure');
-}, 30000);
+}, 10000);
 
 it.each([false, true])(
   'reports report-download outcome accessibly (URL failure: %s)',

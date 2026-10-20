@@ -1198,6 +1198,8 @@ These counts record the clean-macOS QA baseline; new tests can increase them.
 The Vitest suite also covers TypeScript core policy and utilities.
 
 ```sh
+npm run hooks:install
+npm run test:actions
 npm run verify
 npm run test:coverage
 npm run security:audit
@@ -1216,6 +1218,14 @@ npm run rust:fmt
 npm run rust:clippy
 npm run rust:test
 ```
+
+For source contributions, `npm run hooks:install` enables this checkout's
+versioned pre-push hook. It requires a clean checkout of the commit being pushed
+and runs targeted action-menu tests, `npm run verify` and formatting, stopping
+on failure. Install it separately in each clone; hosted checks remain necessary.
+Run affected tests (`npx vitest run <path>`) and full verification before each
+authorized commit too. DOM/clipboard tests use explicit `waitFor` ceilings of
+3,000 ms or less and restore mocks in `afterEach`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 The benchmark reports serialization, cursor filtering, six polling cycles, a
 100-event burst merge, bounded table projection, retained counts, and heap

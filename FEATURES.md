@@ -356,6 +356,13 @@ Native denials queue local ledger evidence; Pages remains mock-only.
 - Pins Node and Rust versions, exposes one `verify` command, SHA-pins GitHub
   Actions, and adds CODEOWNERS, Dependabot, CodeQL, dependency license-policy
   checks, and SBOM workflows.
+- Provides an opt-in versioned local pre-push hook (`npm run hooks:install`).
+  It validates a clean checkout and the pushed commit, runs targeted action-menu
+  tests, full verification and formatting, and blocks failures or concurrent edits.
+  Clones install it independently; hosted checks remain separate requirements.
+- Pins the jsdom selector-engine re-entry fix and the patched Vite test-tool
+  override. Clipboard rejection tests observe the named error region with an
+  explicit 3-second wait and restore globals after each test.
 - Publishes the actual ISC software license separately from dependency-policy
   checks and future signed-release provenance.
 - Provides a clean-install lockfile verified with Node.js 20.19.4 and npm 10.8.2

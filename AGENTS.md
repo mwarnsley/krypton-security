@@ -317,6 +317,35 @@ the local aggregate does not replace hosted platform checks or branch protection
 Passing verification does not authorize an agent to commit or push: explicit
 human instructions and all existing review requirements still apply.
 
+### Pre-Commit & Pre-Push Quality Gate
+
+Before every authorized commit or push, run focused tests for each affected
+behavior (`npx vitest run <path>`) and the full `npm run verify` gate on the exact
+final tree, followed by `npm run format:check`. The AlertTable action-menu target
+is `npm run test:actions`. A targeted pass alone never authorizes a commit or
+push, and explicit human authorization remains required.
+
+Install the versioned local hook once per checkout with `npm run hooks:install`.
+This sets this repository's `core.hooksPath` to `.githooks`; it does not configure
+other clones or hosted GitHub protections. The pre-push hook rejects dirty trees
+and ref updates that do not resolve to the checked-out commit, then runs targeted
+action tests, full verification and formatting. Any failure blocks the push.
+Changes during verification also block it. Do not bypass the hook with
+`--no-verify`, change hooksPath to avoid checks, or add a skip environment flag.
+
+Asynchronous DOM and clipboard tests MUST wait for a specific accessible outcome
+using `waitFor(..., { timeout: N })` with an explicit ceiling of **3,000 ms or
+less**. Do not use an unbounded async `act` scope as a substitute for observing an
+outcome. Keep test callbacks narrow; a JavaScript timeout cannot preempt a
+synchronous DOM operation. These assertion ceilings do not shorten native IPC
+contracts or the larger integration/subprocess budgets below.
+
+Every suite that changes mocks, globals, fake timers, clipboard APIs, object URLs
+or DOM prototypes MUST restore its owned state in `afterEach`: clean rendered
+components, restore real timers and spies, unstub globals, and restore owned
+property descriptors. Tests must cover accessible failure feedback and ensure
+rejections settle without leaking private exception text or unhandled promises.
+
 ### CI Environment Invariants
 
 Packaging, bundle-building, and native process-spawning tests must tolerate
