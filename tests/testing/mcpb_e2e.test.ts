@@ -9,7 +9,12 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createZip } from '../../src/packaging/zip.cjs';
 import { createManifest } from '../../src/packaging/build_mcpb.cjs';
-import { CLEANUP_BUDGET_MS, runPackagedMcpbE2E } from '../../src/testing/mcpb_e2e.cjs';
+import {
+  CLEANUP_BUDGET_MS,
+  INPUT_SETTLE_BUDGET_MS,
+  INPUT_SETTLE_QUIET_MS,
+  runPackagedMcpbE2E,
+} from '../../src/testing/mcpb_e2e.cjs';
 import type { PackagedE2EDependencies } from '../../src/testing/mcpb_e2e.cjs';
 import type { Socket } from 'node:net';
 
@@ -86,6 +91,8 @@ function dependencies(): PackagedE2EDependencies {
     arch: 'arm64',
     temporaryDirectory: root,
     report,
+    // Fixtures are written just before each run; age them past the settle window.
+    wallClock: () => Date.now() + INPUT_SETTLE_QUIET_MS,
     fs: {
       ...fs,
       rm: async (target, options) => {
@@ -300,12 +307,109 @@ beforeEach(async () => {
   ];
   await fs.writeFile(archive, createZip(entries));
 });
+/** Counts archive lstats before its pinned open and runs `onLstat` before each one. */
+function observeArchive(
+  deps: PackagedE2EDependencies,
+  onLstat?: (calls: number) => Promise<void> | void,
+  onOpen?: () => Promise<void>
+) {
+  const seen = { lstats: 0, opened: false, ctimes: new Set<bigint>() };
+  deps.fs = {
+    ...deps.fs,
+    lstat: (async (target: string, options?: { bigint?: boolean }) => {
+      const tracked = String(target) === archive && !seen.opened;
+      if (tracked) {
+        seen.lstats++;
+        await onLstat?.(seen.lstats);
+      }
+      const stat = await fs.lstat(target, { bigint: true });
+      if (tracked) seen.ctimes.add(stat.ctimeNs);
+      return options?.bigint ? stat : fs.lstat(target);
+    }) as typeof fs.lstat,
+    open: (async (target: string, flags?: number) => {
+      if (String(target) === archive && !seen.opened) {
+        seen.opened = true;
+        await onOpen?.();
+      }
+      return fs.open(target, flags);
+    }) as typeof fs.open,
+  };
+  return seen;
+}
+/** Moves only ctime, as a late macOS metadata write does; mode and mtime stay identical. */
+async function touchMetadata() {
+  const stat = await fs.lstat(archive);
+  await fs.chmod(archive, stat.mode & 0o777);
+}
+
 afterEach(async () => {
   clearTimeout(timer);
   vi.restoreAllMocks();
   if (root) {
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+describe('packaged MCPB input settling', () => {
+  it.each([
+    ['one millisecond inside the quiet window', INPUT_SETTLE_QUIET_MS - 1, 3],
+    ['exactly at the quiet window', INPUT_SETTLE_QUIET_MS, 2],
+    ['one millisecond past the quiet window', INPUT_SETTLE_QUIET_MS + 1, 2],
+    ['dated in the future', -60_000, 3],
+  ])(
+    'pins an input whose ctime is %s',
+    async (_label, age, lstats) => {
+      const ctimeMs = Number((await fs.lstat(archive, { bigint: true })).ctimeNs / 1000000n);
+      const deps = dependencies();
+      deps.wallClock = () => ctimeMs + age;
+      const seen = observeArchive(deps);
+      // A young ctime falls back to the monotonic window; jump it after the second lstat.
+      deps.now = () => performance.now() + (seen.lstats >= 2 ? INPUT_SETTLE_QUIET_MS : 0);
+      await runPackagedMcpbE2E(archive, deps);
+      expect(seen.lstats).toBe(lstats);
+    },
+    30_000
+  );
+  it('waits out a ctime-only metadata write before pinning and then passes', async () => {
+    const deps = dependencies();
+    let drifted = false;
+    deps.wallClock = () => Date.now() + (drifted ? INPUT_SETTLE_QUIET_MS : 0);
+    const seen = observeArchive(deps, async (calls) => {
+      if (calls !== 2) return;
+      await touchMetadata();
+      drifted = true;
+    });
+    await runPackagedMcpbE2E(archive, deps);
+    expect(seen.ctimes.size).toBe(2);
+    expect(launchCount).toBe(2);
+  }, 30_000);
+  it('still rejects the same ctime-only write once the input is pinned', async () => {
+    const deps = dependencies();
+    observeArchive(deps, undefined, touchMetadata);
+    await expect(runPackagedMcpbE2E(archive, deps)).rejects.toHaveProperty('code', 'unsafe_input');
+    expect(launchCount).toBe(0);
+  }, 30_000);
+  it('fails closed with input_unsettled when metadata keeps changing for the whole budget', async () => {
+    const deps = dependencies();
+    let expire: (() => void) | undefined;
+    deps.wallClock = () => 0;
+    deps.setTimer = (callback, milliseconds) => {
+      if (milliseconds === INPUT_SETTLE_BUDGET_MS) expire = callback;
+      return setTimeout(callback, milliseconds);
+    };
+    observeArchive(deps, async (calls) => {
+      await touchMetadata();
+      if (calls === 4) expire?.();
+    });
+    await expect(runPackagedMcpbE2E(archive, deps)).rejects.toHaveProperty(
+      'code',
+      'input_unsettled'
+    );
+    expect({ launches: launchCount, reports: report.mock.calls.length }).toEqual({
+      launches: 0,
+      reports: 0,
+    });
+  }, 30_000);
 });
 
 describe('packaged MCPB harness', () => {

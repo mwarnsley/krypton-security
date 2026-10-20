@@ -19,6 +19,10 @@ const STARTUP_ATTEMPTS = 20;
 const RETRY_MS = 100;
 const CLEANUP_MS = 2000;
 const SERVICE_SETTLEMENT_MS = 1500;
+// Attached sessions probe the shared daemon once per interval, one request in flight.
+const MONITOR_MS = 1000;
+// Owner-loss recovery attempts per loss event before the attached session fails closed.
+const TAKEOVER_ROUNDS = 2;
 const children = new WeakMap();
 
 /** Errors contain stable categories only: no paths, native output, or arbitrary causes. */
@@ -197,6 +201,167 @@ async function nativeReady(runtimeHome, child, dependencies, signal) {
   }
 }
 
+/** Healthy authenticated readiness, the only state an owner or attached session may serve. */
+function healthyResponse(response) {
+  return (
+    response?.ok === true && response.code === 'ready' && response.health?.status === 'healthy'
+  );
+}
+
+/**
+ * Requires a healthy daemon owned by another launch of this same private runtime home, under
+ * one five-second absolute deadline. Authentication uses only the private discovery record and
+ * capability; the discovered PID is compared before and after health and is never signaled.
+ * Retries absent/refused/disconnected transport and an owner whose watcher is still starting.
+ * One `unauthorized` reply is tolerated only if discovery is then republished with another PID
+ * (an owner replacing its capability); stable discovery that rejects the capability fails closed.
+ * @param {string} runtimeHome Explicit directory containing private discovery state.
+ * @param {import('./launch_mcpb.cjs').ReadinessDependencies} dependencies Test boundaries.
+ * @returns {Promise<void>} Rejects native_unreachable when no daemon answered before the deadline.
+ * @complexity O(A·L) for at most twenty attempts A over bounded discovery/response length L.
+ * @example await waitForNativeAttach('/private/runtime-home'); // healthy shared daemon
+ */
+async function waitForNativeAttach(runtimeHome, dependencies = {}) {
+  return nativeAttach(runtimeHome, dependencies);
+}
+
+/** Internal attach readiness; cancellation ends probes when the owning session begins cleanup. */
+async function nativeAttach(runtimeHome, dependencies, signal) {
+  const now = dependencies.now ?? (() => performance.now());
+  const dispatch = dependencies.dispatch ?? dispatchNativeControl;
+  const discover = dependencies.discover ?? discoverNativeEndpoint;
+  const pause = dependencies.delay ?? delay;
+  const deadlineAt = now() + STARTUP_MS;
+  const controller = new AbortController();
+  let reached = false;
+  let unauthorizedPid;
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new LauncherError('readiness_timeout')), STARTUP_MS);
+  });
+  let cancel;
+  const cancelled = new Promise((_, reject) => {
+    cancel = () => reject(new LauncherError('readiness_cancelled'));
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+  });
+  void cancelled.catch(() => undefined);
+  const discoveredPid = async () => {
+    const endpoint = await Promise.race([discover(runtimeHome), cancelled, deadline]);
+    if (now() >= deadlineAt) throw new LauncherError('readiness_timeout');
+    if (!Number.isSafeInteger(endpoint?.pid) || endpoint.pid <= 0)
+      throw new LauncherError('readiness_failed');
+    return endpoint.pid;
+  };
+  try {
+    for (let attempt = 0; attempt < STARTUP_ATTEMPTS; attempt += 1) {
+      if (now() >= deadlineAt) throw new LauncherError('readiness_timeout');
+      try {
+        const before = await discoveredPid();
+        if (before === unauthorizedPid) throw new LauncherError('native_unauthorized');
+        const response = await Promise.race([
+          dispatch({ type: 'health' }, runtimeHome),
+          cancelled,
+          deadline,
+        ]);
+        if (now() >= deadlineAt) throw new LauncherError('readiness_timeout');
+        reached = true;
+        // A changed record means the probe raced a republication: retry against the new owner.
+        if ((await discoveredPid()) === before) {
+          if (healthyResponse(response)) return;
+          if (response?.ok === false && response.code === 'unauthorized') {
+            if (unauthorizedPid !== undefined) throw new LauncherError('native_unauthorized');
+            unauthorizedPid = before;
+          } else if (
+            response?.ok !== true ||
+            response.code !== 'degraded' ||
+            response.health?.watcher !== 'starting'
+          )
+            throw new LauncherError('native_unhealthy');
+        }
+      } catch (error) {
+        if (error instanceof LauncherError) throw error;
+        if (
+          !(error instanceof NativeControlError) ||
+          !['unavailable', 'disconnected'].includes(error.code)
+        )
+          throw new LauncherError('readiness_failed');
+      }
+      if (attempt + 1 < STARTUP_ATTEMPTS) {
+        const remaining = deadlineAt - now();
+        if (remaining <= 0) throw new LauncherError('readiness_timeout');
+        await Promise.race([
+          pause(Math.min(RETRY_MS, remaining), controller.signal),
+          cancelled,
+          deadline,
+        ]);
+      }
+    }
+    throw new LauncherError(
+      unauthorizedPid === undefined ? 'readiness_timeout' : 'native_unauthorized'
+    );
+  } catch (error) {
+    const failure = error instanceof LauncherError ? error : new LauncherError('readiness_failed');
+    // Nothing answered: the owner is absent, which an owner-loss takeover may retry.
+    throw failure.code === 'readiness_timeout' && !reached
+      ? new LauncherError('native_unreachable')
+      : failure;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
+    controller.abort();
+  }
+}
+
+/**
+ * Long-lived attached-session supervision with one authenticated health probe in flight per
+ * second. Resolves `lost` when the shared daemon is unreachable or rejects the current private
+ * capability (its owner exited or republished), and `cancelled` when the session aborts the
+ * signal. A probe timeout keeps serving because every tool call already fails closed on its own
+ * 1500 ms deadline; degraded health keeps serving with the same per-call receipts as an owner.
+ * Any other transport or response failure rejects native_unhealthy. Never inspects or signals
+ * the owner process; a probe socket cancelled at shutdown still closes within its own deadline.
+ * @param {string} runtimeHome Explicit directory containing private discovery state.
+ * @param {AbortSignal} signal Session shutdown signal.
+ * @param {import('./launch_mcpb.cjs').ReadinessDependencies} dependencies Test boundaries.
+ * @returns {Promise<'lost'|'cancelled'>} Loss or shutdown; rejects with a redacted category.
+ * @complexity O(L) per probe for bounded response length L; O(1) retained state.
+ * @example await watchAttachedDaemon('/private/runtime-home', controller.signal); // 'lost'
+ */
+async function watchAttachedDaemon(runtimeHome, signal, dependencies = {}) {
+  const dispatch = dependencies.dispatch ?? dispatchNativeControl;
+  const pause = dependencies.delay ?? delay;
+  const stopped = Symbol('stopped');
+  let cancel;
+  const cancelled = new Promise((resolve) => {
+    cancel = () => resolve(stopped);
+    signal.addEventListener('abort', cancel, { once: true });
+    if (signal.aborted) cancel();
+  });
+  try {
+    while (!signal.aborted) {
+      await Promise.race([pause(MONITOR_MS, signal), cancelled]);
+      if (signal.aborted) break;
+      let response;
+      try {
+        response = await Promise.race([dispatch({ type: 'health' }, runtimeHome), cancelled]);
+      } catch (error) {
+        if (error instanceof NativeControlError) {
+          if (['unavailable', 'disconnected'].includes(error.code)) return 'lost';
+          if (error.code === 'timeout') continue;
+        }
+        throw new LauncherError('native_unhealthy');
+      }
+      if (response === stopped) break;
+      if (response?.ok === false && response.code === 'unauthorized') return 'lost';
+      if (response?.ok !== true) throw new LauncherError('native_unhealthy');
+    }
+    return 'cancelled';
+  } finally {
+    signal.removeEventListener('abort', cancel);
+  }
+}
+
 /** Waits for an exit event while cancelling the losing bounded delay. */
 async function waitForExit(state, pause) {
   if (state.exited) return;
@@ -245,6 +410,57 @@ function terminateOwnedDaemon(child, dependencies = {}) {
   return state.cleanup;
 }
 
+/**
+ * Synchronous last resort for a host that calls process.exit before async cleanup settles
+ * (Claude Desktop's built-in Node exits on SIGTERM ahead of the launcher's own handler).
+ * Signals only the exact still-live owned ChildProcess; discovered PIDs are never authority.
+ * @param {import('node:child_process').ChildProcess} child Exact owned daemon.
+ * @returns {void} Sets a failing exit status when the final signal cannot be delivered.
+ */
+function killOwnedOnExit(child) {
+  if (observe(child).exited || child.exitCode !== null || child.signalCode !== null) return;
+  if (!Number.isSafeInteger(child.pid) || child.pid <= 0) return;
+  try {
+    if (!child.kill('SIGKILL')) process.exitCode = 1;
+  } catch (error) {
+    // Exit listeners cannot await or safely log; record the failure in the final status only.
+    void error;
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * Elects this launch as the native owner, or attaches without ownership when another launch of
+ * the same workspace already holds the native instance and startup locks. The spawned child is
+ * the only signaling authority: a losing child is reaped before attaching, and the shared daemon
+ * is never signaled. A child that fails to spawn is not an election loss and stays fatal.
+ * @param {import('./mcpb_runtime.cjs').StandaloneRuntimePaths} prepared Validated private paths.
+ * @param {import('./launch_mcpb.cjs').LauncherDependencies} dependencies Injectable OS boundaries.
+ * @param {(child: import('node:child_process').ChildProcess | undefined) => void} adopt Records the
+ * exact current owned child; receives undefined only after the losing child was reaped.
+ * @param {AbortSignal} signal Session shutdown signal.
+ * @returns {Promise<void>} Resolves owning or attached; rejects with a redacted category.
+ */
+async function acquireNative(prepared, dependencies, adopt, signal) {
+  const child = (dependencies.spawn ?? spawn)(
+    prepared.daemonPath,
+    ['--standalone-config', prepared.configPath],
+    { shell: false, stdio: ['ignore', 'ignore', 'ignore'] }
+  );
+  adopt(child);
+  try {
+    await nativeReady(prepared.runtimeHome, child, dependencies, signal);
+    return;
+  } catch (error) {
+    if (!(error instanceof LauncherError) || !['native_exited', 'native_busy'].includes(error.code))
+      throw error;
+  }
+  // Lost the election: release this exact child first; a cleanup failure stays owned by caller.
+  await terminateOwnedDaemon(child, dependencies);
+  adopt(undefined);
+  await nativeAttach(prepared.runtimeHome, dependencies, signal);
+}
+
 /** Owns a cancelled service's settlement; cancellation rejection is expected, a stall is not. */
 async function settleCancelledService(service) {
   const controller = new AbortController();
@@ -274,6 +490,8 @@ async function runOwned(options, dependencies, owned) {
   let inputClosedObserved = false;
   let inputEnded = false;
   let outputClosedObserved = false;
+  let exitFallback;
+  let halted = false;
   let stop;
   const input = options.input ?? process.stdin;
   const output = options.output ?? process.stdout;
@@ -281,7 +499,10 @@ async function runOwned(options, dependencies, owned) {
   const adaptedInput = new PassThrough({ highWaterMark: 16384 });
   const startup = new AbortController();
   const interrupted = new Promise((resolve) => {
-    stop = resolve;
+    stop = (result) => {
+      halted = true;
+      resolve(result);
+    };
   });
   const signal = () => {
     signaled = true;
@@ -356,28 +577,43 @@ async function runOwned(options, dependencies, owned) {
     if (!signaled) {
       if (failure || (input.destroyed && !inputEnded) || output.destroyed)
         throw new LauncherError('server_failed');
-      child = (dependencies.spawn ?? spawn)(
-        prepared.daemonPath,
-        ['--standalone-config', prepared.configPath],
-        { shell: false, stdio: ['ignore', 'ignore', 'ignore'] }
-      );
-      owned(child);
-      const state = observe(child);
-      const readinessPromise = nativeReady(
-        prepared.runtimeHome,
-        child,
-        dependencies,
-        startup.signal
-      );
-      void readinessPromise.catch(() => undefined);
-      const readiness = await Promise.race([
-        readinessPromise.then(() => true),
+      // `child` is the exact current owned daemon, or undefined while attached to a sibling's.
+      const adopt = (spawned) => {
+        child = spawned;
+        owned(spawned);
+      };
+      exitFallback = () => {
+        if (child) killOwnedOnExit(child);
+      };
+      process.once('exit', exitFallback);
+      const halt = () =>
         interrupted.then((result) => {
           code = result;
           return false;
-        }),
-      ]);
-      if (readiness && !signaled) {
+        });
+      // Resolves false when a signal or stream failure interrupts election and readiness.
+      const acquire = async () => {
+        // Never spawn once cleanup has begun: finally has already captured the owned child.
+        if (startup.signal.aborted) return false;
+        if (halted) return halt();
+        const acquiring = acquireNative(prepared, dependencies, adopt, startup.signal);
+        void acquiring.catch(() => undefined);
+        return Promise.race([acquiring.then(() => true), halt()]);
+      };
+      // Owner loss: elect a new owner or re-attach. Only an absent daemon retries, bounded.
+      const takeOver = async () => {
+        for (let round = 1; ; round += 1) {
+          try {
+            return await acquire();
+          } catch (error) {
+            if (!(error instanceof LauncherError) || error.code !== 'native_unreachable')
+              throw error;
+            if (round >= TAKEOVER_ROUNDS) throw new LauncherError('native_owner_lost');
+          }
+          await (dependencies.delay ?? delay)(RETRY_MS, startup.signal);
+        }
+      };
+      if ((await acquire()) && !signaled) {
         service = Promise.resolve()
           .then(() =>
             (dependencies.serve ?? require('../core/mcp/server.cjs').serve)(adaptedInput, output, {
@@ -394,7 +630,31 @@ async function runOwned(options, dependencies, owned) {
               throw launcherFailure(error, 'server_failed');
             }
           );
-        code = await Promise.race([service, state.stopped.then(() => 1), interrupted]);
+        const finished = service.then(() => 'finished');
+        for (;;) {
+          // An owner's daemon exit fails closed as before; attached sessions watch for owner loss.
+          const lost = child
+            ? observe(child).stopped.then(() => 'exited')
+            : watchAttachedDaemon(prepared.runtimeHome, startup.signal, dependencies);
+          void lost.catch(() => undefined);
+          const outcome = await Promise.race([
+            finished,
+            lost,
+            interrupted.then((result) => {
+              code = result;
+              return 'interrupted';
+            }),
+          ]);
+          if (outcome === 'finished') code = 0;
+          else if (outcome === 'exited') code = 1;
+          if (outcome !== 'lost') break;
+          // Tool calls during recovery fail closed individually; nothing is retried for them.
+          const recovering = takeOver();
+          void recovering.catch(() => undefined);
+          const recovered = await Promise.race([recovering, finished]);
+          if (recovered === 'finished') code = 0;
+          if (recovered !== true || signaled) break;
+        }
       }
     }
   } catch (error) {
@@ -427,6 +687,8 @@ async function runOwned(options, dependencies, owned) {
         })
       : Promise.resolve();
     await Promise.all([serviceCleanup, daemonCleanup]);
+    // Bounded cleanup has settled; an abrupt exit can no longer orphan this child.
+    if (exitFallback) process.off('exit', exitFallback);
     process.off('SIGINT', signal);
     process.off('SIGTERM', signal);
     input.off('close', inputClosed);
@@ -445,7 +707,9 @@ async function runOwned(options, dependencies, owned) {
 }
 
 /**
- * Runs installed MCP in-process and owns only its directly spawned native daemon.
+ * Runs installed MCP in-process and owns only its directly spawned native daemon. Concurrent
+ * launches of one workspace share a single daemon: the native lock winner owns it, and the others
+ * attach through private discovery and capability and take over, bounded, if that owner exits.
  * @param {import('./launch_mcpb.cjs').LauncherOptions} options Installed paths and host streams.
  * @param {import('./launch_mcpb.cjs').LauncherDependencies} dependencies Injectable OS boundaries.
  * @returns {Promise<number>} 0 for EOF, clean completion or signal; 1 for operational failure.
@@ -511,11 +775,38 @@ function isEntryPoint() {
   }
 }
 
+/**
+ * Ends a host-loaded process once the launcher settles. Host runners such as Claude Desktop's
+ * built-in Node keep their message ports open, so a settled launcher would otherwise idle
+ * silently and the host would report a request timeout instead of the failure.
+ * @param {Promise<void>} launched Launcher settlement; runCli has assigned process.exitCode.
+ * @param {boolean} hostLoaded True only when a host imported this entry instead of running it.
+ * @param {(code: number) => void} exit Process exit boundary, injectable for tests.
+ * @returns {Promise<void>} Never rejects; a rejected launch exits with status 1.
+ */
+function settleHostEntry(launched, hostLoaded, exit = (code) => process.exit(code)) {
+  const finish = () => {
+    if (!hostLoaded) return;
+    const status = process.exitCode;
+    exit(status === undefined ? 0 : Number.isInteger(status) ? Number(status) : 1);
+  };
+  return Promise.resolve(launched).then(finish, (error) => {
+    // runCli never rejects; an unexpected rejection still fails closed without logging again.
+    void error;
+    process.exitCode = 1;
+    finish();
+  });
+}
+
 module.exports = {
   LauncherError,
   runStandaloneMcpb,
   waitForNativeReady,
+  waitForNativeAttach,
+  watchAttachedDaemon,
   terminateOwnedDaemon,
   launchStandaloneMcpb,
+  settleHostEntry,
 };
-if (isEntryPoint()) void launchStandaloneMcpb({}, process.argv.slice(2));
+if (isEntryPoint())
+  void settleHostEntry(launchStandaloneMcpb({}, process.argv.slice(2)), require.main !== module);

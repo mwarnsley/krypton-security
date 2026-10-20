@@ -9,12 +9,19 @@ const MAX_BINARY_BYTES = 128 * 1024 * 1024;
 const MAX_METADATA_BYTES = 16384;
 const MAX_CONFIG_BYTES = 1024 * 1024;
 const MAX_VERSION = 128;
+// Sibling publication settles within microseconds; 20 x 25 ms bounds the wait at 500 ms.
+const PEER_ATTEMPTS = 20;
+const PEER_RETRY_MS = 25;
 const SEMVER =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const NATIVE = {
   arm64: { path: 'native/krypton-core-native-aarch64-apple-darwin', cpu: 0x0100000c },
   x64: { path: 'native/krypton-core-native-x86_64-apple-darwin', cpu: 0x01000007 },
 };
+// Claude Desktop substitutes only saved or defaulted user_config keys; a blank optional
+// workspace reaches the launcher as this exact unexpanded manifest reference.
+const UNSUBSTITUTED_WORKSPACE =
+  /^[\s\p{White_Space}]*\$\{user_config\.protected_workspace_root\}[\s\p{White_Space}]*$/u;
 
 /** Public failures deliberately retain no arbitrary exception text or filesystem paths. */
 class StandaloneRuntimeError extends Error {
@@ -110,7 +117,9 @@ async function privateRoot(value, uid, pins) {
 }
 
 /**
- * Resolves explicit directories without creating them; blank input alone selects the fallback.
+ * Resolves explicit directories without creating them. Blank input, or the exact unexpanded
+ * `${user_config.protected_workspace_root}` reference a host leaves for a blank optional field,
+ * selects the fallback; any other `${...}` template is rejected as invalid.
  * Parent aliases of an explicit workspace are canonicalized, but a final symlink is rejected.
  * @param {unknown} configuredValue Optional installer field.
  * @param {string} applicationSupportRoot Exact private KryptonSecurity directory.
@@ -125,7 +134,9 @@ async function resolveProtectedWorkspace(configuredValue, applicationSupportRoot
     throw new StandaloneRuntimeError('invalid_workspace');
   const fallback =
     configuredValue === undefined ||
-    (typeof configuredValue === 'string' && /^[\s\p{White_Space}]*$/u.test(configuredValue));
+    (typeof configuredValue === 'string' &&
+      (/^[\s\p{White_Space}]*$/u.test(configuredValue) ||
+        UNSUBSTITUTED_WORKSPACE.test(configuredValue)));
   try {
     let selected;
     if (fallback) {
@@ -307,17 +318,53 @@ async function sourceBinary(file, arch) {
 }
 
 /**
+ * Bounded wait for a sibling launch that is mid-publication: a no-replace link() briefly leaves
+ * nlink 2, and a just-created runtime home briefly lacks its marker. Retries only unsafe_state,
+ * at most PEER_ATTEMPTS times; the final failure is returned unchanged, so unsafe state still
+ * fails closed after about half a second.
+ * @param {() => Promise<T>} inspect Read-only leaf inspection.
+ * @returns {Promise<T>} The first inspection that did not report unsafe_state.
+ * @template T
+ */
+async function settledPeer(inspect) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await inspect();
+    } catch (error) {
+      if (
+        attempt >= PEER_ATTEMPTS ||
+        !(error instanceof StandaloneRuntimeError) ||
+        error.code !== 'unsafe_state'
+      )
+        throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, PEER_RETRY_MS));
+  }
+}
+
+/** Reads a settled private destination, or undefined when it is absent. */
+function installedLeaf(file, mode, uid, maximum) {
+  return settledPeer(async () => {
+    const leaf = await privateLeaf(file, uid, mode);
+    return leaf && { leaf, bytes: await readBounded(file, maximum, 'unsafe_state', mode, uid) };
+  });
+}
+
+/**
  * Atomically publishes a private file, preserving the previous bytes before rename.
+ * A new destination is published with no-replace link(), so concurrent launches cannot swap
+ * an inode under each other's verification; a sibling that wins is adopted only when its
+ * settled bytes equal ours exactly. Exclusive markers never replace differing bytes.
  * Reopens/verifies the destination and syncs its directory; any later failure is durability_unknown.
  * Checkpoints detect component replacement but Node path APIs cannot defeat a hostile same-UID actor
  * swapping ancestors between syscalls. Private ownership is the operating-system trust boundary.
  */
 async function publish(file, bytes, mode, uid, pins, maximum, exclusive = false) {
   await recheck(pins, uid);
-  const previous = await privateLeaf(file, uid, mode);
-  if (previous) {
-    const installed = await readBounded(file, maximum, 'unsafe_state', mode, uid);
-    if (installed.equals(bytes)) return;
+  const existing = await installedLeaf(file, mode, uid, maximum);
+  const previous = existing?.leaf;
+  if (existing) {
+    if (existing.bytes.equals(bytes)) return;
     if (exclusive) throw new StandaloneRuntimeError('unsafe_state');
   }
   const parent = path.dirname(file);
@@ -344,37 +391,47 @@ async function publish(file, bytes, mode, uid, pins, maximum, exclusive = false)
       await handle.close();
     }
     await recheck(pins, uid);
-    const destination = await privateLeaf(file, uid, mode);
-    if (
-      Boolean(previous) !== Boolean(destination) ||
-      (previous && !unchanged(previous, destination))
-    )
-      throw new StandaloneRuntimeError('unsafe_state');
     if (!unchanged(staged, await fs.lstat(temporary)))
       throw new StandaloneRuntimeError('unsafe_state');
-    if (exclusive) {
-      // link() cannot replace an existing marker, including a concurrently
-      // published colliding identity. Remove our staging link before verification.
-      await fs.link(temporary, file);
-      published = true;
-      await fs.unlink(temporary);
+    let adopted = false;
+    if (previous) {
+      const destination = await privateLeaf(file, uid, mode);
+      if (!destination) throw new StandaloneRuntimeError('unsafe_state');
+      if (unchanged(previous, destination)) {
+        await fs.rename(temporary, file);
+        published = true;
+      } else adopted = true;
     } else {
-      await fs.rename(temporary, file);
-      published = true;
+      // link() cannot replace a concurrently published destination, including a colliding
+      // marker identity. Remove our staging link before verification.
+      try {
+        await fs.link(temporary, file);
+        published = true;
+      } catch (error) {
+        if (!error || typeof error !== 'object' || error.code !== 'EEXIST') throw error;
+        adopted = true;
+      }
+      if (published) await fs.unlink(temporary);
     }
-    await recheck(pins, uid);
-    const verified = await readBounded(file, maximum, 'unsafe_state', mode, uid);
-    if (!verified.equals(bytes)) throw new StandaloneRuntimeError('unsafe_state');
-    const directoryHandle = await fs.open(
-      parent,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY
-    );
-    try {
-      if (!sameIdentity(pins.get(parent), await directoryHandle.stat()))
-        throw new StandaloneRuntimeError('unsafe_state');
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
+    if (adopted) {
+      // A sibling published first; our staging leaf is removed below and durability is theirs.
+      const peer = await installedLeaf(file, mode, uid, maximum);
+      if (!peer?.bytes.equals(bytes)) throw new StandaloneRuntimeError('unsafe_state');
+    } else {
+      await recheck(pins, uid);
+      const verified = await readBounded(file, maximum, 'unsafe_state', mode, uid);
+      if (!verified.equals(bytes)) throw new StandaloneRuntimeError('unsafe_state');
+      const directoryHandle = await fs.open(
+        parent,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY
+      );
+      try {
+        if (!sameIdentity(pins.get(parent), await directoryHandle.stat()))
+          throw new StandaloneRuntimeError('unsafe_state');
+        await directoryHandle.sync();
+      } finally {
+        await directoryHandle.close();
+      }
     }
   } catch (error) {
     failure = new StandaloneRuntimeError(
@@ -476,8 +533,13 @@ async function prepareStandaloneRuntime(options) {
     const createdRuntimeHome = await directory(runtimeHome, uid, pins);
     const marker = path.join(runtimeHome, 'workspace-id');
     const identityBytes = Buffer.from(workspaceId + '\n');
-    const markerExists = await privateLeaf(marker, uid, 0o600);
-    if (!createdRuntimeHome && !markerExists) throw new StandaloneRuntimeError('unsafe_state');
+    // An existing runtime home must carry its marker. A concurrent launch that created the
+    // directory may not have linked it yet; wait (bounded) for it rather than adopting the home.
+    if (!createdRuntimeHome)
+      await settledPeer(async () => {
+        if (!(await privateLeaf(marker, uid, 0o600)))
+          throw new StandaloneRuntimeError('unsafe_state');
+      });
     await publish(marker, identityBytes, 0o600, uid, pins, 65, true);
     for (const child of ['.krypton', '.krypton/runtime']) {
       await recheck(pins, uid);

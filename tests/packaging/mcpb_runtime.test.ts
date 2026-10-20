@@ -98,14 +98,31 @@ describe('workspace resolution', () => {
       expect((await fs.stat(resolved.path)).mode & 0o777).toBe(0o700);
     }
   );
-  it.each([null, 12, 'missing', '${user_config.protected_workspace_root}'])(
-    'rejects invalid nonblank input %j',
-    async (value) => {
-      await expect(
-        resolveProtectedWorkspace(value, options.applicationSupportRoot!)
-      ).rejects.toMatchObject({ code: 'invalid_workspace' });
-    }
-  );
+  it.each([
+    '${user_config.protected_workspace_root}',
+    ' \t${user_config.protected_workspace_root}\n',
+    ' ${user_config.protected_workspace_root} ',
+  ])('treats the unexpanded host reference %j as the private fallback', async (value) => {
+    const resolved = await resolveProtectedWorkspace(value, options.applicationSupportRoot!);
+    expect(resolved).toEqual({
+      path: path.join(root, 'private/sandbox_workspace'),
+      usedFallback: true,
+    });
+  });
+  it.each([
+    null,
+    12,
+    'missing',
+    '${user_config.other_root}',
+    '${user_config.protected_workspace_root',
+    '${user_config.protected_workspace_root}/nested',
+    '/tmp/${user_config.protected_workspace_root}',
+    '$' + '{user_config.protected_workspace_root}}',
+  ])('rejects invalid nonblank input %j', async (value) => {
+    await expect(
+      resolveProtectedWorkspace(value, options.applicationSupportRoot!)
+    ).rejects.toMatchObject({ code: 'invalid_workspace' });
+  });
   it('does not create a missing selected workspace', async () => {
     const missing = path.join(root, 'missing');
     await expect(
@@ -705,6 +722,73 @@ it('does not mistake an ancestor lost during leaf cleanup for an absent staging 
     return originalLstat(...args);
   });
   await expect(prepareStandaloneRuntime(options)).rejects.toMatchObject({ code: 'cleanup_failed' });
+});
+
+describe('concurrent cold-start preparation', () => {
+  const daemonPath = () =>
+    path.join(options.applicationSupportRoot!, 'bin/1.0.0/arm64/krypton-core-native');
+  // A sibling launch's atomic publication of the given bytes at a private leaf.
+  async function siblingPublishes(file: string, bytes: Buffer, mode: number) {
+    const staged = file + '.sibling';
+    await fs.writeFile(staged, bytes, { mode });
+    await fs.chmod(staged, mode);
+    await fs.rename(staged, file);
+  }
+  it('prepares identical private state for simultaneous cold launches', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => prepareStandaloneRuntime(options))
+    );
+    expect(new Set(results.map((result) => JSON.stringify(result))).size).toBe(1);
+    expect(await fs.readdir(path.dirname(results[0]!.daemonPath))).toEqual(['krypton-core-native']);
+  });
+  it('adopts identical bytes a sibling publishes before the no-replace link', async () => {
+    const link = fs.link.bind(fs);
+    vi.spyOn(fs, 'link').mockImplementation(async (source, destination) => {
+      if (destination === daemonPath())
+        await siblingPublishes(daemonPath(), binary(0x0100000c), 0o700);
+      return link(source, destination);
+    });
+    const result = await prepareStandaloneRuntime(options);
+    expect(await fs.readFile(result.daemonPath)).toEqual(binary(0x0100000c));
+    expect(await fs.readdir(path.dirname(result.daemonPath))).toEqual(['krypton-core-native']);
+  });
+  it('rejects differing bytes a sibling publishes before the no-replace link', async () => {
+    const link = fs.link.bind(fs);
+    vi.spyOn(fs, 'link').mockImplementation(async (source, destination) => {
+      if (destination === daemonPath())
+        await siblingPublishes(daemonPath(), binary(0x0100000c, 7), 0o700);
+      return link(source, destination);
+    });
+    await expect(prepareStandaloneRuntime(options)).rejects.toMatchObject({
+      code: 'unsafe_state',
+    });
+    expect(await fs.readFile(daemonPath())).toEqual(binary(0x0100000c, 7));
+    expect(await fs.readdir(path.dirname(daemonPath()))).toEqual(['krypton-core-native']);
+  });
+  it('waits for a sibling link to settle to one hard link', async () => {
+    const first = await prepareStandaloneRuntime(options);
+    const extra = path.join(path.dirname(first.daemonPath), '.krypton-stage-sibling');
+    await fs.link(first.daemonPath, extra);
+    setTimeout(() => void fs.unlink(extra), 100);
+    await expect(prepareStandaloneRuntime(options)).resolves.toEqual(first);
+  });
+  it('still rejects a destination that never settles to one hard link', async () => {
+    const first = await prepareStandaloneRuntime(options);
+    await fs.link(first.daemonPath, path.join(path.dirname(first.daemonPath), 'extra-link'));
+    await expect(prepareStandaloneRuntime(options)).rejects.toMatchObject({
+      code: 'unsafe_state',
+    });
+  });
+  it('waits for a sibling that created the runtime home to link its marker', async () => {
+    const first = await prepareStandaloneRuntime(options);
+    const marker = path.join(first.runtimeHome, 'workspace-id');
+    await fs.unlink(marker);
+    setTimeout(
+      () => void siblingPublishes(marker, Buffer.from(first.workspaceId + '\n'), 0o600),
+      100
+    );
+    await expect(prepareStandaloneRuntime(options)).resolves.toEqual(first);
+  });
 });
 
 describe('source CLI native binary', { timeout: 30000 }, () => {

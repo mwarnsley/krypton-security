@@ -165,6 +165,9 @@ unzip -t dist/krypton-protected-fs.mcpb
 npm run test:mcpb -- dist/krypton-protected-fs.mcpb
 ```
 
+Running the harness straight after the build adds a bounded metadata-settle wait
+of about 4 s (at most 10 s) before the archive is pinned.
+
 Byte-compare both archive entries with the staged inputs. The packaged E2E can
 execute only the binary matching the local host, so one local pass is partial
 release evidence until the hosted arm64 and x86_64 jobs pass.
