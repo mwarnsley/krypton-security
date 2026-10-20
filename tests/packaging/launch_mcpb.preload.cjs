@@ -25,7 +25,7 @@ const signals = requiredEnvironment('KRYPTON_TEST_SIGNALS_PATH');
 if (!path.isAbsolute(signals)) throw new Error('invalid launcher test environment');
 
 const serverMode = requiredEnvironment('KRYPTON_TEST_SERVER_MODE');
-if (!['throw', 'stdout', 'stderr', 'real', 'readiness-failure'].includes(serverMode))
+if (!['throw', 'stdout', 'stderr', 'real', 'readiness-failure', 'hang'].includes(serverMode))
   throw new Error('invalid launcher test environment');
 
 const runtime = parsedEnvironment('KRYPTON_TEST_RUNTIME');
@@ -59,6 +59,8 @@ processIsolation.dispatchNativeControl = async () => {
 processIsolation.discoverNativeEndpoint = async () => discovery;
 if (!['real', 'readiness-failure'].includes(serverMode))
   mcpServer.serve = async () => {
+    // A live session that never settles on its own, so only a host exit can end it.
+    if (serverMode === 'hang') return new Promise(() => undefined);
     if (serverMode === 'throw') throw new Error('private capability /private/workspace');
     if (serverMode === 'stdout') {
       process.stdout.emit('error', new Error('private capability'));

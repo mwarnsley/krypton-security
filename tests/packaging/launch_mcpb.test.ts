@@ -12,7 +12,10 @@ import type { LauncherDependencies, LauncherOptions } from '../../src/packaging/
 const {
   runStandaloneMcpb,
   waitForNativeReady: nativeReadiness,
+  waitForNativeAttach,
+  watchAttachedDaemon,
   terminateOwnedDaemon,
+  settleHostEntry,
 } = require('../../src/packaging/launch_mcpb.cjs') as typeof import('../../src/packaging/launch_mcpb.cjs');
 
 const launcherPath = path.resolve('src/packaging/launch_mcpb.cjs');
@@ -86,12 +89,18 @@ function realServiceFixture() {
 }
 
 // Static preload replaces only destructive boundaries in an owned disposable Node process.
+// A host prelude loads the entry the way Claude Desktop's built-in Node does: argv names the
+// launcher, require.main does not, and host code may hold the event loop open or exit first.
 function invokeEntry(
-  serverMode: 'throw' | 'stdout' | 'stderr' | 'real' | 'readiness-failure',
-  cli = false
+  serverMode: 'throw' | 'stdout' | 'stderr' | 'real' | 'readiness-failure' | 'hang',
+  cli = false,
+  hostPrelude?: string
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'krypton-launcher-test-'));
   const signals = path.join(root, 'signals');
+  const hostScript = `${hostPrelude ?? ''}
+process.argv = [process.execPath, ${JSON.stringify(launcherPath)}];
+require(${JSON.stringify(launcherPath)});`;
   try {
     const result = spawnSync(
       process.execPath,
@@ -99,7 +108,11 @@ function invokeEntry(
         '--unhandled-rejections=strict',
         '--require',
         launcherPreloadPath,
-        ...(cli ? [path.resolve('src/cli.cjs'), 'run'] : [launcherPath]),
+        ...(hostPrelude !== undefined
+          ? ['-e', hostScript]
+          : cli
+            ? [path.resolve('src/cli.cjs'), 'run']
+            : [launcherPath]),
       ],
       {
         encoding: 'utf8',
@@ -241,6 +254,136 @@ describe('host shim entry guard', () => {
     },
     30000
   );
+});
+
+// Host message ports keep the event loop alive; this interval stands in for one.
+const openHostHandle = 'setInterval(() => undefined, 1000);';
+
+describe('host-loaded process settlement', { timeout: 30000 }, () => {
+  it('exits with the redacted failure instead of idling behind an open host handle', () => {
+    const result = invokeEntry('throw', false, openHostHandle);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe('[KRYPTON] operation_failed; command failed closed.\n');
+    expect(result.signals).toBe('SIGTERM\n');
+  });
+  it('exits cleanly after serving through stdin EOF behind an open host handle', () => {
+    const result = invokeEntry('real', false, openHostHandle);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout.split('\n')[0] ?? '')).toMatchObject({
+      id: 1,
+      result: { protocolVersion: '2025-11-25' },
+    });
+    expect(result.signals).toBe('SIGTERM\n');
+  });
+  it('kills only the exact owned daemon when the host exits during service', () => {
+    // Registered before the launcher, like Claude Desktop's SIGTERM -> process.exit(0) handler.
+    const prelude = `${openHostHandle}
+process.on('SIGTERM', () => process.exit(0));
+setTimeout(() => process.emit('SIGTERM'), 500);`;
+    const result = invokeEntry('hang', false, prelude);
+    expect({ status: result.status, stdout: result.stdout, stderr: result.stderr }).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '',
+    });
+    expect(result.signals).toBe('SIGKILL\n');
+  });
+});
+
+describe('host entry settlement', () => {
+  const originalExitCode = process.exitCode;
+  afterEach(() => {
+    process.exitCode = originalExitCode;
+  });
+  it.each([
+    [undefined, 0],
+    [0, 0],
+    [1, 1],
+    [2, 2],
+    ['1', 1],
+  ] as const)('exits a host-loaded process whose status is %j with %i', async (status, code) => {
+    process.exitCode = status;
+    const exit = vi.fn();
+    await settleHostEntry(Promise.resolve(), true, exit);
+    expect(exit).toHaveBeenCalledExactlyOnceWith(code);
+  });
+  it('leaves a directly executed entry to exit naturally', async () => {
+    process.exitCode = 1;
+    const exit = vi.fn();
+    await settleHostEntry(Promise.resolve(), false, exit);
+    expect(exit).not.toHaveBeenCalled();
+  });
+  it('fails closed with status 1 when the launch unexpectedly rejects', async () => {
+    process.exitCode = undefined;
+    const exit = vi.fn();
+    await expect(
+      settleHostEntry(Promise.reject(new Error('private failure')), true, exit)
+    ).resolves.toBeUndefined();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+});
+
+describe('exit-time owned daemon fallback', () => {
+  const originalExitCode = process.exitCode;
+  afterEach(() => {
+    process.exitCode = originalExitCode;
+  });
+  // Starts a session whose service never settles and returns the listener it added to 'exit'.
+  async function startHungSession(f: ReturnType<typeof fixture>) {
+    const before = new Set(process.listeners('exit'));
+    f.dependencies.serve.mockImplementation(() => new Promise<undefined>(() => undefined));
+    const running = runStandaloneMcpb(f.options, f.dependencies);
+    await vi.waitFor(() => expect(f.dependencies.spawn).toHaveBeenCalledOnce());
+    const added = process.listeners('exit').filter((listener) => !before.has(listener));
+    return { running, added };
+  }
+  async function stopSession(f: ReturnType<typeof fixture>, running: Promise<number>) {
+    process.emit('SIGTERM');
+    if (!f.child.signalCode) f.exit();
+    return running;
+  }
+  it('registers exactly one exit listener once the daemon is spawned', async () => {
+    const f = fixture();
+    const { running, added } = await startHungSession(f);
+    expect(added).toHaveLength(1);
+    await stopSession(f, running);
+  });
+  it('synchronously SIGKILLs the live owned child on abrupt exit', async () => {
+    const f = fixture();
+    const { running, added } = await startHungSession(f);
+    (added[0] as () => void)();
+    expect(f.kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+    await stopSession(f, running);
+  });
+  it('does not signal a child that has already exited', async () => {
+    const f = fixture();
+    const { running, added } = await startHungSession(f);
+    f.exit();
+    await running;
+    (added[0] as () => void)();
+    expect(f.kill).not.toHaveBeenCalled();
+  });
+  it.each(['throw', 'false'] as const)(
+    'records a failing exit status when the final kill %s',
+    async (failure) => {
+      const f = fixture();
+      const { running, added } = await startHungSession(f);
+      f.kill.mockImplementationOnce(() => {
+        if (failure === 'throw') throw new Error('private capability');
+        return false;
+      });
+      process.exitCode = 0;
+      (added[0] as () => void)();
+      expect(process.exitCode).toBe(1);
+      await stopSession(f, running);
+    }
+  );
+  it('removes its exit listener after bounded cleanup settles', async () => {
+    const f = fixture();
+    const { running, added } = await startHungSession(f);
+    await stopSession(f, running);
+    expect(process.listeners('exit')).not.toContain(added[0]);
+  });
 });
 
 // Electron-style input exposes events and flow control, but no async iterator or readableEnded.
@@ -506,7 +649,7 @@ describe('authenticated bounded native readiness', () => {
       timers: vi.getTimerCount(),
     }).toEqual({ discovery: 2, health: 0, timers: 0 });
   });
-  it('stops concurrent-instance waiting on owned-child exit without signaling discovery', async () => {
+  it('attaches after its owned child loses the lock election, without signaling discovery', async () => {
     vi.useFakeTimers();
     const f = fixture();
     const other = childFixture();
@@ -517,7 +660,7 @@ describe('authenticated bounded native readiness', () => {
     const waitingCalls = f.dependencies.discover.mock.calls.length;
     f.exit(1);
     await vi.advanceTimersByTimeAsync(0);
-    expect(await running).toBe(1);
+    expect(await running).toBe(0);
     expect(waitingCalls).toBe(2);
     expect({
       health: f.dependencies.dispatch.mock.calls.length,
@@ -525,7 +668,7 @@ describe('authenticated bounded native readiness', () => {
       ownedSignals: f.kill.mock.calls,
       otherSignals: other.kill.mock.calls,
       timers: vi.getTimerCount(),
-    }).toEqual({ health: 0, served: 0, ownedSignals: [], otherSignals: [], timers: 0 });
+    }).toEqual({ health: 1, served: 1, ownedSignals: [], otherSignals: [], timers: 0 });
   });
   it.each(['permission_denied', 'invalid_response', 'transport_failed', 'timeout'] as const)(
     'does not retry discovery %s after stale metadata',
@@ -575,17 +718,25 @@ describe('authenticated bounded native readiness', () => {
         delay: async () => undefined,
       })
     ).rejects.toMatchObject({ code: 'native_busy', message: 'native_busy' });
+    expect(owned.dependencies.dispatch).not.toHaveBeenCalled();
+    expect(other.kill).not.toHaveBeenCalled();
+  });
+  it('releases only its own busy child before attaching to the healthy instance', async () => {
+    const owned = fixture();
+    const other = childFixture();
+    Object.defineProperty(other.child, 'pid', { value: 989898 });
+    owned.dependencies.discover.mockResolvedValue({ ...discovery, pid: 989898 });
     expect(
       await runStandaloneMcpb(owned.options, {
         ...owned.dependencies,
         delay: async () => undefined,
       })
-    ).toBe(1);
+    ).toBe(0);
     expect({
       served: owned.dependencies.serve.mock.calls.length,
       ownedSignals: owned.kill.mock.calls,
       otherSignals: other.kill.mock.calls,
-    }).toEqual({ served: 0, ownedSignals: [['SIGTERM']], otherSignals: [] });
+    }).toEqual({ served: 1, ownedSignals: [['SIGTERM']], otherSignals: [] });
   });
   it.each([undefined, 0, -1, 1.5, '424242'])('rejects malformed discovery pid %j', async (pid) => {
     const { child } = childFixture();
@@ -744,6 +895,405 @@ describe('authenticated bounded native readiness', () => {
     });
     exit();
     await expect(waiting).rejects.toMatchObject({ code: 'native_exited' });
+  });
+});
+
+const sibling = { ...discovery, pid: 989898 };
+const unavailable = () => new NativeControlError('unavailable', 'private capability');
+const startingHealth = {
+  ok: true,
+  code: 'degraded',
+  health: { status: 'degraded', watcher: 'starting' },
+};
+
+describe('attached native readiness', () => {
+  const immediate = { delay: async () => undefined };
+  it('accepts a healthy sibling daemon using only the explicit runtime home', async () => {
+    const dispatch = vi.fn(async () => ready);
+    await waitForNativeAttach(runtime.runtimeHome, { discover: async () => sibling, dispatch });
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: 'health' }, runtime.runtimeHome);
+  });
+  it.each(['unavailable', 'disconnected'] as const)(
+    'retries transient %s while the winning owner publishes',
+    async (code) => {
+      const dispatch = vi
+        .fn()
+        .mockRejectedValueOnce(new NativeControlError(code, 'private capability'))
+        .mockResolvedValue(ready);
+      await waitForNativeAttach(runtime.runtimeHome, {
+        ...immediate,
+        discover: async () => sibling,
+        dispatch,
+      });
+      expect(dispatch).toHaveBeenCalledTimes(2);
+    }
+  );
+  it('rejects native_unreachable after twenty unanswered attempts', async () => {
+    const discover = vi.fn(async () => sibling);
+    await expect(
+      waitForNativeAttach(runtime.runtimeHome, {
+        ...immediate,
+        discover,
+        dispatch: async () => {
+          throw unavailable();
+        },
+      })
+    ).rejects.toMatchObject({ code: 'native_unreachable', message: 'native_unreachable' });
+    expect(discover).toHaveBeenCalledTimes(20);
+  });
+  it('rejects native_unreachable at the absolute deadline while discovery stalls', async () => {
+    vi.useFakeTimers();
+    const waiting = waitForNativeAttach(runtime.runtimeHome, {
+      discover: () => new Promise(() => undefined),
+      dispatch: async () => ready,
+    }).then(
+      () => ({ code: 'resolved' }),
+      (error: unknown) => error
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await waiting).toMatchObject({ code: 'native_unreachable' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('waits for an owner whose watcher is still starting', async () => {
+    const dispatch = vi.fn().mockResolvedValueOnce(startingHealth).mockResolvedValue(ready);
+    await waitForNativeAttach(runtime.runtimeHome, {
+      ...immediate,
+      discover: async () => sibling,
+      dispatch,
+    });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+  it('times out rather than attaching to an owner that never finishes starting', async () => {
+    await expect(
+      waitForNativeAttach(runtime.runtimeHome, {
+        ...immediate,
+        discover: async () => sibling,
+        dispatch: async () => startingHealth,
+      })
+    ).rejects.toMatchObject({ code: 'readiness_timeout' });
+  });
+  it.each([
+    {},
+    { ok: true, code: 'ready' },
+    { ok: true, code: 'degraded', health: { status: 'degraded', watcher: 'ready' } },
+    { ok: true, code: 'busy', health: { status: 'healthy' } },
+    { ok: false, code: 'invalid_config' },
+  ])('rejects unhealthy sibling health %j without retry', async (response) => {
+    const dispatch = vi.fn(async () => response);
+    await expect(
+      waitForNativeAttach(runtime.runtimeHome, { discover: async () => sibling, dispatch })
+    ).rejects.toMatchObject({ code: 'native_unhealthy' });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+  it('fails closed when stable discovery rejects the private capability', async () => {
+    const dispatch = vi.fn(async () => ({ ok: false, code: 'unauthorized' }));
+    await expect(
+      waitForNativeAttach(runtime.runtimeHome, {
+        ...immediate,
+        discover: async () => sibling,
+        dispatch,
+      })
+    ).rejects.toMatchObject({ code: 'native_unauthorized', message: 'native_unauthorized' });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+  it('accepts a republished owner after one capability rejection', async () => {
+    const discover = vi
+      .fn()
+      .mockResolvedValueOnce(sibling)
+      .mockResolvedValueOnce(sibling)
+      .mockResolvedValue({ ...discovery, pid: 515151 });
+    const dispatch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, code: 'unauthorized' })
+      .mockResolvedValue(ready);
+    await waitForNativeAttach(runtime.runtimeHome, { ...immediate, discover, dispatch });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+  it('allows only one capability rejection across republications', async () => {
+    const discover = vi
+      .fn()
+      .mockResolvedValueOnce(sibling)
+      .mockResolvedValueOnce(sibling)
+      .mockResolvedValue({ ...discovery, pid: 515151 });
+    await expect(
+      waitForNativeAttach(runtime.runtimeHome, {
+        ...immediate,
+        discover,
+        dispatch: async () => ({ ok: false, code: 'unauthorized' }),
+      })
+    ).rejects.toMatchObject({ code: 'native_unauthorized' });
+  });
+  it('retries when discovery is republished during the health probe', async () => {
+    const discover = vi
+      .fn()
+      .mockResolvedValueOnce(sibling)
+      .mockResolvedValue({ ...discovery, pid: 515151 });
+    const dispatch = vi.fn(async () => ready);
+    await waitForNativeAttach(runtime.runtimeHome, { ...immediate, discover, dispatch });
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+  it.each(['permission_denied', 'invalid_response', 'transport_failed', 'timeout'] as const)(
+    'does not retry sibling transport %s',
+    async (code) => {
+      const dispatch = vi.fn(async () => {
+        throw new NativeControlError(code, 'private capability');
+      });
+      await expect(
+        waitForNativeAttach(runtime.runtimeHome, { discover: async () => sibling, dispatch })
+      ).rejects.toMatchObject({ code: 'readiness_failed' });
+      expect(dispatch).toHaveBeenCalledOnce();
+    }
+  );
+  it.each([undefined, 0, -1, 1.5, '989898'])('rejects malformed sibling pid %j', async (pid) => {
+    await expect(
+      waitForNativeAttach(runtime.runtimeHome, {
+        discover: async () => ({ ...sibling, pid }),
+        dispatch: async () => ready,
+      })
+    ).rejects.toMatchObject({ code: 'readiness_failed' });
+  });
+});
+
+describe('attached daemon supervision', () => {
+  const immediate = { delay: async () => undefined };
+  it.each(['unavailable', 'disconnected'] as const)('reports owner loss on %s', async (code) => {
+    const dispatch = vi.fn(async () => {
+      throw new NativeControlError(code, 'private capability');
+    });
+    await expect(
+      watchAttachedDaemon(runtime.runtimeHome, new AbortController().signal, {
+        ...immediate,
+        dispatch,
+      })
+    ).resolves.toBe('lost');
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: 'health' }, runtime.runtimeHome);
+  });
+  it('reports owner loss when the daemon rejects the current capability', async () => {
+    await expect(
+      watchAttachedDaemon(runtime.runtimeHome, new AbortController().signal, {
+        ...immediate,
+        dispatch: async () => ({ ok: false, code: 'unauthorized' }),
+      })
+    ).resolves.toBe('lost');
+  });
+  it.each([
+    ['timeout', () => Promise.reject(new NativeControlError('timeout', 'private capability'))],
+    ['degraded health', () => Promise.resolve(startingHealth)],
+  ] as const)('keeps serving after a %s probe', async (_name, first) => {
+    const dispatch = vi.fn().mockImplementationOnce(first).mockRejectedValue(unavailable());
+    await expect(
+      watchAttachedDaemon(runtime.runtimeHome, new AbortController().signal, {
+        ...immediate,
+        dispatch,
+      })
+    ).resolves.toBe('lost');
+    expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+  it.each(['permission_denied', 'invalid_response', 'transport_failed'] as const)(
+    'fails closed on probe transport %s',
+    async (code) => {
+      await expect(
+        watchAttachedDaemon(runtime.runtimeHome, new AbortController().signal, {
+          ...immediate,
+          dispatch: async () => {
+            throw new NativeControlError(code, 'private capability');
+          },
+        })
+      ).rejects.toMatchObject({ code: 'native_unhealthy', message: 'native_unhealthy' });
+    }
+  );
+  it('fails closed on a rejected non-authentication health reply', async () => {
+    await expect(
+      watchAttachedDaemon(runtime.runtimeHome, new AbortController().signal, {
+        ...immediate,
+        dispatch: async () => ({ ok: false, code: 'invalid_config' }),
+      })
+    ).rejects.toMatchObject({ code: 'native_unhealthy' });
+  });
+  it('probes once per second with one request in flight', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const dispatch = vi.fn(async () => ready);
+    const watching = watchAttachedDaemon(runtime.runtimeHome, controller.signal, { dispatch });
+    await vi.advanceTimersByTimeAsync(999);
+    const early = dispatch.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1001);
+    expect({ early, later: dispatch.mock.calls.length }).toEqual({ early: 0, later: 2 });
+    controller.abort();
+    expect(await watching).toBe('cancelled');
+  });
+  it('stops without probing once the session aborts', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const dispatch = vi.fn(async () => ready);
+    const watching = watchAttachedDaemon(runtime.runtimeHome, controller.signal, { dispatch });
+    controller.abort();
+    expect(await watching).toBe('cancelled');
+    expect({ calls: dispatch.mock.calls.length, timers: vi.getTimerCount() }).toEqual({
+      calls: 0,
+      timers: 0,
+    });
+  });
+  it('settles cancelled while a probe is still in flight', async () => {
+    const controller = new AbortController();
+    const dispatch = vi.fn(() => new Promise<Record<string, unknown>>(() => undefined));
+    const watching = watchAttachedDaemon(runtime.runtimeHome, controller.signal, {
+      ...immediate,
+      dispatch,
+    });
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce());
+    controller.abort();
+    expect(await watching).toBe('cancelled');
+  });
+});
+
+describe('concurrent launch election and takeover', () => {
+  const immediate = { delay: async () => undefined };
+  // A launch whose own daemon exits on the native instance lock held by the sibling owner.
+  function losingFixture() {
+    const f = fixture();
+    f.dependencies.discover.mockResolvedValue(sibling);
+    f.dependencies.spawn.mockImplementationOnce(() => {
+      queueMicrotask(() => f.exit(1));
+      return f.child;
+    });
+    return f;
+  }
+  // A service that stays live until the test settles it or the launcher cancels it.
+  function liveService(f: ReturnType<typeof fixture>) {
+    let finish: () => void = () => undefined;
+    f.dependencies.serve.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finish = () => resolve(undefined);
+          // Like real serve, a cancelled session settles once its input is destroyed.
+          f.input.once('close', () => resolve(undefined));
+        })
+    );
+    return () => finish();
+  }
+  it('serves attached through the shared runtime home after losing the election', async () => {
+    const f = losingFixture();
+    expect(await runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate })).toBe(0);
+    expect(f.dependencies.serve).toHaveBeenCalledWith(expect.anything(), f.output, {
+      runtimeHome: runtime.runtimeHome,
+    });
+    expect(f.kill).not.toHaveBeenCalled();
+  });
+  it('fails closed without serving when the sibling rejects the capability', async () => {
+    const f = losingFixture();
+    f.dependencies.dispatch.mockResolvedValue({ ok: false, code: 'unauthorized' } as never);
+    expect(await runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate })).toBe(1);
+    expect(f.dependencies.serve).not.toHaveBeenCalled();
+  });
+  it('fails closed without serving when no sibling ever answers', async () => {
+    const f = losingFixture();
+    f.dependencies.dispatch.mockRejectedValue(unavailable());
+    expect(await runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate })).toBe(1);
+    expect(f.dependencies.serve).not.toHaveBeenCalled();
+  });
+  it('signals nothing from the exit-time fallback while attached', async () => {
+    const f = losingFixture();
+    const finish = liveService(f);
+    const before = new Set(process.listeners('exit'));
+    const running = runStandaloneMcpb(f.options, f.dependencies);
+    await vi.waitFor(() => expect(f.dependencies.serve).toHaveBeenCalled());
+    const added = process.listeners('exit').filter((listener) => !before.has(listener));
+    for (const listener of added) (listener as () => void)();
+    finish();
+    expect(await running).toBe(0);
+    expect(f.kill).not.toHaveBeenCalled();
+  });
+  it('takes ownership with a new exact child when the attached owner exits', async () => {
+    const f = losingFixture();
+    const finish = liveService(f);
+    const successor = childFixture();
+    Object.defineProperty(successor.child, 'pid', { value: 515151 });
+    f.dependencies.spawn.mockImplementationOnce(() => {
+      f.dependencies.discover.mockResolvedValue({ ...discovery, pid: 515151 });
+      return successor.child;
+    });
+    f.dependencies.dispatch
+      .mockResolvedValueOnce(ready)
+      .mockRejectedValueOnce(unavailable())
+      .mockResolvedValue(ready);
+    const running = runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate });
+    await vi.waitFor(() => expect(f.dependencies.dispatch).toHaveBeenCalledTimes(3));
+    await new Promise((resolve) => setImmediate(resolve));
+    finish();
+    expect(await running).toBe(0);
+    expect({
+      spawned: f.dependencies.spawn.mock.calls.length,
+      successorSignals: successor.kill.mock.calls,
+      loserSignals: f.kill.mock.calls,
+    }).toEqual({ spawned: 2, successorSignals: [['SIGTERM']], loserSignals: [] });
+  });
+  it('reattaches without cancelling service when another sibling wins the takeover', async () => {
+    const f = losingFixture();
+    const finish = liveService(f);
+    const loser = childFixture();
+    f.dependencies.spawn.mockImplementationOnce(() => {
+      f.dependencies.discover.mockResolvedValue({ ...discovery, pid: 616161 });
+      queueMicrotask(() => loser.exit(1));
+      return loser.child;
+    });
+    f.dependencies.dispatch
+      .mockResolvedValueOnce(ready)
+      .mockRejectedValueOnce(unavailable())
+      .mockResolvedValueOnce(ready)
+      .mockImplementation(() => new Promise(() => undefined));
+    const running = runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate });
+    await vi.waitFor(() => expect(f.dependencies.dispatch).toHaveBeenCalledTimes(4));
+    const serving = !f.output.destroyed;
+    finish();
+    expect(await running).toBe(0);
+    expect({ serving, spawned: f.dependencies.spawn.mock.calls.length }).toEqual({
+      serving: true,
+      spawned: 2,
+    });
+  });
+  it('fails closed after two unreachable takeover rounds', async () => {
+    const f = losingFixture();
+    liveService(f);
+    f.dependencies.spawn.mockImplementation(() => {
+      const next = childFixture();
+      queueMicrotask(() => next.exit(1));
+      return next.child;
+    });
+    f.dependencies.dispatch.mockResolvedValueOnce(ready).mockRejectedValue(unavailable());
+    expect(await runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate })).toBe(1);
+    expect({
+      spawned: f.dependencies.spawn.mock.calls.length,
+      outputDestroyed: f.output.destroyed,
+    }).toEqual({ spawned: 3, outputDestroyed: true });
+  });
+  it('fails closed when attached supervision reports an unhealthy transport', async () => {
+    const f = losingFixture();
+    liveService(f);
+    f.dependencies.dispatch
+      .mockResolvedValueOnce(ready)
+      .mockRejectedValue(new NativeControlError('permission_denied', 'private capability'));
+    expect(await runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate })).toBe(1);
+    expect(f.dependencies.spawn).toHaveBeenCalledOnce();
+  });
+  it('reaps an in-flight takeover child when signaled', async () => {
+    const f = losingFixture();
+    liveService(f);
+    const successor = childFixture();
+    Object.defineProperty(successor.child, 'pid', { value: 515151 });
+    f.dependencies.spawn.mockImplementationOnce(() => {
+      f.dependencies.discover.mockImplementation(() => new Promise(() => undefined));
+      return successor.child;
+    });
+    f.dependencies.dispatch.mockResolvedValueOnce(ready).mockRejectedValueOnce(unavailable());
+    const running = runStandaloneMcpb(f.options, { ...f.dependencies, ...immediate });
+    await vi.waitFor(() => expect(f.dependencies.spawn).toHaveBeenCalledTimes(2));
+    process.emit('SIGTERM');
+    expect(await running).toBe(0);
+    expect({
+      spawned: f.dependencies.spawn.mock.calls.length,
+      successorSignals: successor.kill.mock.calls,
+    }).toEqual({ spawned: 2, successorSignals: [['SIGTERM']] });
   });
 });
 

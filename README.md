@@ -183,8 +183,11 @@ Omitted or blank values create the private default
 missing or symlink workspace selections fail closed instead of falling back.
 The launcher validates the locally compiled daemon, publishes a private copy,
 starts it, checks authenticated readiness, and stops that exact child on EOF or
-shutdown. Keep only one standalone session per workspace; concurrent startup
-fails closed under native lock ownership. MCPB hosts retain bundled checksum
+shutdown. Concurrent sessions for one workspace share a single daemon: the
+launch that wins the native instance lock owns it, and the others authenticate
+to it through private discovery and capability without owning or signaling it.
+If the owner exits, an attached session elects a new owner (see the
+troubleshooting entry below). MCPB hosts retain bundled checksum
 validation and support event-only Electron stdin with bounded backpressure.
 
 For **Cursor**, put this in `.cursor/mcp.json`; the same `mcpServers` entry can
@@ -615,7 +618,11 @@ npm run test:mcpb -- dist/krypton-protected-fs.mcpb
 The bounded harness extracts only an allowlisted inventory into temporary
 storage, uses isolated home and working directories, verifies custom and fallback
 workspaces, checks traversal denial and durable standalone telemetry, and confirms
-exact-child exit and post-exit socket nonacceptance. The private temporary runtime
+exact-child exit and post-exit socket nonacceptance. Run immediately after
+`npm run build:mcpb`, it first waits up to 10 s for the archive's ctime to stay
+unchanged for 4 s, since macOS can attach `com.apple.macl` metadata about 2 s after
+publication; persistent change fails as `input_unsettled`. Once pinned, any change,
+ctime included, fails closed as `unsafe_input`. The private temporary runtime
 home may retain the socket, capability, and discovery files after shutdown. A local
 run covers only the current Mac architecture; the
 release workflow defines separate arm64 and x86_64 packaged-E2E jobs.
@@ -1081,6 +1088,52 @@ the freshly downloaded `krypton-protected-fs.mcpb` (or the newly rebuilt file in
 **Cmd + Q** and reopen Claude, then repeat the two Quickstart tool checks. You do
 not need to delete your workspace or Application Support evidence to replace the
 extension. Leave the optional directory blank to use the private sandbox.
+
+### Claude Desktop reports Request timed out for the Krypton extension
+
+Claude Desktop's built-in Node.js loads the extension through a host wrapper.
+When the optional `protected_workspace_root` is blank, Desktop passes the
+unexpanded `${user_config.protected_workspace_root}` reference. Current bundles
+treat exactly that reference as blank and use the private Application Support
+sandbox; any other template still fails closed. A startup failure ends the
+host-loaded process, so Claude reports a disconnect instead of waiting for a
+timeout. The redacted `[KRYPTON]` category appears as a `[UtilityProcess stderr]`
+line in `~/Library/Logs/Claude/main.log`, not in the per-server MCP log. If the
+host exits before async cleanup finishes, an exit-time fallback sends `SIGKILL`
+only to that session's exact owned daemon.
+
+Older bundles could leave a daemon behind. Fully quit Claude with **Cmd + Q**,
+check `pgrep -fl 'krypton-core-native --standalone-config'`, and stop a leftover
+process from an earlier install. Then install the freshly rebuilt
+`krypton-protected-fs.mcpb` and reopen Claude. Live Claude Desktop UI behavior
+remains manual QA.
+
+### Claude Desktop launches the Krypton extension several times at once
+
+Claude Desktop can start one extension several times in the same second: a
+short-lived probe, the main connection and the Cowork and Code pool. All of them
+resolve the same protected workspace and therefore the same private runtime. The
+first launch to take the native instance lock owns the daemon. Each other launch
+sees its own daemon exit on that lock, reaps only that exact child, and then
+attaches to the owner. It authenticates with the private `daemon.json` discovery
+record and capability and requires healthy readiness. The discovered PID is
+compared for stability and is never signaled. All sessions share one telemetry
+ledger.
+
+An attached session probes the shared daemon once per second. When the owner
+exits, for example when the short probe ends, tool calls fail closed with
+`unavailable` until one attached session starts and owns a fresh daemon,
+usually within about one second. The other sessions re-attach to it. Calls made
+during that gap are not retried. Recovery makes at most two attempts per owner
+loss before the session exits with `native_owner_lost`. A daemon that rejects
+the capability while its discovery record stays unchanged fails closed with
+`native_unauthorized`, and no takeover is attempted. First launches after an
+install or upgrade can also prepare state at the same moment. Each private file
+is published without replacing a sibling's copy and is accepted only when its
+bytes match exactly. A marker or link a sibling is still publishing gets a
+bounded half-second wait. These categories appear in
+`~/Library/Logs/Claude/main.log` as `[UtilityProcess stderr] [KRYPTON]` lines.
+Live Claude Desktop UI behavior remains manual QA.
 
 ### Gatekeeper / Unsigned Binary Notice on macOS
 

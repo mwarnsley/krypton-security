@@ -19,6 +19,11 @@ const OUTPUT_BYTES = 65536;
 const SCENARIO_MS = 15000;
 const TOTAL_RUN_MS = 45000;
 const CLEANUP_BUDGET_MS = 6000;
+// macOS can attach com.apple.macl about two seconds after publication, moving
+// only ctime. The quiet window exceeds that delay; the budget bounds the wait.
+const INPUT_SETTLE_QUIET_MS = 4000;
+const INPUT_SETTLE_BUDGET_MS = 10000;
+const INPUT_SETTLE_POLL_MS = 50;
 const NATIVE = {
   arm64: ['native/krypton-core-native-aarch64-apple-darwin', 0x0100000c],
   x64: ['native/krypton-core-native-x86_64-apple-darwin', 0x01000007],
@@ -124,6 +129,56 @@ async function recheck(input, io, check) {
   check?.();
   requireCheck((await io.realpath(input.file)) === input.file, 'unsafe_input');
   check?.();
+}
+
+/** Sleeps at most `milliseconds` within a budget; budget cancellation wakes it early. */
+function pause(budget, ctx, milliseconds) {
+  return budget.run(
+    () =>
+      new Promise((resolve) => {
+        const finish = () => {
+          ctx.clearTimer(timer);
+          budget.signal.removeEventListener('abort', finish);
+          resolve();
+        };
+        const timer = ctx.setTimer(
+          finish,
+          Math.min(milliseconds, Math.max(0, budget.deadlineAt - ctx.now()))
+        );
+        budget.signal.addEventListener('abort', finish, { once: true });
+        if (budget.signal.aborted) finish();
+      })
+  );
+}
+
+/**
+ * Waits before pinning until host metadata writers stop changing the input. It is
+ * stable once its ctime is at least the quiet window old by the wall clock, or once
+ * identical lstat results span that window on the monotonic clock (which also
+ * covers future-dated ctimes). Persistent change fails closed with
+ * `input_unsettled` inside the bounded budget. This only chooses when to pin: the
+ * pinned read and later rechecks still reject any change, including ctime.
+ */
+async function settle(file, ctx, parent) {
+  const budget = operationDeadline(ctx, INPUT_SETTLE_BUDGET_MS, 'input_unsettled', { parent });
+  try {
+    let previous = await budget.run(() => ctx.fs.lstat(file, { bigint: true }));
+    let quietSince = ctx.now();
+    while (
+      ctx.wallClock() - Number(previous.ctimeNs / 1000000n) < INPUT_SETTLE_QUIET_MS &&
+      ctx.now() - quietSince < INPUT_SETTLE_QUIET_MS
+    ) {
+      await pause(budget, ctx, INPUT_SETTLE_POLL_MS);
+      const next = await budget.run(() => ctx.fs.lstat(file, { bigint: true }));
+      if (!unchanged(previous, next)) {
+        previous = next;
+        quietSince = ctx.now();
+      }
+    }
+    budget.check();
+  } finally {
+    budget.stop();
+  }
 }
 
 /**
@@ -695,22 +750,7 @@ async function durableReceipt(file, receipt, ctx, scenarioBudget) {
         budget.check();
         if (found) return;
       }
-      await budget.run(
-        () =>
-          new Promise((resolve) => {
-            const finish = () => {
-              ctx.clearTimer(timer);
-              budget.signal.removeEventListener('abort', finish);
-              resolve();
-            };
-            const timer = ctx.setTimer(
-              finish,
-              Math.min(50, Math.max(0, budget.deadlineAt - ctx.now()))
-            );
-            budget.signal.addEventListener('abort', finish, { once: true });
-            if (budget.signal.aborted) finish();
-          })
-      );
+      await pause(budget, ctx, 50);
     }
     throw new PackagedE2EError('telemetry_invalid');
   } finally {
@@ -989,6 +1029,7 @@ async function removeOwned(owned, ownedStat, creation, parent, ctx) {
  * Bounds archive/payload bytes, inventory, extraction, MCP frames, scenarios and cleanup.
  * Kernel filesystem/scheduler stalls are not hard real-time guarantees; no timed-out
  * writes are retried. Only the exact mkdtemp-owned tree is recursively removed.
+ * A freshly published input first gets a bounded wait for host metadata to settle.
  * @param {string} bundlePath Completed deterministic .mcpb archive.
  * @param {import('./mcpb_e2e.cjs').PackagedE2EDependencies} dependencies Injected host boundaries.
  * @returns {Promise<void>} Resolves after both scenarios, child exit and tree cleanup.
@@ -1001,6 +1042,7 @@ async function runPackagedMcpbE2E(bundlePath, dependencies = {}) {
     spawn,
     connect: (file) => net.createConnection(file),
     now: () => performance.now(),
+    wallClock: () => Date.now(),
     setTimer: setTimeout,
     clearTimer: clearTimeout,
     report: console.log,
@@ -1031,9 +1073,9 @@ async function runPackagedMcpbE2E(bundlePath, dependencies = {}) {
         !bundlePath.split('/').includes('..'),
       'input_failed'
     );
-    const original = await total.run(() =>
-      read(path.resolve(bundlePath), ctx.fs, MAX_ARCHIVE, total.check)
-    );
+    const input = path.resolve(bundlePath);
+    await settle(input, ctx, total);
+    const original = await total.run(() => read(input, ctx.fs, MAX_ARCHIVE, total.check));
     const files = inventory(original.bytes, total.check);
     ownedParent = await total.run(() => ctx.fs.realpath(ctx.temporaryDirectory));
     ownedCreation = Promise.resolve().then(() => ctx.fs.mkdtemp(path.join(ownedParent, 'km-')));
@@ -1108,4 +1150,10 @@ if (require.main === module)
     await runPackagedMcpbE2E(argv[0]);
     return 0;
   });
-module.exports = { runPackagedMcpbE2E, PackagedE2EError, CLEANUP_BUDGET_MS };
+module.exports = {
+  runPackagedMcpbE2E,
+  PackagedE2EError,
+  CLEANUP_BUDGET_MS,
+  INPUT_SETTLE_QUIET_MS,
+  INPUT_SETTLE_BUDGET_MS,
+};
