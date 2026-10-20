@@ -4,6 +4,11 @@ This roadmap defines Krypton's prioritized release sequence. Status labels
 separate repository implementation from remaining or proposed work; a planned
 milestone or target entitlement is not a claim that the protection exists today.
 
+The [documentation index](docs/index.md) and [end-user testing guide](docs/testing-guide.md)
+are also rendered in the Next.js public site under `/docs/`, linked from
+**About & Guide**. Static dashboard data remains demonstration-only; the guide
+explains how to distinguish native acceptance evidence.
+
 ## Roadmap-wide Architectural Invariants
 
 Every phase and commercial tier must preserve these boundaries:

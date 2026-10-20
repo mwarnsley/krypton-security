@@ -1,0 +1,1 @@
+export { DocumentationArticle } from './DocumentationArticle';

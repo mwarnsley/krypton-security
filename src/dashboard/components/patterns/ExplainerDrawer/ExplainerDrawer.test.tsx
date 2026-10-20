@@ -8,6 +8,17 @@ import { ExplainerDrawer } from './ExplainerDrawer';
 afterEach(cleanup);
 
 describe('ExplainerDrawer', () => {
+  it('links the public documentation index and testing guide from every tab', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    expect(screen.getByRole('link', { name: 'Documentation index' }).getAttribute('href')).toBe(
+      '/docs'
+    );
+    expect(screen.getByRole('link', { name: 'End-user testing guide' }).getAttribute('href')).toBe(
+      '/docs/testing-guide'
+    );
+  });
+
   it('compares alignment, approval settings and scoped native containment', () => {
     render(<ExplainerDrawer />);
     fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
