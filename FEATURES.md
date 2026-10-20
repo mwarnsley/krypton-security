@@ -89,6 +89,13 @@ in `ROADMAP.md`.
   Startup promise rejections are owned immediately. Plain Node handshake and
   synthetic-host regression tests cover protocol compatibility; live client UI
   compatibility remains manual QA.
+- A host-loaded launcher exits with its settled status, because host message ports
+  would otherwise keep a failed process idle until the client times out. An
+  exit-time fallback sends `SIGKILL` only to the exact still-live owned daemon
+  when a host calls `process.exit` before async cleanup settles. The exact
+  unexpanded `${user_config.protected_workspace_root}` reference, which Claude
+  Desktop passes for the blank optional field, selects the private sandbox
+  fallback; every other template is still rejected.
 
 - **Status:** Standalone packaging and source-checkout paths are implemented for
   macOS arm64/x64; hosted workflow execution, Gatekeeper behavior, and clean-machine
@@ -143,6 +150,16 @@ in `ROADMAP.md`.
   readiness, and supervises that exact child through MCP EOF, signals, daemon exit,
   and server failure. A separate instance lock prevents concurrent daemons for one
   workspace even when their short temporary runtime homes differ.
+- Concurrent launches of one workspace, such as Claude Desktop's short probe, main
+  connection and Cowork and Code pool, share that single daemon. A launch whose
+  own child exits on the instance lock reaps only that child, then attaches through
+  private discovery and capability once health is authenticated. The discovered PID
+  is compared, never signaled. Attached sessions probe once per second. When the
+  owner exits, at most two bounded rounds elect a new owner or re-attach; calls in
+  the gap fail closed with `unavailable`. Capability rejection with stable discovery
+  fails closed as `native_unauthorized`, and exhausted recovery fails as
+  `native_owner_lost`. Cold-start preparation publishes new private files with
+  no-replace links and adopts a sibling's copy only when the bytes match exactly.
 - Error handling follows the mandatory three-tier contract in `AGENTS.md`:
   typed native errors, 1500 ms absolute authenticated IPC deadlines, immediate
   disconnect denial, bounded stdio output waits, and redacted CLI failures on
@@ -173,6 +190,10 @@ in `ROADMAP.md`.
   into bounded temporary state, isolates HOME and working directories, and verifies
   custom and fallback workspaces, traversal denial, durable standalone telemetry,
   exact-child exit, and post-exit socket nonacceptance without checkout markers.
+  A freshly built archive is pinned only after its ctime has been quiet for 4 s,
+  within a 10 s budget (`input_unsettled` on expiry), because macOS can attach
+  `com.apple.macl` about 2 s after publication. Any later change, ctime included,
+  still fails closed as `unsafe_input`.
   The private temporary runtime home may retain runtime files after shutdown. A
   local run covers only its host architecture; release automation defines separate
   arm64 and x86_64 jobs.

@@ -277,6 +277,16 @@ const FAQ_ITEMS: readonly FaqItem[] = [
       'That prompt does not match the current standalone manifest. Cancel it, remove the obsolete Krypton extension entry in Claude Desktop Settings > Extensions, and install the freshly downloaded or rebuilt krypton-protected-fs.mcpb. Avoid older downloads with the same filename. Fully quit with Cmd + Q and reopen Claude. The current bundle has zero required setup fields, starts its own native daemon, and does not require a checkout, krypton.config.json, or npm run dev:full. Leave the optional protected_workspace_root blank for the private Application Support sandbox. Replacing the extension does not require deleting your workspace or evidence ledger; repeat the write-success and read-denial checks afterward.',
   },
   {
+    question: 'Claude Desktop reports Request timed out for the Krypton extension',
+    answer:
+      "Claude Desktop's built-in Node.js loads the extension through a host wrapper. When the optional protected_workspace_root is blank, Desktop passes the unexpanded ${user_config.protected_workspace_root} reference; current bundles treat exactly that reference as blank and use the private Application Support sandbox, while any other template still fails closed. A startup failure ends the host-loaded process, so Claude reports a disconnect instead of waiting for a timeout. The redacted [KRYPTON] category appears as a [UtilityProcess stderr] line in ~/Library/Logs/Claude/main.log, not in the per-server MCP log. If the host exits before async cleanup finishes, an exit-time fallback sends SIGKILL only to that session's exact owned daemon. Older bundles could leave one behind: fully quit Claude with Cmd + Q, check pgrep -fl 'krypton-core-native --standalone-config', stop a leftover process from an earlier install, install the freshly rebuilt krypton-protected-fs.mcpb, and reopen Claude. Live Claude Desktop UI behavior remains manual QA.",
+  },
+  {
+    question: 'Claude Desktop launches the Krypton extension several times at once',
+    answer:
+      "Claude Desktop can start one extension several times in the same second: a short-lived probe, the main connection and the Cowork and Code pool. They share one protected workspace and one private runtime. The first launch to take the native instance lock owns the daemon. Each other launch sees its own daemon exit on that lock, reaps only that exact child, and attaches to the owner through the private daemon.json discovery record and capability after healthy readiness. The discovered PID is compared and never signaled, and all sessions share one telemetry ledger. Attached sessions probe once per second. When the owner exits, tool calls fail closed with unavailable until one session owns a fresh daemon, usually within about a second, and the others re-attach. Gap calls are not retried, and recovery makes at most two attempts per owner loss before failing with native_owner_lost. A daemon that rejects the capability while discovery stays unchanged fails closed with native_unauthorized. First launches after an install or upgrade publish private files without replacing a sibling's copy and accept it only with identical bytes. Categories appear as [UtilityProcess stderr] [KRYPTON] lines in ~/Library/Logs/Claude/main.log. Live Claude Desktop UI behavior remains manual QA.",
+  },
+  {
     question: 'Gatekeeper / Unsigned Binary Notice on macOS',
     answer:
       'Krypton release binaries are unsigned and unnotarized. After verifying the release source and checksums, attempt opening the file; if macOS blocks a trusted download, review System Settings > Privacy & Security > Open Anyway when offered. Managed Macs may require IT approval. Do not globally disable Gatekeeper or strip quarantine recursively. Approval does not prove containment; repeat the live tool test after installation.',
@@ -741,9 +751,10 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     extraction is needed. Set <code>KRYPTON_PROTECTED_WORKSPACE_ROOT</code> to an
                     existing absolute directory, or leave it blank for the private Application
                     Support sandbox. Invalid selections fail closed. Bare run starts and stops its
-                    own daemon; keep one standalone session per workspace. The local npm link alias
-                    is <code>krypton-mcp run</code>; registry npx installation is not verified.
-                    Native support remains macOS arm64/x64. Live client UI checks remain manual QA.
+                    own daemon; concurrent sessions for one workspace share it, and the others
+                    attach without owning it. The local npm link alias is{' '}
+                    <code>krypton-mcp run</code>; registry npx installation is not verified. Native
+                    support remains macOS arm64/x64. Live client UI checks remain manual QA.
                   </p>
                 </aside>
                 <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">

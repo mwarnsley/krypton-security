@@ -326,12 +326,36 @@ describe('ExplainerDrawer', () => {
       "What happens if I set my AI agent to 'Auto', 'Bypass Permissions', or YOLO mode?",
       'Tools not showing up in Claude Desktop',
       'Extension asks for a required Krypton checkout directory',
+      'Claude Desktop reports Request timed out for the Krypton extension',
+      'Claude Desktop launches the Krypton extension several times at once',
       'Gatekeeper / Unsigned Binary Notice on macOS',
       'Native Daemon Connection Timeout',
       'How do I view native telemetry, and is the dashboard required?',
       'Permissions Denied on Protected Workspace',
       'Can I install the native runtime on Windows?',
     ]);
+  });
+
+  it('explains the unexpanded Desktop workspace reference in the timeout FAQ', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+    fireEvent.click(
+      screen.getByText('Claude Desktop reports Request timed out for the Krypton extension')
+    );
+    expect(
+      screen.getByText(/treat exactly that reference as blank and use the private Application/)
+    ).toBeTruthy();
+  });
+
+  it('explains that concurrent Desktop launches attach without signaling the owner', () => {
+    render(<ExplainerDrawer />);
+    fireEvent.click(screen.getByRole('button', { name: 'About & Guide' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'FAQ' }));
+    fireEvent.click(
+      screen.getByText('Claude Desktop launches the Krypton extension several times at once')
+    );
+    expect(screen.getByText(/The discovered PID is compared and never signaled/)).toBeTruthy();
   });
 
   it('explains the loopback HTTP boundary without claiming caller authentication', () => {

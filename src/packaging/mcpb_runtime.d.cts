@@ -38,7 +38,10 @@ export interface StandaloneRuntimePaths {
   daemonPath: string;
   workspaceId: string;
 }
-/** Only omitted/blank values create the fallback. Other invalid values fail closed. */
+/**
+ * Only omitted/blank values, or the exact unexpanded `${user_config.protected_workspace_root}`
+ * reference, create the fallback. Other templates and invalid values fail closed.
+ */
 export function resolveProtectedWorkspace(
   configuredValue: unknown,
   applicationSupportRoot: string
