@@ -284,6 +284,28 @@ async function bundledBinary(bundleRoot, arch) {
   }
 }
 
+/** Reads a caller-selected local build with bounded no-follow I/O; never falls back after failure. */
+async function sourceBinary(file, arch) {
+  try {
+    const bytes = await readBounded(
+      absolute(file, 'invalid_binary'),
+      MAX_BINARY_BYTES,
+      'invalid_binary'
+    );
+    if (
+      bytes.length < 32 ||
+      bytes.readUInt32LE(0) !== 0xfeedfacf ||
+      bytes.readUInt32LE(4) !== NATIVE[arch].cpu ||
+      bytes.readUInt32LE(12) !== 2
+    )
+      throw new StandaloneRuntimeError('invalid_binary');
+    return bytes;
+  } catch (error) {
+    if (error instanceof StandaloneRuntimeError) throw error;
+    throw new StandaloneRuntimeError('invalid_binary');
+  }
+}
+
 /**
  * Atomically publishes a private file, preserving the previous bytes before rename.
  * Reopens/verifies the destination and syncs its directory; any later failure is durability_unknown.
@@ -488,7 +510,10 @@ async function prepareStandaloneRuntime(options) {
     ])
       await privateLeaf(file, uid, 0o600);
     await privateLeaf(path.join(runtimeDirectory, 'daemon.sock'), uid, 0o600, true);
-    const bytes = await bundledBinary(options.bundleRoot, options.arch);
+    const bytes =
+      options.nativeBinaryPath === undefined
+        ? await bundledBinary(options.bundleRoot, options.arch)
+        : await sourceBinary(options.nativeBinaryPath, options.arch);
     await publish(daemonPath, bytes, 0o700, uid, pins, MAX_BINARY_BYTES);
     const config = Buffer.from(
       JSON.stringify({
