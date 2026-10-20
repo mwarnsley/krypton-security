@@ -1,5 +1,7 @@
 # v1.0.3 release acceptance validation report
 
+[Documentation index](index.md)
+
 **Overall result: PASS** for the baseline operation and three containment classes
 recorded below.
 

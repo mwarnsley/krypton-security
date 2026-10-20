@@ -1,5 +1,7 @@
 # Krypton end-user acceptance testing guide
 
+[Documentation index](index.md)
+
 Use this walkthrough to verify a normal file operation and three filesystem
 boundary classes. The [v1.0.3 validation report](RELEASE_v1.0.3_VALIDATION_REPORT.md)
 records the supplied acceptance results; new runs will have different receipt
