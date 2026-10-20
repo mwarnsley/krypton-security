@@ -75,6 +75,21 @@ in `ROADMAP.md`.
 
 ## Capability 1b: Standalone bundle, source setup, and native MCP file tools
 
+- Bare `node src/cli.cjs run` (or the locally linked `krypton-mcp run` alias)
+  serves standard stdio MCP for Claude Desktop, Claude Code, Cursor, Codex CLI
+  and compatible hosts from any cwd. A prepared macOS source installation uses
+  its release daemon directly, without MCPB extraction. The optional
+  `KRYPTON_PROTECTED_WORKSPACE_ROOT` uses the same validated private sandbox
+  fallback as MCPB. This route owns and stops its daemon per session; existing
+  `run -- <command>` supervision is unchanged. An npm bin alias does not imply
+  registry publication or native Linux/Windows support.
+- Host-shim launch detection compares canonical argv paths; imports under test
+  runners do not launch. An event-to-PassThrough adapter handles Electron stdin,
+  propagates backpressure and failure, and releases listeners during teardown.
+  Startup promise rejections are owned immediately. Plain Node handshake and
+  synthetic-host regression tests cover protocol compatibility; live client UI
+  compatibility remains manual QA.
+
 - **Status:** Standalone packaging and source-checkout paths are implemented for
   macOS arm64/x64; hosted workflow execution, Gatekeeper behavior, and clean-machine
   Claude Desktop onboarding still require manual or hosted verification. Linux

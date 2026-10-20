@@ -25,7 +25,7 @@ const signals = requiredEnvironment('KRYPTON_TEST_SIGNALS_PATH');
 if (!path.isAbsolute(signals)) throw new Error('invalid launcher test environment');
 
 const serverMode = requiredEnvironment('KRYPTON_TEST_SERVER_MODE');
-if (!['throw', 'stdout', 'stderr'].includes(serverMode))
+if (!['throw', 'stdout', 'stderr', 'real', 'readiness-failure'].includes(serverMode))
   throw new Error('invalid launcher test environment');
 
 const runtime = parsedEnvironment('KRYPTON_TEST_RUNTIME');
@@ -52,13 +52,17 @@ Object.defineProperty(process, 'arch', { value: 'arm64' });
 cp.spawn = () => child;
 
 mcpbRuntime.prepareStandaloneRuntime = async () => runtime;
-processIsolation.dispatchNativeControl = async () => ready;
-processIsolation.discoverNativeEndpoint = async () => discovery;
-mcpServer.serve = async () => {
-  if (serverMode === 'throw') throw new Error('private capability /private/workspace');
-  if (serverMode === 'stdout') {
-    process.stdout.emit('error', new Error('private capability'));
-    return;
-  }
-  process.stderr.emit('error', new Error('private capability'));
+processIsolation.dispatchNativeControl = async () => {
+  if (serverMode === 'readiness-failure') throw new Error('private readiness failure');
+  return ready;
 };
+processIsolation.discoverNativeEndpoint = async () => discovery;
+if (!['real', 'readiness-failure'].includes(serverMode))
+  mcpServer.serve = async () => {
+    if (serverMode === 'throw') throw new Error('private capability /private/workspace');
+    if (serverMode === 'stdout') {
+      process.stdout.emit('error', new Error('private capability'));
+      return;
+    }
+    process.stderr.emit('error', new Error('private capability'));
+  };

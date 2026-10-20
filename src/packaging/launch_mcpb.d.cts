@@ -1,5 +1,6 @@
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
-import type { Readable, Writable } from 'node:stream';
+import type { Writable } from 'node:stream';
+import type { EventEmitter } from 'node:events';
 import type { prepareStandaloneRuntime } from './mcpb_runtime.cjs';
 import type { dispatchNativeControl, discoverNativeEndpoint } from '../core/processIsolation.cjs';
 import type { serve } from '../core/mcp/server.cjs';
@@ -25,13 +26,23 @@ export class LauncherError extends Error {
   constructor(code: LauncherErrorCode);
 }
 
+/** Event-only host stdin is supported; an async iterator is intentionally not required. */
+export interface LauncherInput extends EventEmitter {
+  readonly destroyed?: boolean;
+  readonly readableEnded?: boolean;
+  pause(): unknown;
+  resume(): unknown;
+  destroy(): unknown;
+}
 export interface LauncherOptions {
   configuredWorkspace?: string;
   bundleRoot?: string;
+  /** Explicit locally built daemon for the source CLI; bundles keep checksum validation. */
+  nativeBinaryPath?: string;
   homeDirectory?: string;
   platform?: NodeJS.Platform;
   arch?: string;
-  input?: Readable;
+  input?: LauncherInput;
   output?: Writable;
 }
 export interface LauncherDependencies {
@@ -70,3 +81,6 @@ export function runStandaloneMcpb(
   options?: LauncherOptions,
   dependencies?: LauncherDependencies
 ): Promise<number>;
+
+/** Owns terminal diagnostics and exact-child cleanup for executable launchers. */
+export function launchStandaloneMcpb(options?: LauncherOptions, argv?: string[]): Promise<void>;
