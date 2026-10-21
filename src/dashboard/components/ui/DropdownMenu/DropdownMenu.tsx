@@ -6,6 +6,8 @@ import { forwardRef } from 'react';
 
 export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
+export const DropdownMenuLabel = DropdownMenuPrimitive.Label;
+export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 
 export type DropdownMenuContentProps = React.ComponentPropsWithoutRef<
   typeof DropdownMenuPrimitive.Content

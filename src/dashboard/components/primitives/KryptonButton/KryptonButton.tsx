@@ -2,7 +2,7 @@ import { Slot, Slottable } from '@radix-ui/react-slot';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 export type KryptonButtonVariant = 'primary' | 'secondary' | 'destructive' | 'link';
-export type KryptonButtonSize = 'sm' | 'md' | 'lg';
+export type KryptonButtonSize = 'compact' | 'sm' | 'md' | 'lg';
 
 export interface KryptonButtonProps extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
@@ -17,7 +17,7 @@ export interface KryptonButtonProps extends Omit<
   /** Optional content anchored after the button label. */
   readonly endIcon?: ReactNode;
 
-  /** Controls the fixed height and horizontal padding of the control. @default "md" */
+  /** Controls height and horizontal padding; compact removes horizontal insets. @default "md" */
   readonly size?: KryptonButtonSize;
 
   /** Controls the semantic visual treatment of the control. @default "secondary" */
@@ -31,13 +31,14 @@ const VARIANT_CLASSES: Readonly<Record<KryptonButtonVariant, string>> = {
   primary:
     'border border-krypton-accent-cyan bg-krypton-accent-cyan text-krypton-bg-main shadow-sm shadow-krypton-accent-cyan/20 hover:bg-krypton-accent-cyan/90',
   secondary:
-    'border border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary hover:border-krypton-focus-ring hover:text-krypton-fg-primary',
+    'border border-krypton-control-border bg-krypton-bg-surface text-krypton-fg-secondary hover:border-krypton-focus-ring hover:text-krypton-fg-primary',
   destructive:
     'border border-krypton-alert-rose bg-krypton-alert-rose text-krypton-bg-main shadow-sm shadow-krypton-alert-rose/20 hover:bg-krypton-alert-rose/90',
-  link: 'text-krypton-accent-cyan underline-offset-4 hover:text-krypton-accent-cyan/80 hover:underline',
+  link: 'text-krypton-accent-cyan underline-offset-4 hover:text-krypton-accent-cyan/90 hover:underline',
 };
 
 const SIZE_CLASSES: Readonly<Record<KryptonButtonSize, string>> = {
+  compact: 'h-8 px-0 text-xs',
   sm: 'h-8 px-krypton-space-3 text-xs',
   md: 'h-10 px-krypton-space-4 text-sm',
   lg: 'h-11 px-krypton-space-5 text-sm',

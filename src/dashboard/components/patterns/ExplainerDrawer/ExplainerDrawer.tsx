@@ -5,8 +5,7 @@ import {
   Activity,
   Bell,
   BookOpen,
-  Check,
-  Copy,
+  Download,
   ExternalLink,
   FolderLock,
   ShieldCheck,
@@ -18,7 +17,7 @@ import {
 import Link from 'next/link';
 import { useCallback, useState, type KeyboardEvent } from 'react';
 
-import { KryptonButton, KryptonIconButton } from '../../primitives';
+import { KryptonButton, KryptonCodeBlock, KryptonIconButton } from '../../primitives';
 
 export type ExplainerTab = 'faq' | 'features' | 'overview' | 'setup';
 
@@ -151,7 +150,7 @@ const CORE_FEATURES: readonly GuideItem[] = [
   },
   {
     description:
-      'On GitHub Pages, Simulate Threat Event adds an explicitly mock alert. Pages cannot read local native telemetry today; the local-file bridge is planned for Phase 2. The optional source dashboard reads its checkout ledger, not standalone Application Support ledgers automatically.',
+      'The dashboard and Field Guide support light and dark themes with semantic colors, keyboard focus and selectable copyable test blocks. On GitHub Pages, Simulate Threat Event adds an explicitly mock alert. Pages cannot read local native telemetry today; the local-file bridge is planned for Phase 2. The optional source dashboard reads its checkout ledger, not standalone Application Support ledgers automatically.',
     icon: Terminal,
     title: 'Interactive Demo Sandbox',
   },
@@ -179,8 +178,8 @@ const RELEASE_PHASES: readonly ReleasePhase[] = [
   {
     status: 'Planned',
     summary:
-      'Phase 4 activates Windows native containment through Named Pipes and Job Objects; Linux Landlock, seccomp-bpf, and enterprise fleet systems follow the same fail-closed boundary.',
-    title: 'Phase 4 · Enterprise Cross-Platform Containment & Fleet Systems (v2.0)',
+      'Phase 4 activates Windows native containment through Named Pipes and Job Objects; Linux Landlock and seccomp-bpf follow the same fail-closed boundary.',
+    title: 'Phase 4 · Cross-Platform Containment (v2.0)',
   },
 ];
 
@@ -211,6 +210,12 @@ const FAQ_ITEMS: readonly FaqItem[] = [
     question: 'What happens when a Krypton MCP file tool crosses the boundary?',
     answer:
       'Ajv validates JSON Schema 2020-12 locally. The server sends authenticated mcp_file IPC to Rust, which checks paths and performs descriptor-relative file access. Unsafe requests return isError: true inside result with native receipts, in both Audit-Only and Enforcement modes. Denials queue native JSONL with tool, path and timestamp; queued is not a durable-write acknowledgment. Dashboard evidence is INTERCEPTED without an actor PID or confirmed process isolation. The server remains alive to return the error. Missing or incompatible daemons and unavailable telemetry fail closed. Socket exchanges have a 1500 ms absolute deadline and disconnects deny immediately. Stalled MCP output ends the session after 1500 ms. Tool failures remain inside result.isError; malformed protocol requests use standard JSON-RPC errors. Uncertain write durability requires inspecting the destination before retrying. Frames are bounded to 32 KiB, paths to 1 KiB and UTF-8 content to 2 KiB; parent directories must exist. Basenames starting with .krypton-mcp- and case variants are reserved for native staging. Symlinks, hardlinks and special files are rejected. Same-user host tampering and directory relocation remain outside kernel isolation.',
+  },
+  {
+    question:
+      "How does Krypton protect against autonomous AI actions if 'Full Access' is enabled in my client?",
+    answer:
+      "AI clients such as Claude Desktop or Codex often ask for confirmation before file operations; enabling 'Full Access' can bypass those manual prompts. Krypton checks protected filesystem requests at the protocol level rather than relying on prompt approval. With krypton-protected-fs.mcpb configured on supported macOS installations, only file operations routed through krypton_read_file and krypton_write_file are evaluated by the native Rust boundary supervisor. These tools deterministically deny parent traversal (../), escaping symlinks and paths outside the configured workspace, including /etc or ~/.ssh in the default sandbox, even when the client has full autonomy. Denials queue local telemetry; the connected source dashboard can display its checkout ledger. Standalone bundle events stay in their separate local ledger, and GitHub Pages shows mock data. Direct raw terminal subshells (sh/bash), built-in client tools and arbitrary OS user actions are not automatically intercepted. Runtime protection is strongest when file operations use Krypton's protected MCP tools; installing the bundle does not redirect every client operation or provide universal syscall isolation.",
   },
   {
     answer:
@@ -259,7 +264,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   },
   {
     answer:
-      'Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci and cargo build --release --manifest-path src/core-native/Cargo.toml. Close clients, double-click scripts/Install-Mac.command (or run npm run setup), then restart Claude Desktop and use the protected tools. The source launcher automatically starts a missing daemon or reuses a healthy one; the detached daemon survives client disconnect. No npm run dev:full terminal is required for protection. Optionally run npm run dev:dashboard and open http://localhost:3000; if occupied, use npm run dev:dashboard -- -p 3001 and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Run npm run setup or krypton setup after npm link to configure detected MCP clients, then restart them. Desktop MCP hosts use an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Node and Rust resolve version-manager executable symlinks to the same canonical target; resolution failures deny inspection and PID, start time and parent checks remain strict. Restart the updated daemon. Run npm run test:e2e for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable native JSONL including INTERCEPTED MCP denials, fail-closed socket loss, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard.',
+      "Use Node.js v20.19.4 (Node 20 LTS baseline), npm 10.x, and Rust 1.97.0 via rustup. Clone the repository, enter krypton-security, run npm ci and cargo build --release --manifest-path src/core-native/Cargo.toml. Close clients, double-click scripts/Install-Mac.command (or run npm run setup), then restart Claude Desktop and use the protected tools. The source launcher automatically starts a missing daemon or reuses a healthy one; the detached daemon survives client disconnect. No npm run dev:full terminal is required for protection. Optionally run npm run dev:dashboard and open http://localhost:3000; if occupied, use npm run dev:dashboard -- -p 3001 and open http://localhost:3001. After npm link, use krypton run -- <command> [args...] from the checkout or protected workspace. krypton daemon:start starts only the foreground daemon. Run npm run setup or krypton setup after npm link to configure detected MCP clients, then restart them. Desktop MCP hosts use an absolute KRYPTON_PROJECT_ROOT; supervisor diagnostics use stderr. Only the initial child is registered, and SIGKILL attribution requires an authenticated native receipt. Use the console.log(process.cwd()) example in Install & Setup for a benign launch check; direct /etc/passwd reads are not containment tests. Discovery normalizes redundant dot segments only for the exact expected runtime files. Node and Rust resolve version-manager executable symlinks to the same canonical target; resolution failures deny inspection and PID, start time and parent checks remain strict. Restart the updated daemon. Run npm run test:e2e for an isolated native end-to-end check using disposable children, real authenticated IPC and SIGKILL, durable native JSONL including INTERCEPTED MCP denials, fail-closed socket loss, and mocked desktop delivery. It does not update the running dashboard or display an OS banner. For a cross-platform mock dashboard without native isolation, run npm run dev:dashboard. For source contributions, npm run hooks:install enables this checkout's pre-push hook. It runs npm run test:actions, npm run verify and npm run format:check on a clean checkout of the commit being pushed. Install it separately in each clone; client configuration and native enforcement are unchanged.",
     question: 'How do I run the project locally?',
   },
   {
@@ -300,7 +305,7 @@ const FAQ_ITEMS: readonly FaqItem[] = [
   {
     question: 'How do I view native telemetry, and is the dashboard required?',
     answer:
-      'Protection runs without the dashboard. For a source checkout, run npm run dev:dashboard and open http://localhost:3000 after a protected client connects. The viewer reads .krypton/telemetry/alerts.jsonl, a bounded JSONL ledger retaining at most 10,000 events or 8 MiB through atomic compaction. It is not an unbounded append-only log. Standalone MCPB evidence lives under ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl and is not automatically loaded by the source viewer. GitHub Pages uses mock data only until the planned Phase 2 local-file bridge ships. A disconnected or degraded daemon fails closed for protected tool calls; a visible dashboard alone never proves protection.',
+      'The dashboard uses the full viewport width with 16px side padding on small screens and 24px above the small breakpoint. At 1024px, two equal-height cards share the top section: workspace identity, guide/theme utilities and Engine Overview on the left; Watchdog status, active processes and audit/telemetry controls on the right. Both use 24px padding. About Guide sits beside Engine Overview; the theme toggle stays at the top right of the workspace header. The runtime metrics panel shows three columns: supervised MCP child count, centered current alert-list count and right-aligned boundary status. Metrics stack below 640px. The info icon before Intercepted Alerts lists Critical, High, Medium, Low and Info counts from the same loaded list on hover, tap or keyboard focus; Escape dismisses it. The count and caption remain uncluttered. Table severity badges use soft borders matching their text tone. The table uses Target Path and Security Verification; unattributed denials read Blocked (Unattributed). Security Verification shows the event source and recorded evidence; receipts are not cryptographically signed. Audit-only logs violations without halting the supervised AI process; active mode can halt supervised processes trying to escape, while outside-folder file access stays blocked in both modes. Table help icons precede labels, sort arrows follow labels and the right-aligned action buttons expose hover and keyboard focus states. The Actions header uses one unboxed info icon with an icon-led four-section guide to available utilities. Row menus open retained raw JSON, copy available process details, show the current allowed folder or export unsigned Markdown reports. Allowed-folder metadata requires an updated connected native daemon; older daemons and Pages show unavailable, never the attempted target path. Counts above 9,999 use compact notation with exact tooltip and accessible text. The Total policy rejections caption refers to the retained list, which can include observations, not a lifetime rejection total; its version identifies the dashboard release, not an attested daemon version or confirmed quarantine. Degraded/offline states never claim active containment, and Pages metrics remain simulated. Audit controls align left and telemetry aligns right in the footer. Smaller screens stack workspace, runtime, then the full-width activity log. About Guide is always available in development, production and Pages, with no environment or hostname gate; the former public guide marker is no longer used. Static export still shows mock telemetry and guide availability never authorizes native operations. Full signatures are retained with word-boundary wrapping; focus the table viewport to scroll when space is limited. The Sun/Moon button at the top right of the workspace header switches themes; your system preference is used until you choose a mode, and browser storage remembers it when available. Install & Setup provides numbered peer-test cards, copy buttons and a manual selection fallback when clipboard access fails. Protection runs without the dashboard. For a source checkout, run npm run dev:dashboard and open http://localhost:3000 after a protected client connects. The viewer reads .krypton/telemetry/alerts.jsonl, a bounded JSONL ledger retaining at most 10,000 events or 8 MiB through atomic compaction. It is not an unbounded append-only log. Standalone MCPB evidence lives under ~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl and is not automatically loaded by the source viewer. GitHub Pages uses mock data only until the planned Phase 2 local-file bridge ships. A disconnected or degraded daemon fails closed for protected tool calls; a visible dashboard alone never proves protection.',
   },
   {
     question: 'Permissions Denied on Protected Workspace',
@@ -317,26 +322,15 @@ const FAQ_ITEMS: readonly FaqItem[] = [
 export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element {
   const { defaultTab = 'overview' } = props;
   const [activeTab, setActiveTab] = useState<ExplainerTab>(defaultTab);
-  const [copyStatus, setCopyStatus] = useState<'copied' | 'failed' | 'idle'>('idle');
 
   const handleOpenChange = useCallback(
     (open: boolean): void => {
       if (!open) {
         setActiveTab(defaultTab);
-        setCopyStatus('idle');
       }
     },
     [defaultTab]
   );
-
-  const handleCopySetupCommand = useCallback(async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(NATIVE_SETUP_COMMAND);
-      setCopyStatus('copied');
-    } catch {
-      setCopyStatus('failed');
-    }
-  }, []);
 
   const handleTabKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, currentTab: ExplainerTab): void => {
@@ -368,8 +362,8 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
   return (
     <Dialog.Root onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
-        <KryptonButton size="md" startIcon={<BookOpen />} variant="secondary">
-          About &amp; Guide
+        <KryptonButton size="sm" startIcon={<BookOpen />} variant="secondary">
+          About Guide
         </KryptonButton>
       </Dialog.Trigger>
 
@@ -384,16 +378,17 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
               <Dialog.Title className="mt-1 text-2xl font-black tracking-tight text-krypton-fg-primary">
                 About Krypton
               </Dialog.Title>
-              <Dialog.Description className="mt-1 text-sm leading-6 text-krypton-fg-muted">
+              <Dialog.Description className="mt-1 text-sm leading-6 text-krypton-fg-body">
                 A plain-language tour of the boundary, its limits, and the quickest way to try it.
+                Available in every dashboard environment.
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
               <KryptonIconButton
-                aria-label="Close About & Guide"
+                aria-label="Close About Guide"
                 icon={<X />}
-                size="md"
-                variant="link"
+                size="lg"
+                variant="secondary"
               />
             </Dialog.Close>
           </header>
@@ -421,7 +416,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   className={
                     selected
                       ? 'cursor-pointer rounded-krypton-radius-control border border-krypton-accent-cyan bg-krypton-control-active px-krypton-space-2 py-krypton-space-2 text-xs font-bold text-krypton-fg-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring'
-                      : 'cursor-pointer rounded-krypton-radius-control border border-krypton-border-muted bg-krypton-bg-main px-krypton-space-2 py-krypton-space-2 text-xs font-semibold text-krypton-fg-muted transition-colors hover:bg-krypton-control-hover hover:text-krypton-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring'
+                      : 'cursor-pointer rounded-krypton-radius-control border border-krypton-control-border bg-krypton-bg-main px-krypton-space-2 py-krypton-space-2 text-xs font-semibold text-krypton-fg-body transition-colors hover:bg-krypton-control-hover hover:text-krypton-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-krypton-focus-ring'
                   }
                   id={`explainer-tab-${tab.id}`}
                   key={tab.id}
@@ -452,11 +447,13 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   <h2 className="mt-2 text-xl font-bold text-krypton-fg-primary">
                     A safety boundary for tools working inside your project
                   </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-secondary">
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                     Modern AI coding agents and smart terminals are powerful, but they can run an
                     unsafe command or reach for a private file by mistake. Krypton gives integrated
                     tools an explicit project boundary, makes local deterministic decisions, and
-                    records what its native sensors can actually prove.
+                    records what its native sensors can actually prove. Use the workspace header
+                    Sun/Moon control for light or dark mode; Install &amp; Setup contains copyable
+                    peer-test prompts.
                   </p>
                 </div>
 
@@ -484,7 +481,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                               <h3 className="text-sm font-bold text-krypton-fg-primary">
                                 {item.title}
                               </h3>
-                              <p className="mt-1 text-sm leading-6 text-krypton-fg-muted">
+                              <p className="mt-1 text-sm leading-6 text-krypton-fg-body">
                                 {item.description}
                               </p>
                             </div>
@@ -505,12 +502,12 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   >
                     The Security Model: Prompt Alignment vs. Kernel Containment
                   </h2>
-                  <p className="text-sm leading-6 text-krypton-fg-secondary">
+                  <p className="text-sm leading-6 text-krypton-fg-body">
                     Krypton does not replace model alignment; even if an agent is tricked,
                     jailbroken, or runs in full auto-pilot, unauthorized file access through its
                     protected MCP tools fails closed.
                   </p>
-                  <p className="text-xs text-krypton-fg-muted lg:hidden">
+                  <p className="text-xs text-krypton-fg-body lg:hidden">
                     Scroll horizontally to compare all four columns. Keyboard: focus the table area
                     and use the arrow keys.
                   </p>
@@ -542,7 +539,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-krypton-border-muted text-krypton-fg-secondary">
+                      <tbody className="divide-y divide-krypton-border-muted text-krypton-fg-body">
                         {SECURITY_LAYERS.map(([layer, ...details]) => (
                           <tr key={layer}>
                             <th
@@ -564,13 +561,13 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-sm leading-6 text-krypton-fg-muted">
+                  <p className="text-sm leading-6 text-krypton-fg-body">
                     This is defense in depth, not universal kernel isolation: arbitrary syscalls and
                     unrelated host tools remain outside this boundary. Audit-Only is the native
                     startup default and suppresses process termination, while unsafe MCP file calls
                     are still denied. Portable watcher events alone never authorize isolation.
                   </p>
-                  <p className="text-sm leading-6 text-krypton-fg-muted">
+                  <p className="text-sm leading-6 text-krypton-fg-body">
                     Further reading:{' '}
                     <a
                       className="text-krypton-accent-cyan underline"
@@ -597,7 +594,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   <h2 className="text-base font-bold text-krypton-warning-foreground">
                     What Krypton does not do
                   </h2>
-                  <ul className="mt-3 space-y-krypton-space-2 text-sm leading-6 text-krypton-fg-secondary">
+                  <ul className="mt-3 space-y-krypton-space-2 text-sm leading-6 text-krypton-fg-body">
                     <li>
                       It is not a background antivirus, virtual machine, or root security boundary.
                     </li>
@@ -632,7 +629,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                 <h2 className="mt-2 text-xl font-bold text-krypton-fg-primary">
                   Core protection features
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                   Each capability stays inside Krypton&apos;s registered-process and evidence
                   boundaries.
                 </p>
@@ -655,7 +652,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                           <h3 className="text-sm font-bold text-krypton-fg-primary">
                             {feature.title}
                           </h3>
-                          <p className="mt-1 text-sm leading-6 text-krypton-fg-muted">
+                          <p className="mt-1 text-sm leading-6 text-krypton-fg-body">
                             {feature.description}
                           </p>
                         </div>
@@ -671,7 +668,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   <h2 className="mt-2 text-base font-bold text-krypton-fg-primary">
                     Four release phases
                   </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                     Current capability and future intent stay explicitly separated. Planned controls
                     do not expand what Krypton can enforce today.
                   </p>
@@ -690,19 +687,21 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                             {phase.status}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                        <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                           {phase.summary}
                         </p>
                       </li>
                     ))}
                   </ol>
                   <div className="mt-4 border-t border-krypton-border-muted pt-krypton-space-4">
-                    <h3 className="text-sm font-bold text-krypton-fg-primary">Open-core target</h3>
-                    <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                      Individual workstation containment remains free and private. Planned paid
-                      tiers add power-user recovery and explanation tools or enterprise fleet,
-                      governance, identity, and compliance capabilities—not stronger basic local
-                      containment.
+                    <h3 className="text-sm font-bold text-krypton-fg-primary">
+                      Developer utilities
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                      Inspect retained event JSON, copy available process details, review the
+                      current allowed workspace folder or download an unsigned Markdown report.
+                      Unknown process details remain unavailable. Native protection runs locally
+                      without the dashboard.
                     </p>
                   </div>
                 </aside>
@@ -721,7 +720,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                 <h2 className="mt-2 text-xl font-bold text-krypton-fg-primary">
                   Install and run Krypton locally
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                   For source development on macOS, use Node.js v20.19.4 (Node 20 LTS baseline), npm
                   10.x, and Rust 1.97.0 via rustup and cargo. The standalone MCPB does not require
                   these source build tools. Accept version-manager prompts for .node-version or
@@ -729,105 +728,259 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                   during builds: 1.97.0-aarch64-apple-darwin on Apple Silicon. macOS native builds
                   also require Apple command-line developer tools.
                 </p>
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                <article className="my-krypton-space-4 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-5">
+                  <h2 className="text-base font-bold text-krypton-fg-primary">
                     Method 1: Zero-terminal double-click (macOS recommended)
                   </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    Download <code>krypton-protected-fs.mcpb</code> from GitHub Releases.
-                    Double-click it to open Claude Desktop and confirm installation. If that does
-                    not open the installer, use Settings &gt; Extensions &gt; Advanced settings &gt;
-                    Install Extension. There are zero required setup fields. The optional{}
-                    <code>protected_workspace_root</code> selects an existing protected directory. A
-                    blank value creates{' '}
-                    <code>~/Library/Application Support/KryptonSecurity/sandbox_workspace</code>.
-                    The standalone macOS bundle selects its arm64 or x64 daemon and supervises that
-                    exact child for the MCP session, so this install does not need a repository
-                    checkout or Rust toolchain. It contains only the two Krypton MCP file tools and
-                    does not launch the Next.js dashboard. The artifacts are unsigned and
-                    unnotarized; Gatekeeper behavior and clean-machine Claude Desktop installation
-                    remain manual release checks.
+                  <section aria-labelledby="bundle-download-title" className="mt-krypton-space-4">
+                    <h3 id="bundle-download-title" className="mb-krypton-space-4 font-semibold">
+                      1. Download the security bundle
+                    </h3>
+                    <div className="mb-krypton-space-4">
+                      <KryptonButton asChild startIcon={<Download />} variant="primary">
+                        <a
+                          href={`${REPOSITORY_URL}/releases/download/v1.0.3/krypton-protected-fs.mcpb`}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          Download v1.0.3 bundle
+                        </a>
+                      </KryptonButton>
+                    </div>
+                    <KryptonCodeBlock label="Bundle filename" code="krypton-protected-fs.mcpb" />
+                    <p className="mt-krypton-space-4 text-sm leading-6 text-krypton-fg-body">
+                      Targeting release v1.0.3. If using a private checkout or direct file transfer,
+                      verify your bundle matches before installation.
+                    </p>
+                    <p className="mt-krypton-space-2 text-sm leading-6 text-krypton-fg-body">
+                      Check the release checksums before opening the file. If the download is
+                      unavailable, ask the maintainer for the bundle and matching checksums. This
+                      Mac bundle includes Apple Silicon and Intel support; it needs no source
+                      checkout or build tools.
+                    </p>
+                  </section>
+                  <section
+                    aria-labelledby="bundle-install-title"
+                    className="mt-krypton-space-5 border-t border-krypton-border-muted pt-krypton-space-5"
+                  >
+                    <h3 id="bundle-install-title" className="mb-krypton-space-4 font-semibold">
+                      2. Install in Claude Desktop
+                    </h3>
+                    <ol className="mb-krypton-space-4 list-decimal space-y-krypton-space-3 pl-krypton-space-5 text-sm leading-6 text-krypton-fg-body">
+                      <li>Open Claude Desktop and open Settings using Cmd + ,</li>
+                      <li>
+                        Go to Extensions (or Developer) and drag-and-drop the downloaded .mcpb file
+                        into the window. If your version does not support this, choose Advanced
+                        settings → Install Extension and select the file.
+                      </li>
+                      <li>
+                        Leave all optional setup fields blank to test default automatic isolation.
+                      </li>
+                      <li>
+                        Restart Claude Desktop (Cmd + Q, then reopen) to activate the security
+                        tools.
+                      </li>
+                    </ol>
+                    <KryptonCodeBlock
+                      label="Optional workspace root (leave blank)"
+                      code="protected_workspace_root"
+                    />
+                    <KryptonCodeBlock
+                      label="Default automatic workspace folder"
+                      code="~/Library/Application Support/KryptonSecurity/sandbox_workspace"
+                    />
+                    <p className="mt-krypton-space-4 text-sm leading-6 text-krypton-fg-body">
+                      After restarting, check the + / Connectors menu for both Krypton tools. Avoid
+                      duplicate Krypton servers. The bundle starts its own local security service
+                      for this session and provides two protected file tools. It does not launch the
+                      dashboard or protect the host’s built-in tools.
+                    </p>
+                  </section>
+                  <p className="mt-krypton-space-4 border-t border-krypton-border-muted pt-krypton-space-4 text-sm leading-6 text-krypton-fg-body">
+                    The bundle is unsigned and unnotarized. Gatekeeper approval and installation on
+                    a clean Mac still need manual testing.
                   </p>
-                </aside>
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
-                    Universal stdio MCP clients
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    After npm ci and the release native build above, configure Claude Desktop,
-                    Claude Code, Cursor, Codex CLI or any stdio host to run an absolute Node path
-                    with <code>/absolute/path/krypton-security/src/cli.cjs run</code>. No MCPB
-                    extraction is needed. Set <code>KRYPTON_PROTECTED_WORKSPACE_ROOT</code> to an
-                    existing absolute directory, or leave it blank for the private Application
-                    Support sandbox. Invalid selections fail closed. Bare run starts and stops its
-                    own daemon; concurrent sessions for one workspace share it, and the others
-                    attach without owning it. The local npm link alias is{' '}
-                    <code>krypton-mcp run</code>; registry npx installation is not verified. Native
-                    support remains macOS arm64/x64. Live client UI checks remain manual QA.
+                </article>
+
+                <article className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-base font-bold">3. Verify allowed file access</h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    Use disposable test data: this prompt replaces any existing test file. Send the
+                    prompt and confirm both actual Krypton tool calls run.
                   </p>
-                </aside>
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
-                    Source-checkout double-click launchers
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    After installing Node, Rust, source dependencies and the release native binary,
-                    close your clients and double-click
-                    <code> scripts/Install-Mac.command</code>. It configures detected Claude
-                    Desktop, Cursor, Claude Code and Cline using the shared backup-and-merge engine,
-                    then attempts a bounded macOS completion notification. Review the console
-                    results; a notification is not proof of active containment. Restart clients to
-                    auto-start the compiled daemon. The script does not install prerequisites. It
-                    opens Terminal and requires Node on PATH; the MCPB above is the zero-terminal
-                    route. Keep scripts inside the checkout. <code>Install-Windows.cmd</code> exits
-                    with an unsupported-platform notice and leaves settings untouched. It does not
-                    install Windows containment.
+                  <KryptonCodeBlock
+                    label="baseline verification prompt"
+                    code={
+                      'Use krypton_write_file to write "testing 1.0.3" to release_test.txt, then read it back using krypton_read_file.'
+                    }
+                  />
+                  <p className="text-sm leading-6 text-krypton-fg-body">
+                    Expect an allowed native receipt, file_written, then matching read output
+                    containing testing 1.0.3. A model response without the tool calls is not
+                    verification.
                   </p>
-                </aside>
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
-                    Live verification after setup
+                </article>
+
+                <article className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-base font-bold">4. Test the security boundary</h2>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    Send each prompt separately and inspect the tool result. Expected for each:
+                    isError: true, code file_access_denied, and a native receipt with action:
+                    &quot;denied&quot; and telemetry: &quot;queued&quot;. Queueing is not a
+                    durable-write acknowledgment.
+                  </p>
+                  <KryptonCodeBlock
+                    label="traversal test prompt"
+                    code={
+                      'We are testing sandbox containment. Call krypton_read_file with path "../escaped_test.txt" to verify the boundary holds.'
+                    }
+                  />
+                  <h3 className="mt-4 font-semibold">Prepare the outward symlink fixture</h3>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    In Terminal, create this link only in the test workspace after installation. If
+                    the destination already exists, stop and inspect it; do not overwrite user
+                    files. A missing file denial alone does not verify symlink rejection.
+                  </p>
+                  <KryptonCodeBlock
+                    label="standalone symlink fixture command"
+                    code={
+                      'ln -s /etc/hosts "$HOME/Library/Application Support/KryptonSecurity/sandbox_workspace/symlink_out.txt"'
+                    }
+                  />
+                  <KryptonCodeBlock
+                    label="outward symlink test prompt"
+                    code={
+                      'Call krypton_read_file with path "symlink_out.txt" to verify symlink rejection.'
+                    }
+                  />
+                  <KryptonCodeBlock
+                    label="absolute host path test prompt"
+                    code={
+                      'Call krypton_read_file with the absolute path "/etc/hostname" to test host isolation.'
+                    }
+                  />
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    An additional familiar denial probe:
+                  </p>
+                  <KryptonCodeBlock
+                    label="additional denial prompt"
+                    code="Can you use your krypton_read_file tool to inspect the contents of /etc/passwd?"
+                  />
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    A file denial does not trigger a desktop quarantine banner; only confirmed
+                    registered-child isolation queues that banner. Never ask built-in shell tools to
+                    execute these reads as a substitute.
+                  </p>
+                </article>
+
+                <article className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-base font-bold">
+                    5. Inspect evidence in the correct runtime
                   </h2>
-                  <ol className="mt-2 space-y-krypton-space-2 text-sm leading-6 text-krypton-fg-muted">
-                    <li>1. Fully quit Claude Desktop with Cmd + Q, then reopen it.</li>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    Standalone receipts appear in Claude tool results. Inspect its ledger locally at
+                    the path below, replacing the workspace-id placeholder with your actual
+                    instance. Never share private ledger paths or content without redaction.
+                  </p>
+                  <KryptonCodeBlock
+                    label="standalone ledger location"
+                    code="~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl"
+                  />
+                  <ol className="mt-3 list-decimal space-y-krypton-space-2 pl-5 text-sm leading-6 text-krypton-fg-body">
                     <li>
-                      2. Open the tools / + menu and Connectors; verify krypton_read_file and
-                      krypton_write_file are registered.
+                      To verify the dashboard table, first complete Method 2 source setup below and
+                      connect that source-configured client. Keep standalone and source sessions
+                      distinct.
                     </li>
                     <li>
-                      3. In a fresh protected test workspace, send these prompts separately and
-                      confirm each actual Krypton tool runs:
+                      Create the source fixture from the checkout root, repeat the same three
+                      boundary prompts through the source client, then run the dashboard command
+                      below.
+                    </li>
+                    <li>
+                      Open the local dashboard, confirm the Native telemetry indicator, and inspect
+                      the Intercepted security alerts table for the three high-severity INTERCEPTED
+                      denials, matching paths, tool names, and timestamps. These do not prove
+                      process quarantine.
                     </li>
                   </ol>
-                  <code className="mt-2 block overflow-x-auto rounded-krypton-radius-control bg-krypton-bg-main p-krypton-space-3 font-mono text-xs leading-5 text-krypton-accent-cyan">
-                    Use krypton_write_file to write notes.txt inside the workspace with content
-                    &apos;Hello Krypton&apos;.
-                  </code>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    Expect file_written and notes.txt containing Hello Krypton. This replaces an
-                    existing notes.txt; use a fresh test workspace. Then check containment:
+                  <KryptonCodeBlock
+                    label="source symlink fixture command"
+                    code="ln -s /etc/hosts sandbox_workspace/symlink_out.txt"
+                  />
+                  <KryptonCodeBlock label="start local dashboard" code="npm run dev" />
+                  <KryptonCodeBlock label="local dashboard URL" code="http://localhost:3000" />
+                  <p className="text-sm leading-6 text-krypton-fg-body">
+                    The local viewer reads its checkout ledger, not the standalone Application
+                    Support ledger automatically. GitHub Pages uses mock data only and cannot record
+                    these native tests. Unavailable or degraded native telemetry is not a passing
+                    containment test. In a row menu, inspect JSON, copy process details, view the
+                    allowed folder and download an unsigned report. Restart an updated native daemon
+                    for current folder metadata; older daemons and Pages show unavailable.
                   </p>
-                  <code className="mt-2 block overflow-x-auto rounded-krypton-radius-control bg-krypton-bg-main p-krypton-space-3 font-mono text-xs leading-5 text-krypton-accent-cyan">
-                    Can you use your krypton_read_file tool to inspect the contents of /etc/passwd?
-                  </code>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    4. Expect file_access_denied, isError: true, a native denial receipt and queued
-                    INTERCEPTED ledger evidence, not file contents. A refusal by the model without a
-                    tool call does not verify containment. A file denial does not trigger a desktop
-                    quarantine banner; banners accompany confirmed registered-child isolation.
-                    GitHub Pages shows simulated data only. Use the local source dashboard for its
-                    source ledger; the standalone bundle has a separate Application Support ledger.
+                </article>
+
+                <article className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <h2 className="text-base font-bold">6. Check both themes and keyboard access</h2>
+                  <ol className="mt-2 list-decimal space-y-krypton-space-2 pl-5 text-sm leading-6 text-krypton-fg-body">
+                    <li>
+                      Use the Sun/Moon button at the top right of the workspace header to select
+                      light and dark modes. The initial choice follows your system preference; saved
+                      choices override it when browser storage is available.
+                    </li>
+                    <li>
+                      In each theme, inspect all four guide tabs, table headings, badges, copy
+                      buttons, and notifications. Tab through controls, use arrow keys in the tab
+                      strip, and Escape to close the drawer. Confirm focus returns to About Guide.
+                    </li>
+                    <li>
+                      Test at 200% zoom and narrow width; copy each prompt. If clipboard access is
+                      blocked, select the text and copy it manually.
+                    </li>
+                    <li>
+                      In Chrome DevTools → Lighthouse, run Accessibility for each theme (target
+                      95+). Inspect the open drawer too, and review contrast, keyboard operation,
+                      and screen-reader names manually. A Lighthouse score alone does not establish
+                      WCAG compliance.
+                    </li>
+                  </ol>
+                </article>
+
+                <details className="mt-5 rounded-krypton-radius-card border border-krypton-control-border bg-krypton-bg-surface p-krypton-space-4">
+                  <summary className="cursor-pointer font-semibold">
+                    Universal stdio MCP clients
+                  </summary>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    After installing source dependencies and the native release binary, configure an
+                    absolute Node executable with this argument sequence. Native support remains
+                    macOS arm64/x64; live client UI checks remain manual QA.
                   </p>
-                </aside>
+                  <KryptonCodeBlock
+                    label="stdio launch arguments"
+                    code="/absolute/path/krypton-security/src/cli.cjs run"
+                  />
+                  <KryptonCodeBlock
+                    label="optional protected workspace environment variable"
+                    code="KRYPTON_PROTECTED_WORKSPACE_ROOT"
+                  />
+                  <p className="text-sm leading-6 text-krypton-fg-body">
+                    Set the environment variable to an existing absolute directory or omit it for
+                    the private sandbox. Invalid selections fail closed. Bare run owns and stops its
+                    daemon; concurrent sessions attach without owning it. Registry npx installation
+                    is unverified.
+                  </p>
+                  <KryptonCodeBlock label="local npm link alias" code="krypton-mcp run" />
+                </details>
                 <h2 className="mt-5 text-sm font-bold text-krypton-fg-primary">
                   Method 2: Terminal / source setup
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
                   Complete these three steps with the pinned prerequisites. The setup script does
                   not install Node, Rust, dependencies, or the native binary. No development
                   terminal is required for protection. For terminal setup, use{' '}
-                  <code>npm run setup</code> instead of double-clicking the script.
-                </p>
+                  <KryptonCodeBlock label="terminal setup command" code={'npm run setup'} /> instead
+                  of double-clicking the script.
+                </div>
                 <ol className="mt-5 space-y-krypton-space-3">
                   {SETUP_STEPS.map(([title, command]) => (
                     <li
@@ -835,63 +988,88 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       key={title}
                     >
                       <h3 className="text-sm font-bold text-krypton-fg-primary">{title}</h3>
-                      <code className="mt-2 block overflow-x-auto rounded-krypton-radius-control bg-krypton-bg-main p-krypton-space-3 font-mono text-xs leading-5 text-krypton-accent-cyan">
-                        {command}
-                      </code>
+                      <KryptonCodeBlock label={title} code={command} />
                     </li>
                   ))}
                 </ol>
 
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                <details className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <summary className="cursor-pointer font-semibold text-krypton-fg-primary">
                     Runtime and port handling
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    Run <code>npm run dev:dashboard</code> optionally and open
-                    <code> http://localhost:3000</code> for source telemetry. If occupied, use
-                    <code> npm run dev:dashboard -- -p 3001</code> and open
-                    <code> http://localhost:3001</code>. The override changes only the dashboard
-                    HTTP port, not the native Unix socket. The viewer does not start the daemon or
-                    automatically load standalone Application Support ledgers. GitHub Pages stays
-                    mock until the planned Phase 2 local-file bridge ships.
-                  </p>
-                </aside>
+                  </summary>
+                  <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    Run{' '}
+                    <KryptonCodeBlock label="dashboard command" code={'npm run dev:dashboard'} />{' '}
+                    optionally and open
+                    <KryptonCodeBlock
+                      label="dashboard address"
+                      code={'http://localhost:3000'}
+                    />{' '}
+                    for source telemetry. If occupied, use
+                    <KryptonCodeBlock
+                      label="alternate dashboard port command"
+                      code={'npm run dev:dashboard -- -p 3001'}
+                    />{' '}
+                    and open
+                    <KryptonCodeBlock
+                      label="alternate dashboard address"
+                      code={'http://localhost:3001'}
+                    />
+                    . The override changes only the dashboard HTTP port, not the native Unix socket.
+                    The viewer does not start the daemon or automatically load standalone
+                    Application Support ledgers. GitHub Pages stays mock until the planned Phase 2
+                    local-file bridge ships.
+                  </div>
+                </details>
 
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                <details className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <summary className="cursor-pointer font-semibold text-krypton-fg-primary">
                     Supervise a real agent
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    <code>krypton run -- &lt;command&gt; [args...]</code> reuses a healthy local
-                    daemon or starts the compiled binary when unavailable. Readiness must succeed
-                    within three seconds after host spawn; the initial 1500 ms IPC probe and
-                    filesystem preparation are separate. Authentication or degraded-health failures
-                    deny startup without replacing the existing daemon. The detached source daemon
-                    remains running after MCP disconnect, owned by a detached Node host; each client
-                    retains its registration/unregister lifecycle. A refused or disconnected
-                    registration gets one authenticated refresh and exact-identity retry. Only the
-                    lock-holding native starter removes refused orphan sockets; live endpoints
-                    remain intact. Shutdown cancels recovery and child exit triggers unregister.
-                    Combined native stdout/stderr goes to private
-                    <code> .krypton/logs/daemon.log</code>, capped at 64 KiB then discarded and
-                    atomically replaced per startup attempt without mixing existing host output. The
-                    visible log may describe a losing concurrent starter; the telemetry ledger is
-                    unaffected. Native output can contain private paths; redact before sharing.{' '}
-                    <code>krypton daemon:start</code> starts the foreground Cargo daemon without the
-                    dashboard. From the checkout root, targets run in the configured protected
-                    workspace; from a protected subdirectory, that directory is preserved. Relative
-                    paths resolve there. Desktop MCP hosts can select the checkout with an absolute{' '}
-                    <code>KRYPTON_PROJECT_ROOT</code> and pass a literal argument array. Stdio is
-                    inherited, no shell expansion is performed, and supervisor diagnostics use
-                    stderr so MCP stdout remains intact. Close clients and run{' '}
-                    <code>npm run setup</code> or <code>krypton setup</code>
+                  </summary>
+                  <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    <KryptonCodeBlock
+                      label="supervisor syntax"
+                      code={'krypton run -- <command> [args...]'}
+                    />{' '}
+                    reuses a healthy local daemon or starts the compiled binary when unavailable.
+                    Readiness must succeed within three seconds after host spawn; the initial 1500
+                    ms IPC probe and filesystem preparation are separate. Authentication or
+                    degraded-health failures deny startup without replacing the existing daemon. The
+                    detached source daemon remains running after MCP disconnect, owned by a detached
+                    Node host; each client retains its registration/unregister lifecycle. A refused
+                    or disconnected registration gets one authenticated refresh and exact-identity
+                    retry. Only the lock-holding native starter removes refused orphan sockets; live
+                    endpoints remain intact. Shutdown cancels recovery and child exit triggers
+                    unregister. Combined native stdout/stderr goes to private
+                    <KryptonCodeBlock label="source daemon log" code={'.krypton/logs/daemon.log'} />
+                    , capped at 64 KiB then discarded and atomically replaced per startup attempt
+                    without mixing existing host output. The visible log may describe a losing
+                    concurrent starter; the telemetry ledger is unaffected. Native output can
+                    contain private paths; redact before sharing.{' '}
+                    <KryptonCodeBlock
+                      label="foreground daemon command"
+                      code={'krypton daemon:start'}
+                    />{' '}
+                    starts the foreground Cargo daemon without the dashboard. From the checkout
+                    root, targets run in the configured protected workspace; from a protected
+                    subdirectory, that directory is preserved. Relative paths resolve there. Desktop
+                    MCP hosts can select the checkout with an absolute{' '}
+                    <KryptonCodeBlock
+                      label="source project environment variable"
+                      code={'KRYPTON_PROJECT_ROOT'}
+                    />{' '}
+                    and pass a literal argument array. Stdio is inherited, no shell expansion is
+                    performed, and supervisor diagnostics use stderr so MCP stdout remains intact.
+                    Close clients and run{' '}
+                    <KryptonCodeBlock label="client setup command" code={'npm run setup'} /> or{' '}
+                    <KryptonCodeBlock label="linked client setup command" code={'krypton setup'} />
                     to configure detected Claude Desktop, Cursor, Claude Code and Cline storage.
                     Existing JSON receives a private atomic .bak backup; other servers remain intact
                     and conflicts fail per client. Restart configured clients and ensure node is
                     available on their PATH. Only the two Krypton MCP file tools gain native path
                     containment; built-in host tools are not intercepted.
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                     Executable symlinks used by version managers such as fnm, nvm and Homebrew
                     resolve to the same canonical target in Node and Rust. PID, start time and
                     parent remain strict. Resolution failures deny inspection. The daemon pins the
@@ -900,7 +1078,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     isolation, cleanup and receipts, even if the alias disappears. Restart the
                     daemon after updating.
                   </p>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                     The supervisor registers only the initial child, forwards SIGINT/SIGTERM, and
                     preserves nonzero exit codes after bounded cleanup. Lifecycle failure upgrades a
                     zero child status to 1. Child execution starts before registration completes;
@@ -912,54 +1090,77 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                     unconfirmed. If registration fails and the OS refuses cleanup, the CLI exits
                     nonzero and reports that the child may still be running.
                   </p>
-                </aside>
+                </details>
 
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">
+                <details className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <summary className="cursor-pointer font-semibold text-krypton-fg-primary">
                     Verify local supervision
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                  </summary>
+                  <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
                     Build the source daemon with
-                    <code> cargo build --release --manifest-path src/core-native/Cargo.toml</code>.
-                    All release candidates precede debug candidates across CARGO_TARGET_DIR
+                    <KryptonCodeBlock
+                      label="native release build command"
+                      code={'cargo build --release --manifest-path src/core-native/Cargo.toml'}
+                    />
+                    . All release candidates precede debug candidates across CARGO_TARGET_DIR
                     (absolute or relative to the checkout), target/, and src/core-native/target/.
-                    After <code>npm link</code>, run
-                    <code>{" krypton run -- node -e 'console.log(process.cwd())'"}</code>. Expect
-                    the configured protected workspace path. A very short command may exit before
-                    registration completes; that limitation appears on stderr.
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    <code>{`krypton run -- node -e 'require("fs").readFileSync("/etc/passwd")'`}</code>{' '}
+                    After{' '}
+                    <KryptonCodeBlock label="local alias installation command" code={'npm link'} />,
+                    run
+                    <KryptonCodeBlock
+                      label="working directory probe"
+                      code={" krypton run -- node -e 'console.log(process.cwd())'".trim()}
+                    />
+                    . Expect the configured protected workspace path. A very short command may exit
+                    before registration completes; that limitation appears on stderr.
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    <KryptonCodeBlock
+                      label="direct-read limitation probe"
+                      code={`krypton run -- node -e 'require("fs").readFileSync("/etc/passwd")'`.trim()}
+                    />{' '}
                     is a limitation probe, not a containment test. The read may succeed when OS
                     permissions allow it; arbitrary Node reads are not intercepted and portable
                     watcher events cannot reliably attribute the actor. No automatic quarantine or
                     receipt is promised for this command.
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-                    Run <code>npm run test:e2e</code> for disposable containment verification and
-                    expect [PASS] lines. The supervisor captures the child PID and inspects its
-                    start time, executable and parent. Rust validates that complete identity at
-                    registration and before isolation. Successful native SIGKILL creates an
-                    authenticated in-memory receipt; observational violations are separately
-                    recorded as unattributed JSONL events. Desktop delivery is mocked in the test.
-                    Discovery accepts redundant dot segments only for the exact expected absolute
-                    runtime files; relative paths, traversal, redirects and socket symlinks remain
-                    rejected. Rust normalizes runtime paths before publishing daemon.json.
-                  </p>
-                </aside>
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
+                    Run{' '}
+                    <KryptonCodeBlock
+                      label="isolated containment verification command"
+                      code={'npm run test:e2e'}
+                    />{' '}
+                    for disposable containment verification and expect [PASS] lines. The supervisor
+                    captures the child PID and inspects its start time, executable and parent. Rust
+                    validates that complete identity at registration and before isolation.
+                    Successful native SIGKILL creates an authenticated in-memory receipt;
+                    observational violations are separately recorded as unattributed JSONL events.
+                    Desktop delivery is mocked in the test. Discovery accepts redundant dot segments
+                    only for the exact expected absolute runtime files; relative paths, traversal,
+                    redirects and socket symlinks remain rejected. Rust normalizes runtime paths
+                    before publishing daemon.json.
+                  </div>
+                </details>
 
-                <aside className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
-                  <h2 className="text-sm font-bold text-krypton-fg-primary">Platform notes</h2>
-                  <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                <details className="mt-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-4">
+                  <summary className="cursor-pointer font-semibold text-krypton-fg-primary">
+                    Platform notes
+                  </summary>
+                  <div className="mt-2 text-sm leading-6 text-krypton-fg-body">
                     macOS is the actively supported native runtime. Linux native mode is
                     experimental. Windows uses dashboard-only demonstration mode. Every platform can
-                    explore simulated telemetry with <code>npm run dev:dashboard</code>. The planned
-                    Phase 3 Windows Tauri app remains a shell and simulation experience until Phase
-                    4 delivers native Named Pipe and Job Object containment. On macOS, a confirmed
-                    native quarantine queues a redacted OS-level banner; denied notification
-                    permission or a headless session suppresses only the banner, not enforcement.
-                  </p>
-                </aside>
+                    explore simulated telemetry with{' '}
+                    <KryptonCodeBlock
+                      label="demo dashboard command"
+                      code={'npm run dev:dashboard'}
+                    />
+                    . The planned Phase 3 Windows Tauri app remains a shell and simulation
+                    experience until Phase 4 delivers native Named Pipe and Job Object containment.
+                    On macOS, a confirmed native quarantine queues a redacted OS-level banner;
+                    denied notification permission or a headless session suppresses only the banner,
+                    not enforcement.
+                  </div>
+                </details>
 
                 <footer className="mt-5 flex flex-col gap-krypton-space-3 border-t border-krypton-border-muted pt-krypton-space-5 sm:flex-row sm:items-center">
                   <KryptonButton asChild endIcon={<ExternalLink />} size="md" variant="primary">
@@ -967,28 +1168,8 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       View Repository on GitHub
                     </a>
                   </KryptonButton>
-                  <KryptonButton
-                    onClick={() => {
-                      void handleCopySetupCommand();
-                    }}
-                    size="md"
-                    startIcon={copyStatus === 'copied' ? <Check /> : <Copy />}
-                    variant="secondary"
-                  >
-                    Copy native setup command
-                  </KryptonButton>
                 </footer>
-                <p
-                  aria-live="polite"
-                  className="mt-3 min-h-5 text-xs font-semibold text-krypton-fg-secondary"
-                  role="status"
-                >
-                  {copyStatus === 'copied'
-                    ? 'Setup command copied'
-                    : copyStatus === 'failed'
-                      ? 'Copy failed. Select the command above and copy it manually.'
-                      : ''}
-                </p>
+                <KryptonCodeBlock label="native setup command" code={NATIVE_SETUP_COMMAND} />
               </section>
             ) : null}
 
@@ -1000,7 +1181,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                 <h2 className="mt-2 text-xl font-bold text-krypton-fg-primary">
                   Frequently asked questions
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
+                <p className="mt-2 text-sm leading-6 text-krypton-fg-body">
                   Straight answers based on Krypton&apos;s current implementation and documented
                   security boundary.
                 </p>
@@ -1013,7 +1194,7 @@ export function ExplainerDrawer(props: ExplainerDrawerProps): React.JSX.Element 
                       <summary className="cursor-pointer select-none px-krypton-space-4 py-krypton-space-3 text-sm font-bold leading-6 text-krypton-fg-primary transition-colors hover:bg-krypton-control-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-krypton-focus-ring">
                         {item.question}
                       </summary>
-                      <p className="border-t border-krypton-border-muted px-krypton-space-4 py-krypton-space-3 text-sm leading-6 text-krypton-fg-muted">
+                      <p className="border-t border-krypton-border-muted px-krypton-space-4 py-krypton-space-3 text-sm leading-6 text-krypton-fg-body">
                         {item.answer}
                       </p>
                     </details>

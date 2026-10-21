@@ -23,6 +23,32 @@ colocated tests and directory barrels. Next.js `page.tsx`, `layout.tsx`, and
 `route.ts` files are framework entry points and must not be re-exported through
 barrels.
 
+Install the versioned local pre-push hook once in each checkout:
+
+```sh
+npm run hooks:install
+```
+
+This sets the local Git `core.hooksPath` to `.githooks`. The hook requires a clean
+checkout and verifies the commit being pushed. It runs `npm run test:actions`,
+`npm run verify` and `npm run format:check`, stopping at the first failure and
+rejecting changes made during verification. Check out the branch or tagged
+commit being pushed first. Other clones must install the hook separately;
+GitHub required checks remain necessary. Do not bypass it with `--no-verify`.
+
+The jsdom-only `nwsapi` override pins 2.2.28, whose re-entry guard prevents
+recursive `:modal`/`:fullscreen` matching from blocking async DOM tests. Keep the
+clipboard rejection assertion bounded instead of increasing test timeouts. The
+existing Vite override uses 7.3.7 to clear the launch-editor advisories reported
+by the dependency audit; Vitest and coverage-provider versions remain paired.
+
+Before each authorized commit, run `npx vitest run <affected-test-path>` and the
+full verification/formatting commands below. Async DOM/clipboard assertions must
+use an explicit `waitFor` timeout of at most 3,000 ms, and suites must restore
+mocks, globals, timers and owned DOM properties in `afterEach`. The hook is
+contributor tooling; it does not change client configuration or native runtime
+security deadlines.
+
 Before requesting review:
 
 ```sh

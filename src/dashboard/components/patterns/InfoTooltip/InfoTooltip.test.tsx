@@ -19,15 +19,29 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('InfoTooltip', () => {
   it('preserves keyboard focus when the information trigger is activated', () => {
-    render(<InfoTooltip content="Explains process termination." label="Actions" />);
+    render(
+      <InfoTooltip
+        appearance="unboxed"
+        size="compact"
+        tone="neutral"
+        content="Inspect event details, view raw JSON payload, or review folder containment boundaries."
+        label="Actions"
+      />
+    );
     const trigger = screen.getByRole('button', { name: 'Info for Actions' });
 
     act(() => trigger.focus());
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip).not.toBeNull();
+    expect(trigger.getAttribute('aria-describedby')).toBe(tooltip?.id);
+    expect(tooltip?.textContent).toContain('view raw JSON payload');
     fireEvent.click(trigger);
 
     expect(document.activeElement).toBe(trigger);

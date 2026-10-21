@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import {
   dispatchNativeControl,
   discoverNativeEndpoint as discoverEndpoint,
@@ -54,7 +55,7 @@ function parseEndpointRecord(value: unknown): RuntimeEndpointRecord {
  * Validates native response fields and health without inventing missing counts.
  * @param {unknown} value - Bounded response from authenticated transport.
  * @returns {NativeControlResponse} Typed native response or validation rejection.
- * @complexity O(1) time and auxiliary space for the fixed response schema.
+ * @complexity O(L) time and auxiliary space for bounded protected folder bytes L.
  * @example parseNativeResponse(null); // throws
  */
 function parseNativeResponse(value: unknown): NativeControlResponse {
@@ -76,6 +77,17 @@ function parseNativeResponse(value: unknown): NativeControlResponse {
   ) {
     throw new TypeError('Native active process count is invalid.');
   }
+  const protectedWorkspaceRoot = value.protectedWorkspaceRoot;
+  if (
+    protectedWorkspaceRoot !== undefined &&
+    (typeof protectedWorkspaceRoot !== 'string' ||
+      protectedWorkspaceRoot.length > 1024 ||
+      Buffer.byteLength(protectedWorkspaceRoot, 'utf8') > 1024 ||
+      !isAbsolute(protectedWorkspaceRoot) ||
+      /[\p{Cc}\p{Cs}]/u.test(protectedWorkspaceRoot))
+  ) {
+    throw new TypeError('Native protected workspace root is invalid.');
+  }
   const healthValue = value.health;
   const health: NativeDaemonHealth | undefined = normalizeNativeHealth(healthValue);
   if (healthValue !== undefined && health === undefined) {
@@ -88,6 +100,7 @@ function parseNativeResponse(value: unknown): NativeControlResponse {
     requestId: value.requestId,
     ...(activeProcessCount === undefined ? {} : { activeProcessCount }),
     ...(health === undefined ? {} : { health }),
+    ...(protectedWorkspaceRoot === undefined ? {} : { protectedWorkspaceRoot }),
   };
 }
 

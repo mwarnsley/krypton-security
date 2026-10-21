@@ -118,6 +118,17 @@ impl McpBoundary {
         })
     }
 
+    /// Returns read-only startup-pinned folder metadata without filesystem IO.
+    /// Unrepresentable, control-bearing, or oversized UTF-8 paths are omitted.
+    /// O(L) time and O(1) space for at most MAX_PATH bytes L.
+    pub fn protected_workspace_root(&self) -> Option<&str> {
+        if self.root.as_os_str().len() > MAX_PATH || !self.root.is_absolute() {
+            return None;
+        }
+        let root = self.root.to_str()?;
+        (!root.chars().any(char::is_control)).then_some(root)
+    }
+
     /// Evaluates and executes only bounded file tools. O(L + B) processing for
     /// path bytes L and content bytes B; no remote calls or caller-selected roots.
     /// Descriptor-relative no-follow traversal prevents symlink substitution;
@@ -371,6 +382,40 @@ mod tests {
         assert_eq!(access_error_code(&error), "staging_cleanup_failed");
         assert!(error.to_string().contains("injected staging failure"));
         assert!(error.to_string().contains("injected cleanup failure"));
+    }
+
+    #[test]
+    fn workspace_metadata_rejects_unrepresentable_or_unsafe_roots_without_io() {
+        use std::os::unix::ffi::OsStringExt;
+        let mut fixture = Fixture::new();
+        for root in [
+            PathBuf::from("relative"),
+            PathBuf::from("/root\nfolder"),
+            PathBuf::from("/root\u{85}folder"),
+            PathBuf::from(format!("/{}", "a".repeat(1024))),
+            PathBuf::from(format!("/{}", "é".repeat(512))),
+            PathBuf::from(std::ffi::OsString::from_vec(vec![b'/', 0xff])),
+        ] {
+            fixture.boundary.root = root;
+            assert_eq!(fixture.boundary.protected_workspace_root(), None);
+        }
+    }
+
+    #[test]
+    fn workspace_metadata_accepts_bounded_utf8_without_filesystem_resolution() {
+        let mut fixture = Fixture::new();
+        for root in [
+            "/".to_owned(),
+            format!("/{}", "a".repeat(1022)),
+            format!("/{}", "a".repeat(1023)),
+            format!("/{}", "é".repeat(511)),
+        ] {
+            fixture.boundary.root = PathBuf::from(&root);
+            assert_eq!(
+                fixture.boundary.protected_workspace_root(),
+                Some(root.as_str())
+            );
+        }
     }
 
     #[test]

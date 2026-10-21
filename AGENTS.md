@@ -317,6 +317,35 @@ the local aggregate does not replace hosted platform checks or branch protection
 Passing verification does not authorize an agent to commit or push: explicit
 human instructions and all existing review requirements still apply.
 
+### Pre-Commit & Pre-Push Quality Gate
+
+Before every authorized commit or push, run focused tests for each affected
+behavior (`npx vitest run <path>`) and the full `npm run verify` gate on the exact
+final tree, followed by `npm run format:check`. The AlertTable action-menu target
+is `npm run test:actions`. A targeted pass alone never authorizes a commit or
+push, and explicit human authorization remains required.
+
+Install the versioned local hook once per checkout with `npm run hooks:install`.
+This sets this repository's `core.hooksPath` to `.githooks`; it does not configure
+other clones or hosted GitHub protections. The pre-push hook rejects dirty trees
+and ref updates that do not resolve to the checked-out commit, then runs targeted
+action tests, full verification and formatting. Any failure blocks the push.
+Changes during verification also block it. Do not bypass the hook with
+`--no-verify`, change hooksPath to avoid checks, or add a skip environment flag.
+
+Asynchronous DOM and clipboard tests MUST wait for a specific accessible outcome
+using `waitFor(..., { timeout: N })` with an explicit ceiling of **3,000 ms or
+less**. Do not use an unbounded async `act` scope as a substitute for observing an
+outcome. Keep test callbacks narrow; a JavaScript timeout cannot preempt a
+synchronous DOM operation. These assertion ceilings do not shorten native IPC
+contracts or the larger integration/subprocess budgets below.
+
+Every suite that changes mocks, globals, fake timers, clipboard APIs, object URLs
+or DOM prototypes MUST restore its owned state in `afterEach`: clean rendered
+components, restore real timers and spies, unstub globals, and restore owned
+property descriptors. Tests must cover accessible failure feedback and ensure
+rejections settle without leaking private exception text or unhandled promises.
+
 ### CI Environment Invariants
 
 Packaging, bundle-building, and native process-spawning tests must tolerate
@@ -682,3 +711,27 @@ theme primitives.
 7. **Enforce mechanically.** Run `npm run design-system:check` after every
    dashboard change. Fix violations at the approved token or primitive layer;
    do not weaken, bypass, or suppress the checker to make a change pass.
+
+## UI, Design & Accessibility Guidelines
+
+1. **Mandatory WCAG 2.1 AA compliance.** All components, pages, drawers,
+   tables, and documentation views must meet WCAG 2.1 AA at minimum; aim for
+   AAA on primary copy. Automated scores supplement keyboard, screen-reader,
+   reflow, and contrast verification; they do not establish compliance alone.
+2. **Minimum text contrast.** Body copy and primary content must maintain at
+   least 4.5:1 contrast against their rendered backgrounds (7:1 preferred).
+   Muted/secondary text and icon metadata must also maintain at least 4.5:1.
+   Never use muted grays or dark blues that fail contrast on deep-dark surfaces.
+3. **Dual-theme requirement (light and dark).** Explicitly design and verify
+   every visual component, layout, modal, drawer, table, and state in both modes.
+   Hardcoded color utilities or values without light/dark variants or semantic
+   CSS variables are prohibited. Define palette values at the token layer.
+4. **Affordances and focus.** Tabs, toggles, buttons, and links need clear active
+   and inactive states, discernible control boundaries with at least 3:1
+   non-text contrast, and visible keyboard `focus-visible` rings. Decorative
+   surface dividers are distinct from interactive control boundaries.
+5. **Readability and layout.** Avoid unbroken walls of text in drawers and
+   modals. Use scannable cards, numbered sequences, and dedicated monospace
+   blocks with copy affordances for paths, environment variables, and commands.
+   Announce copy success or failure without exposing exception details, and
+   retain selectable text when clipboard access is unavailable.

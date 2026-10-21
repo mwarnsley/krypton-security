@@ -23,6 +23,8 @@
     "lint:rust": "cargo clippy --manifest-path src/core-native/Cargo.toml --all-targets --all-features -- -D warnings",
     "typecheck": "tsc --noEmit && tsc --noEmit --project src/dashboard/tsconfig.json",
     "test": "vitest run",
+    "test:actions": "vitest run src/dashboard/components/patterns/AlertTable/AlertTable.actions.test.tsx",
+    "hooks:install": "git config --local core.hooksPath .githooks",
     "test:coverage": "vitest run --coverage",
     "test:rust": "cargo test --manifest-path src/core-native/Cargo.toml --all-targets --all-features",
     "test:sim": "ts-node tests_simulation/test_injection.ts",
@@ -103,7 +105,10 @@
     "micromatch": "4.0.8",
     "postcss-selector-parser": "7.1.6",
     "vitest": {
-      "vite": "7.3.6"
+      "vite": "7.3.7"
+    },
+    "jsdom": {
+      "nwsapi": "2.2.28"
     }
   }
 }

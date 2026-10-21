@@ -106,4 +106,19 @@ describe('KryptonDataTable', () => {
     expect(markup).toContain('flex h-48 w-full items-center justify-center');
     expect(markup).toContain('px-krypton-space-4 py-krypton-space-3 align-middle');
   });
+  it('makes the horizontally overflowing table a named keyboard-focusable region', () => {
+    const markup = renderToStaticMarkup(
+      <KryptonDataTable
+        caption="Protected assets"
+        columns={[...COLUMNS]}
+        data={[{ id: 'asset-1', name: 'Sandbox' }]}
+        emptyMessage="No assets."
+        itemLabel="asset"
+        pagination={PAGINATION}
+      />
+    );
+    expect(markup).toContain('aria-label="Protected assets table viewport"');
+    expect(markup).toContain('role="region"');
+    expect(markup).toContain('tabindex="0"');
+  });
 });

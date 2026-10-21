@@ -2,12 +2,13 @@
 
 import clsx from 'clsx';
 import { ArrowUp, ShieldAlert } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 
 import {
   AlertTable,
   ExplainerDrawer,
+  ThemeToggle,
   formatAttemptedAction,
   formatEnforcementStatus,
   type EnforcementStatus,
@@ -19,6 +20,7 @@ import {
 } from '../';
 import { KryptonButton, KryptonIconButton, KryptonToggle } from '../../primitives';
 import type { NativeDaemonHealth, TelemetryFallbackReason, TelemetrySource } from '../../../types';
+import { countAlertSeverities, normalizeProtectedWorkspaceRoot } from '../../../utils';
 import { normalizeNativeHealth } from '../../../utils/nativeHealth';
 
 const TELEMETRY_POLL_INTERVAL_MS = 5_000;
@@ -29,6 +31,8 @@ const MAX_CLIENT_RETAINED_ALERTS = 500;
 const IS_STATIC_EXPORT_BUILD = process.env.NEXT_PUBLIC_KRYPTON_STATIC_EXPORT === 'true';
 
 interface TelemetryState {
+  /** Current connected native folder, never a historical event snapshot. */
+  readonly protectedWorkspaceRoot?: string;
   /** The number of owned child processes currently monitored by Krypton. */
   readonly activeProcessCount: number | null;
 
@@ -206,16 +210,16 @@ export function isStandaloneDemoLocation(
 /**
  * Supplies the stable no-op subscription required for location snapshot hydration.
  *
- * The deployment hostname and port do not change without a document navigation,
+ * The deployment hostname, port and build settings stay fixed until navigation,
  * so no live browser event subscription is necessary.
  *
  * @returns {() => void} A no-op cleanup callback.
  * @complexity O(1) time and O(1) space.
  * @example
- * subscribeToDemoEnvironment()();
+ * subscribeToDashboardEnvironment()();
  * // => performs no work
  */
-function subscribeToDemoEnvironment(): () => void {
+function subscribeToDashboardEnvironment(): () => void {
   return () => {};
 }
 
@@ -474,6 +478,10 @@ export function normalizeTelemetryPayload(payload: unknown): TelemetryState {
   const fallbackReason = payloadRecord?.fallbackReason;
   const generatedAt = payloadRecord?.generatedAt;
   const nextAfter = payloadRecord?.nextAfter;
+  const protectedWorkspaceRoot =
+    payloadRecord?.source === 'native' && payloadRecord?.nativeDaemonReachable === true
+      ? normalizeProtectedWorkspaceRoot(payloadRecord.protectedWorkspaceRoot)
+      : undefined;
   const normalizedFallbackReason =
     fallbackReason === 'attestation_failed' ||
     fallbackReason === 'daemon_unreachable' ||
@@ -485,6 +493,7 @@ export function normalizeTelemetryPayload(payload: unknown): TelemetryState {
 
   return {
     activeProcessCount,
+    ...(protectedWorkspaceRoot === undefined ? {} : { protectedWorkspaceRoot }),
     ...(health === undefined ? {} : { health }),
     alerts,
     generatedAt: typeof generatedAt === 'string' ? generatedAt : new Date(0).toISOString(),
@@ -796,7 +805,7 @@ export function shouldPollTelemetryApi(isDemoMode: boolean): boolean {
 
 export default function DashboardPage(): React.JSX.Element {
   const isDemoMode = useSyncExternalStore(
-    subscribeToDemoEnvironment,
+    subscribeToDashboardEnvironment,
     getDemoEnvironmentSnapshot,
     getServerDemoEnvironmentSnapshot
   );
@@ -1099,109 +1108,130 @@ export default function DashboardPage(): React.JSX.Element {
     return () => window.removeEventListener('scroll', handleWindowScroll);
   }, []);
 
+  const severityCounts = useMemo(() => countAlertSeverities(telemetry.alerts), [telemetry.alerts]);
+
   return (
     <main
-      className="min-h-screen bg-krypton-bg-main px-krypton-space-4 py-krypton-space-5 text-krypton-fg-primary sm:px-krypton-space-5 lg:px-krypton-space-6 lg:py-krypton-space-6"
+      className="min-h-screen bg-krypton-bg-main py-krypton-space-6 text-krypton-fg-primary"
       data-system-status={systemStatus}
     >
-      <div className="mx-auto flex w-full min-w-0 max-w-krypton-dashboard flex-col gap-6">
-        <header className="relative overflow-hidden rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface px-krypton-space-5 py-7 shadow-2xl shadow-krypton-shadow sm:px-krypton-space-6">
-          <div className="relative flex flex-col gap-krypton-space-4 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-krypton-hero text-krypton-accent-cyan">
-                ACTIVE SECURITY WORKSPACE
-              </p>
-              <h1 className="mt-2 text-2xl font-black tracking-tight text-krypton-fg-primary sm:text-3xl">
-                Krypton Security Command
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-krypton-fg-muted">
-                Real-time monitoring and threat isolation for automated applications and file
-                systems.
-              </p>
-            </div>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-krypton-space-3 md:justify-end">
-              <ExplainerDrawer />
-              <div
-                aria-busy={isAuditModeUpdating}
-                className="flex h-10 items-center gap-krypton-space-2 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"
-              >
-                <label
-                  className="cursor-pointer text-xs font-bold uppercase tracking-wider text-krypton-fg-secondary"
-                  htmlFor="audit-only-mode"
-                >
-                  Audit-Only Mode
-                </label>
-                <KryptonToggle
-                  aria-label="Audit-Only Mode"
-                  checked={auditOnly}
-                  disabled={isAuditModeUpdating || !modeKnown}
-                  id="audit-only-mode"
-                  onCheckedChange={handleAuditModeChange}
-                  variant="warning"
-                />
-                <InfoTooltip
-                  content="The native daemon starts in Audit-Only Mode (switch on), recording workspace violations and showing warnings without terminating processes. Switch off selects Active Enforcement; only owned, registered processes can be isolated after live identity verification. The live daemon supplies the current mode. Krypton MCP reads and writes outside the protected workspace remain denied in both modes. Static demonstrations change only simulated behavior."
-                  label="Audit-Only Mode"
-                />
-              </div>
-              <p
-                aria-live="polite"
-                className={clsx(
-                  'inline-flex h-10 w-fit items-center gap-krypton-space-2 rounded-krypton-radius-full border px-krypton-space-3 text-xs font-bold uppercase tracking-wider',
-                  systemStatus === 'operational'
-                    ? 'border-krypton-success/40 bg-krypton-success/10 text-krypton-success'
-                    : 'border-krypton-warning-amber/40 bg-krypton-warning-amber/10 text-krypton-warning-foreground'
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={clsx(
-                    'h-2 w-2 rounded-krypton-radius-full',
-                    systemStatus === 'operational'
-                      ? 'bg-krypton-success'
-                      : 'bg-krypton-warning-amber'
-                  )}
-                />
-                Telemetry stream: {systemStatus}
-              </p>
-              {!modeKnown && (
-                <span role="status" className="w-full text-xs text-krypton-fg-muted md:text-right">
-                  Mode unavailable
-                </span>
-              )}
-            </div>
-          </div>
-        </header>
-
+      <div className="flex w-full min-w-0 flex-col gap-krypton-space-6 px-krypton-space-4 sm:px-krypton-space-5">
         <section
-          aria-labelledby="firewall-overview-title"
-          className="flex flex-col gap-krypton-space-4 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-main/70 p-krypton-space-5 lg:flex-row lg:items-stretch lg:justify-between lg:p-krypton-space-5"
+          aria-label="Workspace summary"
+          className="grid grid-cols-1 gap-krypton-space-5 lg:grid-cols-2"
         >
-          <div className="max-w-xl py-1">
-            <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-fg-muted">
-              Engine overview
-            </p>
-            <h2
-              className="mt-2 text-xl font-bold text-krypton-fg-primary"
-              id="firewall-overview-title"
+          <section
+            aria-label="Workspace context"
+            className="flex h-full min-w-0 flex-col justify-between gap-krypton-space-5 rounded-krypton-radius-card border border-krypton-border-muted bg-krypton-bg-surface p-krypton-space-5 shadow-xl shadow-krypton-shadow"
+          >
+            <header className="flex flex-wrap items-start justify-between gap-krypton-space-4">
+              <div className="min-w-0 flex-1 basis-64">
+                <p className="text-xs font-bold uppercase tracking-krypton-hero text-krypton-accent-cyan">
+                  ACTIVE SECURITY WORKSPACE
+                </p>
+                <h1 className="mt-2 text-2xl font-black tracking-tight text-krypton-fg-primary sm:text-3xl">
+                  Krypton Security Command
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-krypton-fg-muted">
+                  Real-time monitoring and threat isolation for automated applications and file
+                  systems.
+                </p>
+              </div>
+              <nav
+                aria-label="Dashboard utilities"
+                className="ml-auto flex shrink-0 items-center gap-krypton-space-2"
+              >
+                <ThemeToggle />
+              </nav>
+            </header>
+            <section
+              aria-labelledby="firewall-overview-title"
+              className="min-w-0 border-t border-krypton-border-muted pt-krypton-space-4"
             >
-              Active Workspace Protection
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-krypton-fg-muted">
-              Krypton observes workspace filesystem activity. Authenticated isolation is limited to
-              registered children whose complete live process identity is revalidated; observations
-              alone do not prove or trigger containment.
-            </p>
-          </div>
-          <div className="w-full lg:max-w-md">
-            <StatusCard
-              activeProcessCount={telemetry.activeProcessCount}
-              systemStatus={systemStatus}
-            />
-          </div>
+              <div className="flex flex-wrap items-center justify-between gap-krypton-space-3">
+                <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-fg-muted">
+                  Engine overview
+                </p>
+                <div className="ml-auto shrink-0">
+                  <ExplainerDrawer />
+                </div>
+              </div>
+              <h2
+                className="mt-2 text-xl font-bold text-krypton-fg-primary"
+                id="firewall-overview-title"
+              >
+                Active Workspace Protection
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-krypton-fg-muted">
+                Krypton observes workspace filesystem activity. Authenticated isolation is limited
+                to registered children whose complete live process identity is revalidated;
+                observations alone do not prove or trigger containment.
+              </p>
+            </section>
+          </section>
+          <StatusCard
+            activeProcessCount={telemetry.activeProcessCount}
+            alertCount={telemetry.alerts.length}
+            severityCounts={severityCounts}
+            systemStatus={systemStatus}
+            controls={
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-krypton-space-3">
+                <div
+                  aria-busy={isAuditModeUpdating}
+                  className="flex min-h-10 max-w-full flex-wrap items-center gap-krypton-space-2 rounded-krypton-radius-full border border-krypton-border-muted bg-krypton-bg-main/70 px-krypton-space-3 py-krypton-space-2"
+                >
+                  <div className="flex flex-col">
+                    <label
+                      className="cursor-pointer text-xs font-bold uppercase tracking-wider text-krypton-fg-secondary"
+                      htmlFor="audit-only-mode"
+                    >
+                      Audit-Only Mode
+                    </label>
+                    {!modeKnown && (
+                      <span role="status" className="text-krypton-nano text-krypton-fg-muted">
+                        Mode unavailable
+                      </span>
+                    )}
+                  </div>
+                  <KryptonToggle
+                    aria-label="Audit-Only Mode"
+                    checked={auditOnly}
+                    disabled={isAuditModeUpdating || !modeKnown}
+                    id="audit-only-mode"
+                    onCheckedChange={handleAuditModeChange}
+                    variant="warning"
+                  />
+                  <InfoTooltip
+                    content="When enabled, Krypton logs sandbox violations without stopping the AI process. When disabled, Krypton can stop supervised AI processes that try to escape the sandbox. File access outside the allowed folder stays blocked in both modes."
+                    label="Audit-Only Mode"
+                  />
+                </div>
+                <p
+                  aria-live="polite"
+                  className={clsx(
+                    'ml-auto inline-flex min-h-10 w-fit max-w-full items-center gap-krypton-space-2 rounded-krypton-radius-full border px-krypton-space-3 py-krypton-space-2 text-xs font-bold uppercase tracking-wider',
+                    systemStatus === 'operational'
+                      ? 'border-krypton-success/40 bg-krypton-success/10 text-krypton-success'
+                      : 'border-krypton-warning-amber/40 bg-krypton-warning-amber/10 text-krypton-warning-foreground'
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={clsx(
+                      'h-2 w-2 shrink-0 rounded-krypton-radius-full',
+                      systemStatus === 'operational'
+                        ? 'bg-krypton-success'
+                        : 'bg-krypton-warning-amber'
+                    )}
+                  />
+                  <span className="min-w-0">Telemetry stream: {systemStatus}</span>
+                </p>
+              </div>
+            }
+          />
         </section>
 
-        <section aria-labelledby="threat-telemetry-title" className="space-y-4">
+        <section aria-labelledby="threat-telemetry-title" className="w-full min-w-0 space-y-4">
           <header className="flex flex-col items-start justify-between gap-4 px-1 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-krypton-heading text-krypton-fg-muted">
@@ -1224,7 +1254,12 @@ export default function DashboardPage(): React.JSX.Element {
             nativeDaemonReachable={telemetry.nativeDaemonReachable}
             source={telemetry.source}
           />
-          <AlertTable alerts={telemetry.alerts} />
+          <AlertTable
+            alerts={telemetry.alerts}
+            {...(telemetry.protectedWorkspaceRoot === undefined
+              ? {}
+              : { protectedWorkspaceRoot: telemetry.protectedWorkspaceRoot })}
+          />
         </section>
       </div>
       <div

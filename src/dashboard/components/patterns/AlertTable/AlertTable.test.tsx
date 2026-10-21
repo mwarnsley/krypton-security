@@ -1,3 +1,6 @@
+// @vitest-environment jsdom
+
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, test, vi } from 'vitest';
 
@@ -91,6 +94,8 @@ function mockIsolationResponse(status: number, body: unknown): void {
 }
 
 afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -109,7 +114,7 @@ describe('AlertTable', () => {
         ]}
       />
     );
-    expect(markup).toContain('Denied (actor unattributed)');
+    expect(markup).toContain('Blocked (Unattributed)');
     expect(markup).not.toContain('Open actions for process');
   });
   it('labels null-PID evidence as observed without claiming an actor', () => {
@@ -133,9 +138,9 @@ describe('AlertTable', () => {
     'Timestamp',
     'Process ID',
     'Application / Tool',
-    'Attempted Access Location',
+    'Target Path',
     'Severity',
-    'Verified Signature',
+    'Security Verification',
     'Actions',
   ])('renders the %s column', (columnLabel) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
@@ -196,13 +201,13 @@ describe('AlertTable', () => {
   it('renders one compact per-process action-menu trigger', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
-    expect(markup).toContain('aria-label="Open actions for process 4242"');
+    expect(markup).toContain('aria-label="Open event actions for node"');
     expect(markup).toContain('aria-haspopup="menu"');
   });
 
   it('keeps the simulated row action-menu trigger enabled', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[SIMULATED_ALERT]} />);
-    const triggerStart = markup.indexOf('aria-label="Open simulated actions for npm install"');
+    const triggerStart = markup.indexOf('aria-label="Open event actions for npm install"');
     const triggerEnd = markup.indexOf('</button>', triggerStart);
 
     expect(triggerStart).toBeGreaterThan(-1);
@@ -211,9 +216,10 @@ describe('AlertTable', () => {
 
   it('exposes the complete simulated action menu contract', () => {
     expect(SIMULATED_ALERT_ACTION_LABELS).toEqual([
-      'View Raw Payload',
+      'View Raw Event (JSON)',
       'Copy Process Details',
-      'Inspect Sandbox Boundary',
+      'View Allowed Folder',
+      'Download Threat Report',
     ]);
   });
 
@@ -232,31 +238,26 @@ describe('AlertTable', () => {
     expect(markup).not.toContain('aria-label="Download exploit signature for process 4242"');
   });
 
-  it('renders structured onboarding content for both Actions options', () => {
+  it('explains all four diagnostic utilities in separate icon-led sections', () => {
     const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
-
-    expect(markup).toContain('Force Isolate');
-    expect(markup).toContain('Download Signature');
-    expect(markup).toContain('my-3 border-t border-krypton-border-muted/60');
-  });
-
-  it('styles both Actions descriptions with softer supporting text', () => {
-    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
-
-    expect(markup.match(/text-xs font-normal leading-relaxed text-krypton-fg-muted/g)).toHaveLength(
-      2
-    );
-  });
-
-  it('uses distinct high-contrast treatments for both Actions headers', () => {
-    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
-
-    expect(markup).toContain(
-      'mb-1 flex items-center gap-2 text-sm font-semibold text-krypton-alert-rose'
-    );
-    expect(markup).toContain(
-      'mb-1 mt-3 flex items-center gap-2 text-sm font-semibold text-krypton-accent-cyan'
-    );
+    for (const heading of [
+      'View Raw Event',
+      'Copy Process Details',
+      'View Allowed Folder',
+      'Download Threat Report',
+    ])
+      expect(markup).toContain(heading);
+    for (const description of [
+      'Inspect the raw intercepted security payload and metadata.',
+      'Copy process ID, binary name, and execution parameters.',
+      'Check the exact boundary directory path permitted for this session.',
+      'Export a Markdown report summarizing the policy rejection and path details.',
+    ])
+      expect(markup).toContain(description);
+    expect(markup.match(/<section/g)).toHaveLength(4);
+    expect(markup.match(/<hr/g)).toHaveLength(3);
+    expect(markup.match(/aria-hidden="true"/g)).toHaveLength(4);
+    expect(markup).not.toMatch(/\bpro\b|paid|tiers|force stop|SIGKILL/i);
   });
 
   it('renders the default Timestamp sort as descending', () => {
@@ -342,11 +343,11 @@ describe('AlertTable', () => {
     expect(markup).not.toContain('<option value="ALL">ALL</option>');
   });
 
-  it('styles the rows-per-page selector with the compact dark treatment', () => {
+  it('styles the rows-per-page selector with the accessible theme treatment', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[ALERT]} />);
 
     expect(markup).toContain(
-      'border border-krypton-border-muted bg-krypton-bg-surface text-krypton-fg-secondary'
+      'border border-krypton-control-border bg-krypton-bg-surface text-krypton-fg-secondary'
     );
   });
 
@@ -364,9 +365,9 @@ describe('AlertTable', () => {
   test.each([
     'Process ID',
     'Application / Tool',
-    'Attempted Access Location',
+    'Target Path',
     'Severity',
-    'Verified Signature',
+    'Security Verification',
     'Actions',
   ])('renders a separate info control for %s', (columnLabel) => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
@@ -374,19 +375,10 @@ describe('AlertTable', () => {
     expect(markup).toContain(`aria-label="Info for ${columnLabel}"`);
   });
 
-  it('keeps Timestamp free of an info control', () => {
+  it('provides Timestamp context beside its label', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
 
-    expect(markup).not.toContain('aria-label="Info for Timestamp"');
-  });
-
-  it('uses the standardized full-width header wrapper', () => {
-    const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
-    const headerWrappers = markup.match(
-      /flex w-full items-center justify-between gap-krypton-space-3 primitive-header-wrapper/g
-    );
-
-    expect(headerWrappers).toHaveLength(7);
+    expect(markup).toContain('aria-label="Info for Timestamp"');
   });
 
   it('keeps sortable header labels from wrapping into adjacent controls', () => {
@@ -406,12 +398,11 @@ describe('AlertTable', () => {
 
   it('keeps the help trigger outside the sortable header button', () => {
     const markup = renderToStaticMarkup(<AlertTable alerts={[]} />);
-    const sortButtonStart = markup.indexOf('aria-label="Sort by Process ID"');
-    const sortButtonEnd = markup.indexOf('</button>', sortButtonStart);
-    const helpButtonStart = markup.indexOf('aria-label="Info for Process ID"');
-
-    expect(sortButtonStart).toBeGreaterThan(-1);
-    expect(helpButtonStart).toBeGreaterThan(sortButtonEnd);
+    const document = new DOMParser().parseFromString(markup, 'text/html');
+    const sortButton = document.querySelector('button[aria-label="Sort by Process ID"]');
+    const helpButton = document.querySelector('button[aria-label="Info for Process ID"]');
+    expect(sortButton?.contains(helpButton)).toBe(false);
+    expect(helpButton?.nextElementSibling).toBe(sortButton);
   });
 
   it('adds the process-termination info control to Actions', () => {
@@ -451,12 +442,6 @@ describe('AlertTable', () => {
 
   it('returns malformed timestamps unchanged', () => {
     expect(formatAlertTimestamp('not-an-iso-date')).toBe('not-an-iso-date');
-  });
-
-  it('explains that Force Isolate sends SIGKILL', () => {
-    const markup = renderToStaticMarkup(<ActionsHeaderTooltipContent />);
-
-    expect(markup).toContain('termination signal (SIGKILL)');
   });
 
   it('returns the verified native success message for table rendering', async () => {
@@ -515,3 +500,99 @@ describe('AlertTable', () => {
     expect(markup).not.toContain('style=');
   });
 });
+
+it('keeps one info control per header, with the Actions trigger before its label', () => {
+  const document = new DOMParser().parseFromString(
+    renderToStaticMarkup(<AlertTable alerts={[ALERT]} />),
+    'text/html'
+  );
+  const headers = [...document.querySelectorAll('thead th')];
+  expect(headers).toHaveLength(7);
+  for (const header of headers) {
+    const buttons = [...header.querySelectorAll('button')];
+    expect(buttons[0]?.getAttribute('aria-label')).toMatch(/^Info for /);
+    expect(header.querySelectorAll('button[aria-label^="Info for "]')).toHaveLength(1);
+    if (header.textContent?.includes('Actions')) {
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0]?.nextElementSibling?.textContent).toBe('Actions');
+    } else {
+      expect(buttons[1]?.getAttribute('aria-label')).toMatch(/^Sort by /);
+      expect(buttons[1]?.lastElementChild?.querySelector('svg')).not.toBeNull();
+    }
+  }
+});
+
+it('describes Security Verification as recorded evidence without inventing a signature', () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  );
+  render(<AlertTable alerts={[ALERT]} />);
+  const trigger = screen.getByRole('button', { name: 'Info for Security Verification' });
+  act(() => trigger.focus());
+  const tooltip = document.querySelector('[role="tooltip"]');
+  expect(tooltip?.textContent).toContain(
+    'Shows the event source and the security evidence recorded by Krypton. Demo events are simulated.'
+  );
+  expect(tooltip?.textContent).not.toContain('cryptographically signed');
+  fireEvent.keyDown(trigger, { key: 'Escape' });
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  const processHelp = screen.getByRole('button', { name: 'Info for Process ID' });
+  act(() => processHelp.focus());
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+    'when the application is known'
+  );
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Unattributed events');
+}, 30000);
+
+it.each(['click', 'hover', 'focus'])(
+  'opens the left Actions legend on %s and anchors its accessible description',
+  (interaction) => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+    render(<AlertTable alerts={[ALERT]} />);
+    const trigger = screen.getByRole('button', { name: 'Info for Actions' });
+    expect(trigger.nextElementSibling?.textContent).toBe('Actions');
+    if (interaction === 'click') {
+      fireEvent.click(trigger);
+    } else if (interaction === 'focus') {
+      act(() => trigger.focus());
+    } else {
+      vi.useFakeTimers();
+      const event = new Event('pointermove', { bubbles: true });
+      Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+      fireEvent(trigger, event);
+      act(() => vi.advanceTimersByTime(1));
+      vi.useRealTimers();
+    }
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.querySelectorAll('section')).toHaveLength(4);
+    expect(tooltip?.textContent).toContain(
+      'Inspect the raw intercepted security payload and metadata.'
+    );
+    expect(tooltip?.textContent).toContain(
+      'Export a Markdown report summarizing the policy rejection and path details.'
+    );
+    expect(tooltip?.textContent).toContain(
+      'Copy process ID, binary name, and execution parameters.'
+    );
+    expect(tooltip?.textContent).toContain(
+      'Check the exact boundary directory path permitted for this session.'
+    );
+    expect(tooltip?.textContent).not.toMatch(/force stop|active remediation|\bpro\b|\bfree\b/i);
+    expect(trigger.getAttribute('aria-describedby')).toBe(tooltip?.id);
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  },
+  30000
+);

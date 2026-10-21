@@ -41,7 +41,9 @@ application-layer prompt suppressors, not operating-system authorization tokens.
 When an agent is launched through Krypton's protected runner, its initial registered
 child remains subject to the enabled controls regardless of the client's approval
 configuration. The MCP file tools enforce native path checks; descendant and
-syscall containment remain planned and other host tools are not intercepted.
+syscall containment remain planned and other host tools are not intercepted. The README and Field Guide Full Access FAQ distinguish
+protected MCP calls, raw sh/bash operations, standalone ledgers and mock Pages
+data; installing the bundle never redirects all host file operations.
 
 ---
 
@@ -72,6 +74,7 @@ published v1.0.3 release or completion of the public-trial gates below.
 
 ### 1. Local Frictionless Onboarding (Must-Have for HackerNoon)
 
+- [x] **Local contributor quality gate:** Versioned pre-push checks validate a clean checkout and the pushed commit, run targeted AlertTable actions, full verification and formatting, and stop on failure. `npm run hooks:install` activates them per checkout. AGENTS requires the same targeted/full gates before authorized commits, explicit DOM/clipboard wait ceilings of at most 3 seconds, and afterEach mock restoration. These checks do not replace hosted CI or alter native security deadlines.
 - [x] **Mandatory Error-Handling Audit Gate:** Document the three-tier contract, audit all native/core/CLI entry points, remediate failures and record fresh verification in `AGENTS.md` before further Phase 1 features.
 - [x] **Universal Single-Command Client Config (`krypton setup`):** Detect existing Claude Desktop, Cursor, Claude Code, and Cline storage on macOS/Linux; atomically back up existing JSON, preserve other servers, and install `krypton-protected-fs` with canonical supervisor paths and `KRYPTON_PROJECT_ROOT`. Malformed files and conflicting entries fail closed. `npm run setup` works without global linking.
 - [x] **Supervisor Cold-Start & Daemon Lifecycle:** `src/cli.cjs run` probes authenticated IPC, reuses a healthy daemon, or starts the compiled background native daemon on demand before launching the MCP child. Readiness retries have a three-second budget after host spawn; the initial 1500 ms probe and filesystem preparation are separate. Authentication failures and degraded health fail closed. A refused/disconnected registration gets one authenticated refresh and exact-identity retry; native registration accepts a repeated live identity without replacing stale generations. Native startup-lock arbitration removes only refused orphan sockets. SIGINT/SIGTERM/beforeExit cancel recovery and request owned-child shutdown. The source daemon survives client disconnect while each MCP child unregisters on exit; no manually running `npm run dev:full` or active daemon terminal is required before opening Claude Desktop.
@@ -89,6 +92,11 @@ published v1.0.3 release or completion of the public-trial gates below.
 - [x] **Live Telemetry Emission:** Native MCP denials queue structured receipts to the bounded source or standalone JSONL ledger, retaining tool, requested path, timestamp, and denial action. Queue admission is distinct from durable persistence; write/queue failures degrade health. Dashboard rows show `INTERCEPTED`, with no invented actor PID or SIGKILL claim. The standalone MCPB persists telemetry under its private Application Support instance and does not bundle or launch the dashboard.
 
 ### 3. Krypton Security Dashboard & Telemetry Verification (Must-Have)
+
+- [x] **Split dashboard summary:** At 1024px and above, two equal-height cards share the top section: workspace identity, guide/theme utilities and Engine Overview on the left; Watchdog status, active processes and audit/telemetry controls on the right. Both use 24px padding. About Guide sits beside Engine Overview; the theme toggle stays in the top-right workspace header. A three-column runtime panel shows child count, centered retained alert-list count and right-aligned boundary status with the dashboard release version. Below 640px the metrics stack; above 9,999 counts use compact notation with an exact tooltip and accessible label. The alert count is bounded to the current list, can include observations and is not a lifetime rejection total, with audit and telemetry aligned across its footer. A neutral hover/focus/tap tooltip before Intercepted Alerts lists all five loaded severity counts, keeping the metric uncluttered; Escape dismisses it. Table badges use shared AA-tested colors and soft matching borders; table help precedes labels, sorting follows, and action controls align right with visible hover/focus states. The Actions header keeps one unboxed info icon on the left; hover or click opens an icon-led four-section guide to available developer utilities anchored to that icon. Escape dismisses it. Target Path, Security Verification and Blocked (Unattributed) use plain-language labels, and tooltips distinguish recorded evidence from cryptographic signing. Audit mode copy retains the supervised-process and always-blocked file boundary. Degraded/offline states do not claim active containment. Smaller screens stack workspace, runtime, then the full-width activity log. Content uses the full viewport with 16px/24px side padding. About Guide is unconditional in development, production and Pages; its former environment/hostname gate and public guide marker are removed. Static export remains mock-only.
+- [x] **Dual-theme Field Guide:** Semantic light/dark palettes, a persistent-when-available header toggle, contrast-tested text/control tokens, keyboard focus, and selectable copyable peer-test cards.
+- [x] **Embedded peer-test walkthrough:** Method 1 is a sectioned card with separate download/install steps, 16px spacing and theme-aware copy boxes for the exact filename, optional field and default folder. Plain-language instructions retain Cmd + , / Cmd + Q and version-dependent installer fallback. Requested v1.0.3 bundle link with private/unavailable sharing instructions, blank optional workspace setup, baseline read/write, three denial prompts, symlink prerequisites, and source/standalone/Pages evidence distinctions.
+- [ ] **Manual accessibility and client QA:** Verify both themes with Lighthouse (target 95+), screen readers, keyboard/reflow checks, and clean-machine Claude Desktop installation. Automated contrast/component checks alone do not establish full WCAG compliance or release asset availability.
 
 - [x] **Live Local Telemetry Stream:** Next.js dashboard parsing `.krypton/telemetry/alerts.jsonl` with clear distinctions between confirmed native receipts and unconfirmed observations.
 - [x] **Intercepted Breach Visualizer:** Delivered native denial telemetry rendering in v1.0.2: the local dashboard displays the timestamp, blocked path, Krypton tool name, and recorded enforcement action. Portable watcher evidence remains unattributed; built-in host tools remain outside the MCP boundary.
@@ -159,6 +167,27 @@ must pass before marking the remaining gates complete.
 
 ---
 
+## Future Milestones: Remediation, Signing & Licensing
+
+- [ ] **Active process remediation:** Add an explicit operator-triggered
+      SIGKILL / Force Stop workflow, preserving registered ownership, live compound
+      identity checks and audit evidence. No Force Stop action or upgrade notice is
+      exposed in the current dashboard.
+- [ ] **Cryptographic report-signing key infrastructure:** Design signing-key
+      generation, secure storage, rotation, trust distribution and report verification
+      before offering cryptographically signed Markdown threat reports. Current
+      reports remain explicitly unsigned diagnostic exports.
+- [ ] **Enterprise / Pro licensing & enforcement:** Design entitlement validation
+      and paid activation for future remediation, remote agent orchestration and fleet
+      policy lockdown. No paid entitlement service is implemented. Licensing must not
+      weaken or delay automatic local boundary denial or add remote calls to security
+      enforcement hooks. Commercial plans remain in this roadmap, outside dashboard
+      menus, tooltips and Field Guide copy.
+
+Existing native control APIs and automatic local enforcement are unchanged. The
+current dashboard exposes only JSON inspection, process-detail copy, allowed-folder
+inspection and unsigned Markdown report downloads.
+
 ## Commercialization Matrix (Open-Core)
 
 Community capabilities ship in v1.0.2. Paid packaging, pricing, and capabilities
@@ -166,11 +195,11 @@ below define the commercial strategy and remain planned. macOS is supported;
 Linux native execution remains experimental, and Windows remains dashboard-only
 until the Phase 4 runtime ships.
 
-| Tier                   | Pricing            | Included capabilities                                                                                                                                                                                          |
-| :--------------------- | :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Community**          | Free / Open Source | Standalone local `.mcpb`, native daemon watchdog, local JSONL ledger, and local Next.js telemetry viewer (separate source-mode application).                                                                   |
-| **Pro**                | $19–$29/user/mo    | Community plus multi-agent local profiles, APFS snapshot rollbacks, instant desktop/webhook notifications (Slack/Discord), and cloud-synced dynamic threat feeds.                                              |
-| **Enterprise / Fleet** | $49–$99/seat/mo    | Pro plus centralized fleet console, remote kill-switch orchestration, SIEM forwarding (Splunk, Datadog, OpenTelemetry), and tamper-evident compliance evidence exports supporting SOC 2 / EU AI Act workflows. |
+| Tier                   | Pricing            | Included capabilities                                                                                                                                                                                           |
+| :--------------------- | :----------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Community**          | Free / Open Source | Standalone local `.mcpb`, native daemon watchdog, local JSONL ledger, and local Next.js telemetry viewer with JSON/process/folder diagnostics and unsigned Markdown reports (separate source-mode application). |
+| **Pro**                | $19–$29/user/mo    | Community plus planned manual process remediation, multi-agent local profiles, APFS snapshot rollbacks, instant desktop/webhook notifications (Slack/Discord), and cloud-synced dynamic threat feeds.           |
+| **Enterprise / Fleet** | $49–$99/seat/mo    | Pro plus centralized fleet console, remote kill-switch orchestration, SIEM forwarding (Splunk, Datadog, OpenTelemetry), and tamper-evident compliance evidence exports supporting SOC 2 / EU AI Act workflows.  |
 
 Developer Pro targets $29/user/month at launch within the proposed Pro range.
 Enterprise Governance uses annual contracts with a $15,000 ARR floor. Existing

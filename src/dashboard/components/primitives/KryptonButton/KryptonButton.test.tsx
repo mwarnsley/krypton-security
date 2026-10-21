@@ -37,7 +37,7 @@ describe('KryptonButton', () => {
 
   it.each([
     ['primary', 'bg-krypton-accent-cyan'],
-    ['secondary', 'border-krypton-border-muted'],
+    ['secondary', 'border-krypton-control-border'],
     ['destructive', 'bg-krypton-alert-rose'],
     ['link', 'text-krypton-accent-cyan'],
   ] as const)('maps the %s variant to a semantic token', (variant, tokenClass) => {

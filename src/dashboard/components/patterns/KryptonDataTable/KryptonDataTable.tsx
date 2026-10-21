@@ -223,7 +223,10 @@ export function KryptonDataTable<TData extends RowData>(
         </section>
       ) : null}
       <div
-        className={`${renderMobileRow ? 'hidden lg:block ' : ''}w-full overflow-x-auto bg-krypton-bg-main/40`}
+        aria-label={`${caption} table viewport`}
+        role="region"
+        tabIndex={0}
+        className={`${renderMobileRow ? 'hidden lg:block ' : ''}w-full overflow-x-auto bg-krypton-bg-main/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-krypton-focus-ring`}
       >
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">{caption}</caption>

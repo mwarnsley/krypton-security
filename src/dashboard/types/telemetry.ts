@@ -119,6 +119,9 @@ export interface TelemetryResponse extends TelemetryPage {
   /** Whether authenticated daemon health completed successfully. */
   readonly nativeDaemonReachable: boolean;
 
+  /** Bounded startup-pinned workspace folder, omitted for mock data and older daemons. */
+  readonly protectedWorkspaceRoot?: string;
+
   /** Whether alerts are native evidence or deterministic demonstration data. */
   readonly source: TelemetrySource;
 }

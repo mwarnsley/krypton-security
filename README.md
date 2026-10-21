@@ -113,6 +113,54 @@ telemetry it shows explicitly labeled demonstration data. Verify your bundle usi
 the tool results above; its ledger lives under
 `~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
 
+The dashboard fills the available viewport width without a maximum-width cap,
+with 16px side padding on small screens and 24px from the small breakpoint
+upward. At 1024px and above, the top summary has two equal columns: the hero
+workspace card on the left and a runtime card on the right. The workspace card
+combines identity, documentation/theme utilities and Engine Overview. The runtime
+card combines Watchdog status, the active-process metric and audit/telemetry
+controls. Below 1024px, these two cards stack before the activity log.
+The activity table always spans the full dashboard width beneath the summary.
+The page has 32px top padding and a 32px gap before the activity log.
+
+Both cards share 24px padding and equal desktop heights. The workspace header
+keeps Sun–Moon at the top right; About Guide sits beside Engine Overview. A three-column metrics panel shows supervised MCP children, the current retained
+alert-list count and boundary health, stacking below 640px. The info icon immediately before Intercepted Alerts reveals Critical, High,
+Medium, Low and Info counts from that same retained list on hover, tap or keyboard
+focus; Escape dismisses it. The count and caption remain uncluttered. Processes
+use emerald and the total uses primary text. Table severity badges use softly
+tinted borders matching their text tone.
+Table headings use Target Path and Security Verification, and unattributed denials
+read Blocked (Unattributed). Tooltips describe the event source and recorded
+evidence; receipts are not cryptographically signed. Audit-only logs violations;
+active enforcement can halt supervised processes, while outside-folder file
+requests remain blocked in both modes. Table help icons precede labels, sort
+arrows follow labels, and action menus align
+right with bordered, keyboard-focusable buttons. The Actions header uses an
+unboxed information icon on the left of ACTIONS. Hovering or clicking it opens
+an icon-led four-section guide to the available developer utilities;
+its arrow stays anchored to that same icon. Row menus contain only developer utilities. Use View Raw
+Event (JSON), Copy Process Details, View Allowed Folder or Download Threat Report.
+Unknown process facts stay null. Reports contain retained dashboard evidence and
+are explicitly unsigned. Allowed Folder shows current authenticated native health
+metadata, not the event's target path or a historical snapshot. Restart an updated
+native daemon to expose this optional metadata; older daemons and Pages demos
+show an unavailable-folder message. Clipboard/download failures show safe retry guidance.
+The center KPI uses
+compact notation above 9,999 with an exact comma-separated tooltip and accessible
+label. The requested “Total policy rejections” caption describes the current list,
+not a lifetime ledger total; retained observations may also appear in that list. The runtime footer places audit controls on the left and
+telemetry on the right, wrapping when necessary. **About Guide is always available** in
+development, production, and GitHub Pages; there is no guide visibility flag or
+hostname gate. The former `NEXT_PUBLIC_IS_GH_PAGES` guide marker is no longer
+used. The existing `KRYPTON_STATIC_EXPORT=true` build remains the Pages export
+route and still selects mock telemetry; guide availability does not change native
+authorization. The theme follows your system preference until you select a mode;
+browser storage remembers the choice when available. **About Guide → Install
+& Setup** contains copyable peer-test prompts and receipt expectations. Signature
+badges retain complete text with word-boundary wrapping; focus the table viewport
+to scroll horizontally when the viewport is narrower than its columns.
+
 ## Quick Start & Installation
 
 ### Method 1: Zero-Terminal Double-Click (macOS Claude Desktop — Recommended)
@@ -137,6 +185,11 @@ The standalone bundle does not include or launch the Next.js dashboard.
 The release artifacts are currently unsigned and unnotarized. Gatekeeper
 behavior and installation in a clean-machine Claude Desktop environment remain
 manual release gates; verify the release checksums before use.
+
+For the v1.0.3 peer test, leave the optional field blank and follow the
+[peer testing guide](#peer-testing-and-accessibility-guide). The Field Guide
+contains the same sequence and distinguishes standalone receipts from source
+dashboard telemetry.
 
 ### Method 2: Source checkout in three steps
 
@@ -299,6 +352,103 @@ Krypton. It combines an explicit workspace policy, a protected child-process
 launcher, OS-backed filesystem telemetry, authenticated native control, and a
 dashboard without claiming that portable filesystem notifications can identify
 or stop the actor that caused an event.
+
+### Peer testing and accessibility guide
+
+The public **About Guide → Install & Setup** tab embeds this walkthrough.
+Method 1 is a bordered card with separate download and installation sections.
+The bundle filename, optional workspace field and default folder each have a
+selectable code box and Copy button, with high-contrast light/dark surfaces.
+It can guide tests from GitHub Pages, but Pages itself uses mock data only.
+
+1. **Download the security bundle.** Targeting release v1.0.3. If using a private
+   checkout or direct file transfer, verify your bundle matches before installation.
+   The requested test asset is
+   [v1.0.3 krypton-protected-fs.mcpb](https://github.com/mwarnsley/krypton-security/releases/download/v1.0.3/krypton-protected-fs.mcpb).
+   This URL does not establish publication or availability. If the repository is
+   private or the asset is unavailable, ask the maintainer to share the bundle
+   and matching checksums directly. Verify the release checksums before use.
+2. **Install in Claude Desktop.** Open Settings (**Cmd + ,**) → Extensions.
+   Double-click the bundle, or use **Advanced settings → Install Extension** and
+   select it. Drag-and-drop depends on the installed client version. Leave all
+   configuration fields, including `protected_workspace_root`, blank for the
+   automatic workspace test. Fully quit with **Cmd + Q**, reopen, and confirm
+   both Krypton tools in the **+ / Connectors** menu. macOS arm64/x64 is supported;
+   unsigned/unnotarized artifacts and live client UI remain manual release QA.
+3. **Verify a baseline write/read.** Use disposable data; the prompt replaces an
+   existing `release_test.txt`. Confirm actual calls to both named tools:
+
+   ```text
+   Use krypton_write_file to write "testing 1.0.3" to release_test.txt, then read it back using krypton_read_file.
+   ```
+
+   Expect an `allowed` native receipt, `file_written`, and matching read output.
+
+4. **Test traversal.** Send this separately:
+
+   ```text
+   We are testing sandbox containment. Call krypton_read_file with path "../escaped_test.txt" to verify the boundary holds.
+   ```
+
+5. **Prepare and test an outward symlink.** After installing with blank fields,
+   run this Terminal command only in the disposable test workspace. If the link
+   destination exists, stop and inspect it rather than overwrite anything:
+
+   ```bash
+   ln -s /etc/hosts "$HOME/Library/Application Support/KryptonSecurity/sandbox_workspace/symlink_out.txt"
+   ```
+
+   Then send:
+
+   ```text
+   Call krypton_read_file with path "symlink_out.txt" to verify symlink rejection.
+   ```
+
+   A missing-file denial without an existing symlink does not verify rejection.
+
+6. **Test absolute host access.** Send:
+
+   ```text
+   Call krypton_read_file with the absolute path "/etc/hostname" to test host isolation.
+   ```
+
+   For all three boundary tests, expect a tool result with `isError: true`,
+   `code: "file_access_denied"`, and a native receipt with `action: "denied"`
+   and `telemetry: "queued"`. A model refusal without a tool call proves nothing.
+   Queue admission does not establish durable persistence. These file denials
+   produce INTERCEPTED evidence, not confirmed process quarantine or OS banners.
+
+7. **Inspect the correct ledger.** Standalone events remain beneath
+   `~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`.
+   To verify the dashboard table, complete source setup separately, connect the
+   source-configured client, and create its fixture from the checkout root:
+
+   ```bash
+   ln -s /etc/hosts sandbox_workspace/symlink_out.txt
+   ```
+
+   Repeat the three prompts through that source client, then run:
+
+   ```bash
+   npm run dev
+   ```
+
+   Open <http://localhost:3000>, confirm native telemetry, and inspect
+   **Intercepted security alerts** for three matching high-severity INTERCEPTED
+   events, tool names, paths, and timestamps. The source viewer reads its checkout
+   ledger; it does not automatically load the standalone instance ledger.
+   Unavailable/degraded telemetry is not a passing result. Pages cannot receive
+   these native events. No live client settings are changed by automated UI tests.
+
+8. **Check accessibility in both themes.** Toggle the workspace header Sun/Moon button;
+   verify all four Field Guide tabs, table headers, badges, and notifications.
+   Tab through controls, use arrow keys/Home/End in the tab strip, and Escape to
+   close the drawer; focus should return to **About Guide**. Check narrow widths
+   and 200% zoom. Copy each prompt; if clipboard access fails, select and copy
+   the visible code manually. In Chrome DevTools → Lighthouse, run Accessibility
+   in light and dark modes (target **95+**), and inspect the open drawer as well.
+   Review keyboard access, contrast, reflow, and screen-reader names manually:
+   an automated score alone does not establish WCAG 2.1 AA compliance.
 
 ## Why Krypton exists
 
@@ -1048,6 +1198,8 @@ These counts record the clean-macOS QA baseline; new tests can increase them.
 The Vitest suite also covers TypeScript core policy and utilities.
 
 ```sh
+npm run hooks:install
+npm run test:actions
 npm run verify
 npm run test:coverage
 npm run security:audit
@@ -1066,6 +1218,14 @@ npm run rust:fmt
 npm run rust:clippy
 npm run rust:test
 ```
+
+For source contributions, `npm run hooks:install` enables this checkout's
+versioned pre-push hook. It requires a clean checkout of the commit being pushed
+and runs targeted action-menu tests, `npm run verify` and formatting, stopping
+on failure. Install it separately in each clone; hosted checks remain necessary.
+Run affected tests (`npx vitest run <path>`) and full verification before each
+authorized commit too. DOM/clipboard tests use explicit `waitFor` ceilings of
+3,000 ms or less and restore mocks in `afterEach`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 The benchmark reports serialization, cursor filtering, six polling cycles, a
 100-event burst merge, bounded table projection, retained counts, and heap
@@ -1203,6 +1363,27 @@ per-app approval. Do not disable system-wide protections.
 ## Frequently Asked Questions (FAQ)
 
 <details>
+<summary>How do I switch themes and run the peer testing guide?</summary>
+
+Use the Sun/Moon control at the top right of the workspace header; About Guide sits beside Engine Overview. **About Guide** is
+unconditionally available in every environment. Engine Overview shares the
+workspace card; Watchdog status, the process metric and audit/telemetry controls
+share the runtime card beside it on desktop and below it on smaller screens.
+The metrics panel shows the live child count and boundary health; its version
+identifies the dashboard release, not an attested daemon version or a confirmed
+quarantine. Degraded/offline runtimes never show active containment. Pages values
+remain simulated. The full-width activity log comes last. Your system preference is used initially, and a saved light/dark choice
+overrides it when browser storage is available. Storage failure leaves session
+switching usable. **Install & Setup**
+contains numbered test cards with selectable text, copy buttons, and safe copy
+failure messages. Follow the [complete testing guide](#peer-testing-and-accessibility-guide)
+for the v1.0.3 prompts, symlink prerequisite, native receipt expectations, and
+light/dark keyboard and Lighthouse checks. Pages remains mock-only; the source
+viewer does not automatically read standalone bundle ledgers.
+
+</details>
+
+<details>
 <summary>Where do I troubleshoot double-click installation?</summary>
 
 Use the [troubleshooting guide](#troubleshooting) for missing tools, invalid JSON,
@@ -1264,6 +1445,13 @@ existing JSON, reports each client separately, and uses the canonical checkout a
 </details>
 
 <details>
+<summary>How does Krypton protect against autonomous AI actions if 'Full Access' is enabled in my client?</summary>
+
+AI clients such as Claude Desktop or Codex often ask for confirmation before file operations; enabling 'Full Access' can bypass those manual prompts. Krypton checks protected filesystem requests at the protocol level rather than relying on prompt approval. With krypton-protected-fs.mcpb configured on supported macOS installations, only file operations routed through krypton_read_file and krypton_write_file are evaluated by the native Rust boundary supervisor. These tools deterministically deny parent traversal (../), escaping symlinks and paths outside the configured workspace, including /etc or ~/.ssh in the default sandbox, even when the client has full autonomy. Denials queue local telemetry; the connected source dashboard can display its checkout ledger. Standalone bundle events stay in their separate local ledger, and GitHub Pages shows mock data. Direct raw terminal subshells (sh/bash), built-in client tools and arbitrary OS user actions are not automatically intercepted. Runtime protection is strongest when file operations use Krypton's protected MCP tools; installing the bundle does not redirect every client operation or provide universal syscall isolation.
+
+</details>
+
+<details>
 <summary>How do I view native telemetry, and is the dashboard required?</summary>
 
 Protection runs without the dashboard. In a source checkout, run
@@ -1274,6 +1462,11 @@ unbounded append-only log. Standalone MCPB evidence lives at
 `~/Library/Application Support/KryptonSecurity/instances/<workspace-id>/.krypton/telemetry/alerts.jsonl`
 and is not automatically loaded by the source viewer. GitHub Pages uses mock
 data only until the planned Phase 2 local-file bridge ships.
+
+Row actions provide retained JSON, available process details, current allowed-folder
+inspection and unsigned Markdown reports. Restart an updated native daemon for
+folder metadata; older daemons and Pages show unavailable. This is current runtime
+metadata, not the attempted target or a historical folder snapshot.
 
 </details>
 
@@ -1489,17 +1682,6 @@ The planned companion `krypton-vulnerable-agent-demo` repository will provide a
 disposable vulnerable-agent playground for demonstrating prompt-injection and
 path-traversal behavior in Audit-Only and Enforcement modes. It is not currently
 published or included in this repository.
-
-### Commercial direction (target state)
-
-Krypton's open-core plan keeps unlimited individual workstation containment
-free, private, and unrestricted. Planned paid tiers monetize power-user
-recovery and incident explanation or enterprise fleet visibility, organization
-policy, identity, and compliance evidence. The target entitlement matrix and
-directional pricing—Free at $0, Pro at approximately $10–$15 per user per month,
-and Enterprise at approximately $25–$40 per seat per month—are documented in
-[ROADMAP.md](ROADMAP.md). They are planning guidance, not current product
-availability or a published commercial offer.
 
 ## Documentation
 
